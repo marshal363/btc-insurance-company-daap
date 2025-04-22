@@ -1,0 +1,104 @@
+---
+description: 
+globs: *.clar,**/*.clar
+alwaysApply: false
+---
+
+
+description: Efficient, Secure, and Maintainable Clarity Smart Contract Development for Stacks Bitcoin L2  
+globs:  
+  - "**/*.clar"  
+alwaysApply: true  
+
+---
+##Contract structure
+- title: hello-stacks
+- version:
+- summary:
+- description:
+- traits
+
+-token definitions
+- constants
+- data vars
+- data maps
+- public functions
+- read only functions
+- private functions
+
+## Language & Technology Stack
+- Write all smart contracts in **Clarity**, targeting the Stacks Layer-2 protocol for Bitcoin.
+- Use only officially supported Clarity language features and libraries.
+- Avoid deprecated or experimental Clarity features.
+
+## Security Best Practices
+- **Access Control:**  
+  - Never rely solely on `tx-sender` for authentication; always implement explicit and robust access control mechanisms.
+  - Restrict sensitive actions to the contract owner or authorized principals only.
+- **Input Validation:**  
+  - Rigorously validate all user inputs for type, length, and range.
+- **Error Handling:**  
+  - Avoid `unwrap-panic` and `unwrap-err-panic`; use `unwrap!` and `unwrap-err!` with explicit error codes.
+- **State Management:**  
+  - Ensure all variables are immutable; do not mutate state outside allowed contract data structures.
+  - Use only primitive types: booleans, integers, buffers, and principals.
+- **Post-conditions:**  
+  - Use post-conditions to protect against unintended token transfers and state changes.
+- **Return Values:**  
+  - Always check and handle all possible return values, especially from external calls and verification functions.
+- **Sensitive Data:**  
+  - Never store or process private keys, secrets, or sensitive off-chain data in contracts.
+
+## Efficiency & Cost Optimization
+- **Storage:**  
+  - Minimize on-chain storage; use event logs or off-chain computation for non-essential data.
+- **Computation:**  
+  - Avoid recursion and unbounded loops; use `map`, `filter`, or `fold` for iteration.
+  - Optimize for predictable and minimal runtime cost; statically analyze contract cost before deployment.
+- **Data Structures:**  
+  - Avoid large or unbounded data structures as Clarity does not support dynamic resizing.
+- **Code Cleanliness:**  
+  - Remove unused code, functions, and data definitions before deployment.
+
+## Code Quality & Maintainability
+- **Readability:**  
+  - Use clear, descriptive names for all functions, variables, and constants.
+  - Group related functions and data definitions together.
+- **Documentation:**  
+  - Document all public functions with clear descriptions of purpose, parameters, and expected outcomes.
+  - Write comprehensive inline comments for complex logic or business rules.
+- **Configurability:**  
+  - Avoid hardcoded variables; use configurable parameters for easier upgrades and maintenance.
+
+## Testing & Auditing
+- Write comprehensive unit and integration tests for all contract logic.
+- Simulate all edge cases, including failed transactions and invalid inputs.
+- Perform static analysis and manual code review before deployment.
+- Use open-source tools (e.g., Clarity REPL, Clarinet, static analyzers) for testing and verification.
+
+## Bitcoin L2-Specific Guidance
+- Ensure all contract logic is compatible with Stacks’ Proof of Transfer consensus and Bitcoin settlement.
+- Use `burn-block-height` for time-sensitive logic instead of `block-height` to ensure consistency.
+- Be wary of relying on external bridges or off-chain data; only use well-audited, community-accepted patterns for cross-chain or off-chain interactions.
+
+## Upgradability & Deployment
+- Use versioning in contract names or data structures to manage upgrades.
+- Never deploy untested or unaudited code to mainnet.
+- Document upgrade and migration paths for contract users.
+
+## Common Pitfalls to Avoid
+- **Panic Functions:** Never use `unwrap-panic` or `unwrap-err-panic` for error handling.
+- **Authentication:** Never rely solely on `tx-sender` for access control.
+- **Hardcoding:** Avoid hardcoded variables; always use configurable parameters.
+- **Time References:** Do not use `block-height` for time calculations; use `burn-block-height`.
+- **Return Values:** Always verify and handle all function return values.
+- **Complexity:** Avoid overly complex or unreadable code.
+- **Security:** Never overlook input validation, access control, or unchecked external calls.
+- **Inefficiency:** Avoid inefficient storage and computation patterns.
+- **Testing:** Never deploy without thorough testing and code review.
+- **Upgradability:** Always plan for contract upgrades and migrations.
+
+---
+
+**Summary:**  
+This rule set integrates best practices and highlights common pitfalls to avoid, ensuring your Clarity smart contracts on Stacks Bitcoin L2 are efficient, secure, and maintainable. All team members should adhere strictly to these guidelines for every `.clar` file in the project.
