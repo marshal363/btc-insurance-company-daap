@@ -336,7 +336,7 @@
     
     ;; Emit event
     (print {
-      event (if new-status "engine-paused" "engine-unpaused"),
+      event: (if new-status "engine-paused" "engine-unpaused"),
       admin: caller,
       block-height: block-height
     })

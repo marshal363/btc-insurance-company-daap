@@ -161,7 +161,7 @@
       {
         roles: ROLE-ALL,
         voting-power: u1000000,  ;; Initial voting power
-        last-updated: block-height,
+        last-updated: burn-block-height,
         last-updated-by: tx-sender
       }
     )
@@ -177,7 +177,7 @@
     (print {
       event: "governance-initialized",
       admin: tx-sender,
-      block-height: block-height
+      block-height: burn-block-height
     })
     
     (ok true)
@@ -198,7 +198,7 @@
     (
       (proposer tx-sender)
       (proposal-id (+ (var-get proposal-count) u1))
-      (current-block block-height)
+      (current-block burn-block-height)
       (expiration-block (+ current-block (var-get voting-period-blocks)))
       (member-info (unwrap! (map-get? member-roles { member: proposer }) ERR-NOT-AUTHORIZED))
       (proposer-role (get roles member-info))
@@ -266,7 +266,7 @@
     (
       (voter tx-sender)
       (proposal (unwrap! (map-get? proposals { proposal-id: proposal-id }) ERR-PROPOSAL-NOT-FOUND))
-      (current-block block-height)
+      (current-block burn-block-height)
       (member-info (unwrap! (map-get? member-roles { member: voter }) ERR-NOT-AUTHORIZED))
       (voter-role (get roles member-info))
       (voting-power (get voting-power member-info))
@@ -290,8 +290,8 @@
     ;; Check if vote-type is valid
     (asserts! (or 
                 (is-eq vote-type VOTE-TYPE-FOR) 
-                (is-eq vote-type VOTE_TYPE-AGAINST) 
-                (is-eq vote-type VOTE_TYPE-ABSTAIN))
+                (is-eq vote-type VOTE-TYPE-AGAINST) 
+                (is-eq vote-type VOTE-TYPE-ABSTAIN))
              ERR-INVALID-PARAMETERS)
     
     ;; Record the vote
@@ -305,22 +305,18 @@
     )
     
     ;; Update proposal vote tallies
-    (match vote-type
-      VOTE-TYPE-FOR 
-        (map-set proposals
-          { proposal-id: proposal-id }
-          (merge proposal { for-votes: (+ (get for-votes proposal) voting-power) }))
-      VOTE-TYPE-AGAINST 
+    (if (is-eq vote-type VOTE-TYPE-FOR)
+      (map-set proposals
+        { proposal-id: proposal-id }
+        (merge proposal { for-votes: (+ (get for-votes proposal) voting-power) }))
+      (if (is-eq vote-type VOTE-TYPE-AGAINST)
         (map-set proposals
           { proposal-id: proposal-id }
           (merge proposal { against-votes: (+ (get against-votes proposal) voting-power) }))
-      VOTE-TYPE-ABSTAIN 
+        ;; Must be VOTE-TYPE-ABSTAIN due to our earlier validation
         (map-set proposals
           { proposal-id: proposal-id }
-          (merge proposal { abstain-votes: (+ (get abstain-votes proposal) voting-power) }))
-      ;; Default case should not happen due to validation above
-      (begin true)
-    )
+          (merge proposal { abstain-votes: (+ (get abstain-votes proposal) voting-power) }))))
     
     ;; Emit vote event
     (print {
@@ -342,7 +338,7 @@
     (
       (sender tx-sender)
       (proposal (unwrap! (map-get? proposals { proposal-id: proposal-id }) ERR-PROPOSAL-NOT-FOUND))
-      (current-block block-height)
+      (current-block burn-block-height)
       (proposer (get proposer proposal))
       (member-info (unwrap! (map-get? member-roles { member: sender }) ERR-NOT-AUTHORIZED))
       (sender-role (get roles member-info))
@@ -372,7 +368,7 @@
       event: "proposal-canceled",
       proposal-id: proposal-id,
       canceler: sender,
-      block-height: current-block
+      block-height: burn-block-height
     })
     
     (ok true)
@@ -385,7 +381,7 @@
   (let
     (
       (proposal (unwrap! (map-get? proposals { proposal-id: proposal-id }) ERR-PROPOSAL-NOT-FOUND))
-      (current-block block-height)
+      (current-block burn-block-height)
       (for-votes (get for-votes proposal))
       (against-votes (get against-votes proposal))
       (abstain-votes (get abstain-votes proposal))
@@ -469,8 +465,8 @@
   (let
     (
       (proposal (unwrap! (map-get? proposals { proposal-id: proposal-id }) ERR-PROPOSAL-NOT-FOUND))
-      (timelock (unwrap! (map-get? timelocks { proposal-id: proposal-id }) ERR-PROPOSAL-NOT_FOUND))
-      (current-block block-height)
+      (timelock (unwrap! (map-get? timelocks { proposal-id: proposal-id }) ERR-PROPOSAL-NOT-FOUND))
+      (current-block burn-block-height)
     )
     
     ;; Check if governance is initialized
@@ -505,7 +501,7 @@
     (print {
       event: "timelock-expired",
       proposal-id: proposal-id,
-      block-height: current-block
+      block-height: burn-block-height
     })
     
     (ok true)
@@ -519,7 +515,7 @@
     (
       (executor tx-sender)
       (proposal (unwrap! (map-get? proposals { proposal-id: proposal-id }) ERR-PROPOSAL-NOT-FOUND))
-      (current-block block-height)
+      (current-block burn-block-height)
       (member-info (unwrap! (map-get? member-roles { member: executor }) ERR-NOT-AUTHORIZED))
       (executor-role (get roles member-info))
     )
@@ -551,7 +547,7 @@
       event: "proposal-executed",
       proposal-id: proposal-id,
       executor: executor,
-      block-height: current-block
+      block-height: burn-block-height
     })
     
     ;; Note: Actual execution of actions would require integration with other contracts
@@ -569,7 +565,7 @@
   (let
     (
       (admin tx-sender)
-      (current-block block-height)
+      (current-block burn-block-height)
       (admin-info (unwrap! (map-get? member-roles { member: admin }) ERR-NOT-AUTHORIZED))
     )
     
@@ -683,7 +679,7 @@
     (print {
       event: "emergency-mode-activated",
       guardian: guardian,
-      block-height: block-height
+      block-height: burn-block-height
     })
     
     (ok true)
@@ -714,7 +710,7 @@
     (print {
       event: "emergency-mode-deactivated",
       admin: admin,
-      block-height: block-height
+      block-height: burn-block-height
     })
     
     (ok true)
@@ -737,16 +733,16 @@
     
     ;; Update admin
     (var-set admin-address new-admin)
-    
-    ;; Give new admin all roles
-    (set-member-role new-admin ROLE-ALL u1000000)
-    
+
+    ;; Give new admin all roles and default voting power
+    (try! (set-member-role new-admin ROLE-ALL u1000000))
+
     ;; Emit admin transfer event
     (print {
       event: "admin-transferred",
       previous-admin: current-admin,
       new-admin: new-admin,
-      block-height: block-height
+      block-height: burn-block-height
     })
     
     (ok true)
@@ -770,10 +766,13 @@
     ;; Update guardian
     (var-set guardian-address new-guardian)
     
-    ;; Give guardian role (if not already a member)
-    (match (map-get? member-roles { member: new-guardian })
-      existing-role true
-      (set-member-role new-guardian ROLE-GUARDIAN u1000000))
+    ;; Give guardian role and default voting power (if not already a member)
+    (try! (if (is-none (map-get? member-roles { member: new-guardian }))
+      ;; If new guardian is not already a member, set their role and voting power
+      (set-member-role new-guardian ROLE-GUARDIAN u1000000) ;; Return response directly
+      ;; Else, return success (guardian might already exist with roles)
+      (ok true)
+    ))
     
     ;; Emit guardian transfer event
     (print {
@@ -781,7 +780,7 @@
       previous-guardian: (var-get guardian-address),
       new-guardian: new-guardian,
       admin: current-admin,
-      block-height: block-height
+      block-height: burn-block-height
     })
     
     (ok true)
@@ -813,7 +812,7 @@
       parameter-address: parameter-address,
       token-address: token-address,
       admin: admin,
-      block-height: block-height
+      block-height: burn-block-height
     })
     
     (ok true)

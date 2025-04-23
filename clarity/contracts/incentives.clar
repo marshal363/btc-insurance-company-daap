@@ -40,7 +40,7 @@
 (define-data-var is-paused bool false)
 
 ;; Contract addresses
-(define-data-var treasury-address principal tx-sender)
+(define-data-var treasury-address principal 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.temp-treasury)
 (define-data-var policy-registry-address principal tx-sender)
 (define-data-var liquidity-pool-address principal tx-sender)
 
@@ -1000,10 +1000,14 @@
 
 ;; Transfer rewards to user
 (define-private (transfer-rewards (user principal) (program-id uint) (amount uint) (token-type (string-utf8 20)))
+  ;; Add logging here
+  (print { level: "debug", msg: "Attempting reward transfer", user: user, amount: amount, token-type: token-type, treasury-address: (var-get treasury-address) })
+
   ;; For STX transfers
   (if (is-eq token-type "STX")
-    (contract-call? (var-get treasury-address) distribute-incentive-rewards user amount)
-    
+    ;; Try! the contract call to handle potential errors from treasury
+    (try! (contract-call? (var-get treasury-address) distribute-incentive-rewards user amount))
+
     ;; For other token types, would need to implement token-specific transfer logic
     ;; This is a placeholder for future token support
     (err ERR-INVALID-PARAMETERS)

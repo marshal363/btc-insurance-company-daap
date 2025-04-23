@@ -74,54 +74,54 @@ plan:
             emulated-sender: SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4
             path: "./.cache/requirements/SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-deposit.clar"
             clarity-version: 3
-        # - emulated-contract-publish:
-        #     contract-name: fundraising
-        #     emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-        #     path: contracts/fundraising.clar
-        #     clarity-version: 3
-        # - emulated-contract-publish:
-        #     contract-name: governance
-        #     emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-        #     path: contracts/governance.clar
-        #     clarity-version: 3
-        # - emulated-contract-publish:
-        #     contract-name: incentives
-        #     emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-        #     path: contracts/incentives.clar
-        #     clarity-version: 3
-        # - emulated-contract-publish:
-        #     contract-name: insurance-fund
-        #     emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-        #     path: contracts/insurance-fund.clar
-        #     clarity-version: 3
-        # - emulated-contract-publish:
-        #     contract-name: liquidation-engine
-        #     emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-        #     path: contracts/liquidation-engine.clar
-        #     clarity-version: 3
+        - emulated-contract-publish:
+            contract-name: fundraising
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: contracts/fundraising.clar
+            clarity-version: 3
+        - emulated-contract-publish:
+            contract-name: governance
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: contracts/governance.clar
+            clarity-version: 3
+        - emulated-contract-publish:
+            contract-name: incentives
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: contracts/incentives.clar
+            clarity-version: 3
+        - emulated-contract-publish:
+            contract-name: insurance-fund
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: contracts/insurance-fund.clar
+            clarity-version: 3
+        - emulated-contract-publish:
+            contract-name: liquidation-engine
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: contracts/liquidation-engine.clar
+            clarity-version: 3
         - emulated-contract-publish:
             contract-name: liquidity-pool
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
             path: contracts/liquidity-pool.clar
             clarity-version: 3
-        # - emulated-contract-publish:
-        #     contract-name: oracle
-        #     emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-        #     path: contracts/oracle.clar
-        #     clarity-version: 3
-        # - emulated-contract-publish:
-        #     contract-name: parameter
-        #     emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-        #     path: contracts/parameter.clar
-        #     clarity-version: 3
-        # - emulated-contract-publish:
-        #     contract-name: policy-registry
-        #     emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-        #     path: contracts/policy-registry.clar
-        #     clarity-version: 3
-        # - emulated-contract-publish:
-        #     contract-name: treasury
-        #     emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-        #     path: contracts/treasury.clar
-        #     clarity-version: 3
+        - emulated-contract-publish:
+            contract-name: oracle
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: contracts/oracle.clar
+            clarity-version: 3
+        - emulated-contract-publish:
+            contract-name: parameter
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: contracts/parameter.clar
+            clarity-version: 3
+        - emulated-contract-publish:
+            contract-name: policy-registry
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: contracts/policy-registry.clar
+            clarity-version: 3
+        - emulated-contract-publish:
+            contract-name: treasury
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: contracts/treasury.clar
+            clarity-version: 3
       epoch: "3.0"

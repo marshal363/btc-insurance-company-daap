@@ -151,7 +151,7 @@
   (let
     (
       (param (unwrap! (map-get? system-parameters { param-name: param-name }) ERR-PARAM-NOT-FOUND))
-      (current-time (unwrap! (get-block-info? time block-height) ERR-INVALID-PARAMETER))
+      (current-time (get time (unwrap! (block-info?) ERR-INVALID-PARAMETER)))
     )
     
     ;; Check system state
@@ -199,7 +199,7 @@
   (let
     (
       (flag (unwrap! (map-get? feature-flags { flag-name: flag-name }) ERR-PARAM-NOT-FOUND))
-      (current-time (unwrap! (get-block-info? time block-height) ERR-INVALID-PARAMETER))
+      (current-time (get time (unwrap! (block-info?) ERR-INVALID-PARAMETER)))
     )
     
     ;; Check system state
@@ -243,7 +243,7 @@
   (let
     (
       (breaker (unwrap! (map-get? circuit-breakers { breaker-name: breaker-name }) ERR-PARAM-NOT-FOUND))
-      (current-time (unwrap! (get-block-info? time block-height) ERR-INVALID-PARAMETER))
+      (current-time (get time (unwrap! (block-info?) ERR-INVALID-PARAMETER)))
     )
     
     ;; Check system state
@@ -287,7 +287,7 @@
   (let
     (
       (breaker (unwrap! (map-get? circuit-breakers { breaker-name: breaker-name }) ERR-PARAM-NOT-FOUND))
-      (current-time (unwrap! (get-block-info? time block-height) ERR-INVALID-PARAMETER))
+      (current-time (get time (unwrap! (block-info?) ERR-INVALID-PARAMETER)))
     )
     
     ;; Check system state
@@ -338,7 +338,7 @@
   (let
     (
       (breaker (unwrap! (map-get? circuit-breakers { breaker-name: breaker-name }) ERR-PARAM-NOT-FOUND))
-      (current-time (unwrap! (get-block-info? time block-height) ERR-INVALID-PARAMETER))
+      (current-time (get time (unwrap! (block-info?) ERR-INVALID-PARAMETER)))
       (threshold (get threshold breaker))
     )
     
@@ -400,7 +400,7 @@
   (let
     (
       (check (unwrap! (map-get? health-checks { check-name: check-name }) ERR-PARAM-NOT-FOUND))
-      (current-time (unwrap! (get-block-info? time block-height) ERR-INVALID-PARAMETER))
+      (current-time (get time (unwrap! (block-info?) ERR-INVALID-PARAMETER)))
     )
     
     ;; Check system state
@@ -883,7 +883,7 @@
 (define-private (check-flash-loan-protection)
   (let
     (
-      (current-time (unwrap! (get-block-info? time block-height) ERR-INVALID-PARAMETER))
+      (current-time (get time (unwrap! (block-info?) ERR-INVALID-PARAMETER)))
       (min-time-diff (unwrap-panic (get-parameter "min-blocks-between-operations")))
       (last-time (var-get last-operation-timestamp))
     )
