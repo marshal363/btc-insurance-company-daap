@@ -346,7 +346,6 @@
     (
       (provider tx-sender)
       (current-height burn-block-height)
-      (sbtc-contract (contract-of (var-get sbtc-token-address)))
       (tier-info (unwrap! (map-get? risk-tiers { tier-name: tier-name }) ERR-INVALID-TIER))
       (tier-limits (unwrap! (map-get? tier-capacity-limits { tier-name: tier-name }) ERR-INVALID-TIER))
       (tier-cap (unwrap! (map-get? tier-capital { tier-name: tier-name }) ERR-INVALID-TIER))
@@ -381,8 +380,8 @@
     (asserts! (<= (+ (get total-sbtc-deposited tier-cap) amount) (get sbtc-limit tier-limits))
               ERR-TIER-CAPACITY-EXCEEDED)
 
-    ;; Transfer sBTC from provider to this contract
-    (try! (contract-call? sbtc-contract transfer amount tx-sender (as-contract tx-sender) none))
+    ;; Transfer sBTC from provider to this contract - using direct contract-call instead of contract-of
+    (try! (contract-call? 'SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token transfer amount tx-sender provider none))
 
     ;; Update provider deposit data for this tier
     (map-set provider-deposits
@@ -493,7 +492,6 @@
   (let
     (
       (provider tx-sender)
-      (sbtc-contract (contract-of (var-get sbtc-token-address)))
       (provider-key { provider: provider, tier-name: tier-name })
       (provider-data (unwrap! (map-get? provider-deposits provider-key) ERR-PROVIDER-NOT-FOUND)) ;; Ensure provider has deposit in this tier
       (tier-cap (unwrap! (map-get? tier-capital { tier-name: tier-name }) ERR-INVALID-TIER)) ;; Fetch tier capital data
@@ -512,8 +510,8 @@
     (asserts! (>= available-amount amount) ERR-WITHDRAWAL-LIMIT-EXCEEDED)
     ;; TODO: Integrate health ratio checks (Phase 4)
 
-    ;; Transfer sBTC from this contract to provider
-    (try! (as-contract (contract-call? sbtc-contract transfer amount tx-sender provider none)))
+    ;; Transfer sBTC from this contract to provider - using direct contract-call instead of contract-of
+    (try! (as-contract (contract-call? 'SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token transfer amount tx-sender provider none)))
 
     ;; Update provider deposit data for this tier
     (map-set provider-deposits
@@ -595,10 +593,10 @@
 
       ;; Validate amount and provider's available collateral IN THIS TIER
       (asserts! (> amount u0) ERR-INVALID-AMOUNT)
-      (asserts! (>= available-amount amount) ERR-INSUFFICIENT_COLLATERAL)
+      (asserts! (>= available-amount amount) ERR-INSUFFICIENT-COLLATERAL)
 
       ;; Check if policy type is valid
-      (asserts! (or (is-eq policy-type "PUT") (is-eq policy-type "CALL")) ERR-INVALID_PARAMETERS)
+      (asserts! (or (is-eq policy-type "PUT") (is-eq policy-type "CALL")) ERR-INVALID-PARAMETERS)
 
       ;; Update provider deposit data to lock collateral within the tier
       (map-set provider-deposits
@@ -674,7 +672,7 @@
     (asserts! (if is-stx
                (>= (get stx-locked provider-data) amount)
                (>= (get sbtc-locked provider-data) amount))
-             ERR-INSUFFICIENT_COLLATERAL) ;; Should perhaps be a different error like ERR_UNLOCK_FAILED?
+             ERR-INSUFFICIENT-COLLATERAL) ;; Should perhaps be a different error like ERR-UNLOCK-FAILED?
 
     ;; Update provider deposit data to unlock collateral within the tier
     (map-set provider-deposits
@@ -739,7 +737,6 @@
       (tier-cap (unwrap! (map-get? tier-capital { tier-name: tier-name }) ERR-INVALID-TIER))
       (is-stx (is-eq token-type "STX"))
       (is-sbtc (is-eq token-type "SBTC"))
-      (sbtc-contract (contract-of (var-get sbtc-token-address)))
     )
 
     ;; Check authorization
@@ -752,12 +749,12 @@
     (asserts! (if is-stx
                (>= (get stx-locked provider-data) settlement-amount)
                (>= (get sbtc-locked provider-data) settlement-amount))
-             ERR-INSUFFICIENT_COLLATERAL)
+             ERR-INSUFFICIENT-COLLATERAL)
 
     ;; Transfer settlement amount from this contract to policy owner (buyer)
     (if is-stx
       (try! (as-contract (stx-transfer? settlement-amount tx-sender policy-buyer)))
-      (try! (as-contract (contract-call? sbtc-contract transfer settlement-amount tx-sender policy-buyer none)))
+      (try! (as-contract (contract-call? 'SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token transfer settlement-amount tx-sender policy-buyer none)))
     )
 
     ;; Update provider deposit data for the tier: Reduce total amount and locked amount
