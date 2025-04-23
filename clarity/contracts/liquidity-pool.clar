@@ -822,33 +822,31 @@
     (tier-name (string-ascii 20)))
   (let
     (
-      (risk-params (unwrap! (map-get? policy-risk-parameters { policy-type: policy-type }) (err u0)))
-      (tier-config (unwrap! (map-get? risk-tiers { tier-name: tier-name }) (err u0)))
+      (risk-params (unwrap! (map-get? policy-risk-parameters { policy-type: policy-type }) ERR-INVALID-PARAMETERS))
+      (tier-config (unwrap! (map-get? risk-tiers { tier-name: tier-name }) ERR-INVALID-TIER))
     )
     ;; Check if the tier is active
-    (if (get status tier-config)
-        ;; Tier is active, proceed with calculation inside a nested let
-        (let
-          (
-            (base-rate (get base-premium-rate risk-params))
-            (utilization-rate (if (is-eq policy-type "PUT")
-                                (var-get put-utilization-rate)
-                                (var-get call-utilization-rate)))
-            (utilization-factor (min-uint u1000000 (/ (* utilization-rate (get utilization-multiplier risk-params)) u1000000)))
-            ;; Simplified duration factor: % increase per 30 days (scaled)
-            (days (/ duration-blocks BLOCKS-PER-DAY))
-            (duration-periods (/ days u30))
-            (duration-increase (* duration-periods (get duration-multiplier risk-params)))
-            (duration-factor (/ duration-increase u1000000))
-            (tier-multiplier (get premium-multiplier tier-config))
-            (effective-rate (+ base-rate utilization-factor duration-factor))
-            (adjusted-rate (/ (* effective-rate tier-multiplier) u1000000))
-            (premium-amount (/ (* protected-amount adjusted-rate) u1000000))
-          )
-          (ok premium-amount) ;; Return calculated premium
-        )
-        ;; Else, tier is inactive, return error
-        (err ERR-INVALID-TIER)
+    (asserts! (get status tier-config) ERR-INVALID-TIER)
+    
+    ;; Tier is active, proceed with calculation
+    (let
+      (
+        (base-rate (get base-premium-rate risk-params))
+        (utilization-rate (if (is-eq policy-type "PUT")
+                            (var-get put-utilization-rate)
+                            (var-get call-utilization-rate)))
+        (utilization-factor (min-uint u1000000 (/ (* utilization-rate (get utilization-multiplier risk-params)) u1000000)))
+        ;; Simplified duration factor: % increase per 30 days (scaled)
+        (days (/ duration-blocks BLOCKS-PER-DAY))
+        (duration-periods (/ days u30))
+        (duration-increase (* duration-periods (get duration-multiplier risk-params)))
+        (duration-factor (/ duration-increase u1000000))
+        (tier-multiplier (get premium-multiplier tier-config))
+        (effective-rate (+ base-rate utilization-factor duration-factor))
+        (adjusted-rate (/ (* effective-rate tier-multiplier) u1000000))
+        (premium-amount (/ (* protected-amount adjusted-rate) u1000000))
+      )
+      (ok premium-amount) ;; Return calculated premium
     )
   )
 )
@@ -857,13 +855,15 @@
 (define-public (record-premium
     (premium-amount uint)
     (policy-id uint)
-    (counterparty principal))
+    (counterparty principal)
+    (tier-name (string-ascii 20)))
   (let
     (
       ;; Authorization: Check if called by the registered policy registry contract
       (is-authorized (is-eq tx-sender (var-get policy-registry-address)))
       (provider counterparty)
-      (provider-data (unwrap! (map-get? provider-deposits { provider: provider }) ERR-PROVIDER-NOT-FOUND))
+      (provider-key { provider: provider, tier-name: tier-name })
+      (provider-data (unwrap! (map-get? provider-deposits provider-key) ERR-PROVIDER-NOT-FOUND))
       (current-ep (var-get current-epoch))
       (platform-fee (/ (* premium-amount (var-get platform-fee-percentage)) u1000000))
       (protocol-reserve (/ (* premium-amount (var-get protocol-reserve-percentage)) u1000000))
@@ -908,7 +908,7 @@
     
     ;; Update provider total yield earned
     (map-set provider-deposits
-      { provider: provider }
+      provider-key
       (merge provider-data {
         total-yield-earned: (+ (get total-yield-earned provider-data) provider-premium)
       })
@@ -919,6 +919,7 @@
       event: "premium-recorded",
       policy-id: policy-id,
       provider: provider,
+      tier: tier-name,
       premium-amount: premium-amount,
       provider-premium: provider-premium,
       platform-fee: platform-fee,
