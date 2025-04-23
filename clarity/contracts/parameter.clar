@@ -3,8 +3,37 @@
 ;; summary: Parameter Contract for BitHedge platform
 ;; description: Manages system parameters, feature flags, and circuit breakers for the BitHedge platform.
 
+;; *******************************************************************************
+;; * Authorization Roles                                                         *
+;; *******************************************************************************
+;; * The parameter contract uses a tiered authorization system:                  *
+;; *                                                                             *
+;; * 1. System Admin - Has initial deployment control and bootstrap authority.   *
+;; *    Used primarily during setup and for basic maintenance.                   *
+;; *                                                                             *
+;; * 2. Guardian - Has authority to trigger emergency circuit breakers and       *
+;; *    perform time-sensitive health monitoring. Limited to specific critical   *
+;; *    functions that need rapid response.                                      *
+;; *                                                                             *
+;; * 3. Governance - Has highest authority for protocol changes after            *
+;; *    deployment. Controls parameter updates, feature flags, and critical      *
+;; *    contract addresses. Operates through proposal system.                    *
+;; *                                                                             *
+;; * 4. Authorized Contracts - Core contracts (like policy-registry,             *
+;; *    liquidity-pool) can call specific functions.                             *
+;; *                                                                             *
+;; * This design ensures protocol control becomes progressively decentralized    *
+;; * through governance while maintaining appropriate emergency safeguards.      *
+;; *******************************************************************************
+
 ;; traits
-;;
+;; Defines the interface for interacting with the Governance contract
+(define-trait governance-trait
+  (
+    ;; Checks if a given proposal ID has been approved by governance
+    (is-proposal-approved (uint) (response bool uint))
+  )
+)
 
 ;; token definitions
 ;;
@@ -47,6 +76,7 @@
 (define-data-var oracle-address principal tx-sender)
 (define-data-var treasury-address principal tx-sender)
 (define-data-var insurance-fund-address principal tx-sender)
+(define-data-var governance-address principal tx-sender)
 
 ;; Last timestamp for flash loan protection
 (define-data-var last-operation-timestamp uint u0)
@@ -137,7 +167,7 @@
     (print {
       event: "system-initialized",
       admin: tx-sender,
-      block-height: block-height
+      burn-block-height: burn-block-height
     })
     
     (ok true)
@@ -151,7 +181,7 @@
   (let
     (
       (param (unwrap! (map-get? system-parameters { param-name: param-name }) ERR-PARAM-NOT-FOUND))
-      (current-time (get time (unwrap! (block-info?) ERR-INVALID-PARAMETER)))
+      (current-time burn-block-height)
     )
     
     ;; Check system state
@@ -199,7 +229,7 @@
   (let
     (
       (flag (unwrap! (map-get? feature-flags { flag-name: flag-name }) ERR-PARAM-NOT-FOUND))
-      (current-time (get time (unwrap! (block-info?) ERR-INVALID-PARAMETER)))
+      (current-time burn-block-height)
     )
     
     ;; Check system state
@@ -243,7 +273,7 @@
   (let
     (
       (breaker (unwrap! (map-get? circuit-breakers { breaker-name: breaker-name }) ERR-PARAM-NOT-FOUND))
-      (current-time (get time (unwrap! (block-info?) ERR-INVALID-PARAMETER)))
+      (current-time burn-block-height)
     )
     
     ;; Check system state
@@ -257,7 +287,7 @@
       { breaker-name: breaker-name }
       (merge breaker {
         triggered: true,
-        triggered-at: block-height,
+        triggered-at: burn-block-height,
         last-updated: current-time,
         last-updated-by: tx-sender
       })
@@ -274,7 +304,7 @@
       event: "circuit-breaker-triggered",
       breaker-name: breaker-name,
       updater: tx-sender,
-      block-height: block-height
+      burn-block-height: burn-block-height
     })
     
     (ok true)
@@ -287,7 +317,7 @@
   (let
     (
       (breaker (unwrap! (map-get? circuit-breakers { breaker-name: breaker-name }) ERR-PARAM-NOT-FOUND))
-      (current-time (get time (unwrap! (block-info?) ERR-INVALID-PARAMETER)))
+      (current-time burn-block-height)
     )
     
     ;; Check system state
@@ -298,7 +328,7 @@
     
     ;; For auto-reset breakers, check if enough blocks have passed
     (if (and (get auto-reset breaker) (get triggered breaker))
-      (asserts! (>= block-height (+ (get triggered-at breaker) (get reset-blocks breaker))) ERR-NOT-AUTHORIZED)
+      (asserts! (>= burn-block-height (+ (get triggered-at breaker) (get reset-blocks breaker))) ERR-NOT-AUTHORIZED)
       true
     )
     
@@ -324,7 +354,7 @@
       event: "circuit-breaker-reset",
       breaker-name: breaker-name,
       updater: tx-sender,
-      block-height: block-height
+      burn-block-height: burn-block-height
     })
     
     (ok true)
@@ -338,7 +368,7 @@
   (let
     (
       (breaker (unwrap! (map-get? circuit-breakers { breaker-name: breaker-name }) ERR-PARAM-NOT-FOUND))
-      (current-time (get time (unwrap! (block-info?) ERR-INVALID-PARAMETER)))
+      (current-time burn-block-height)
       (threshold (get threshold breaker))
     )
     
@@ -386,7 +416,7 @@
       event: "system-status-updated",
       status: new-status,
       updater: tx-sender,
-      block-height: block-height
+      burn-block-height: burn-block-height
     })
     
     (ok new-status)
@@ -400,7 +430,7 @@
   (let
     (
       (check (unwrap! (map-get? health-checks { check-name: check-name }) ERR-PARAM-NOT-FOUND))
-      (current-time (get time (unwrap! (block-info?) ERR-INVALID-PARAMETER)))
+      (current-time burn-block-height)
     )
     
     ;; Check system state
@@ -423,7 +453,7 @@
     
     ;; Check if need to trigger circuit breaker based on health
     (if (and (not status) (>= (+ (get failure-count check) u1) u3))
-      (trigger-circuit-breaker (concat "health-" check-name))
+      (trigger-circuit-breaker (concat "health-" check-name) none)
       (ok true))
   )
 )
@@ -436,8 +466,15 @@
     ;; Check system state
     (asserts! (var-get system-initialized) ERR-NOT-INITIALIZED)
     
-    ;; Check authorization - only admin can update contract addresses
-    (asserts! (is-eq tx-sender (var-get system-admin)) ERR-NOT-AUTHORIZED)
+    ;; Different authorization based on contract type
+    ;; Non-critical contracts can be updated by admin
+    ;; Critical contracts (like governance) require governance approval
+    (if (or (is-eq contract-name "governance") (is-eq contract-name "treasury"))
+      ;; For critical contracts, require governance approval
+      (check-auth AUTH-LEVEL-GOVERNANCE)
+      ;; For other contracts, admin is sufficient
+      (asserts! (is-eq tx-sender (var-get system-admin)) ERR-NOT-AUTHORIZED)
+    )
     
     ;; Update appropriate contract address
     (match contract-name
@@ -458,6 +495,9 @@
         (ok true))
       "guardian" (begin
         (var-set guardian-address address)
+        (ok true))
+      "governance" (begin
+        (var-set governance-address address)
         (ok true))
       (err ERR-INVALID-PARAMETER))
   )
@@ -481,7 +521,7 @@
       event: "admin-transferred",
       old-admin: tx-sender,
       new-admin: new-admin,
-      block-height: block-height
+      burn-block-height: burn-block-height
     })
     
     (ok true)
@@ -554,13 +594,20 @@
 ;; Check if sender has appropriate authorization level
 (define-read-only (has-auth-level (auth-level uint))
   (or
+    ;; Admin always has access
     (is-eq tx-sender (var-get system-admin))
+    ;; Guardian has access to guardian-level or none-level
     (and 
-      (is-eq auth-level AUTH-LEVEL-GUARDIAN)
+      (or (is-eq auth-level AUTH-LEVEL-GUARDIAN) (is-eq auth-level AUTH-LEVEL-NONE))
       (is-eq tx-sender (var-get guardian-address)))
+    ;; Anyone has access to none-level
     (and
       (is-eq auth-level AUTH-LEVEL-NONE)
       true)
+    ;; For governance-level, governance contract has access
+    (and
+      (is-eq auth-level AUTH-LEVEL-GOVERNANCE)
+      (is-eq tx-sender (var-get governance-address)))
   )
 )
 
@@ -580,7 +627,7 @@
         max-value: u1000000,
         default-value: u1000,
         auth-level: AUTH-LEVEL-ADMIN,
-        last-updated: block-height,
+        last-updated: burn-block-height,
         last-updated-by: tx-sender
       }
     )
@@ -594,7 +641,7 @@
         max-value: u43200,
         default-value: u4320,
         auth-level: AUTH-LEVEL-ADMIN,
-        last-updated: block-height,
+        last-updated: burn-block-height,
         last-updated-by: tx-sender
       }
     )
@@ -609,7 +656,7 @@
         max-value: u5000000,
         default-value: u1500000,
         auth-level: AUTH-LEVEL-ADMIN,
-        last-updated: block-height,
+        last-updated: burn-block-height,
         last-updated-by: tx-sender
       }
     )
@@ -623,7 +670,7 @@
         max-value: u1000000,
         default-value: u800000,
         auth-level: AUTH-LEVEL-ADMIN,
-        last-updated: block-height,
+        last-updated: burn-block-height,
         last-updated-by: tx-sender
       }
     )
@@ -638,7 +685,7 @@
         max-value: u100000,
         default-value: u10000,
         auth-level: AUTH-LEVEL-ADMIN,
-        last-updated: block-height,
+        last-updated: burn-block-height,
         last-updated-by: tx-sender
       }
     )
@@ -648,17 +695,425 @@
       { param-name: "min-blocks-between-operations" }
       {
         value: u1,
-        description: u"Minimum blocks between operations for flash loan protection",
+        description: u"Minimum blocks between certain state-changing operations (basic flash loan protection)",
         min-value: u0,
-        max-value: u10,
+        max-value: u1000, ;; Max 1000 blocks delay
         default-value: u1,
         auth-level: AUTH-LEVEL-ADMIN,
-        last-updated: block-height,
+        last-updated: burn-block-height,
         last-updated-by: tx-sender
       }
     )
     
-    ;; Return true to continue
+    ;; Policy Registry Related
+    (map-set system-parameters
+      { param-name: "policy-cancellation-fee-pct" }
+      {
+        value: u50000, ;; 5%
+        description: u"Percentage fee charged on premium for early cancellation (if supported)",
+        min-value: u0,
+        max-value: u1000000, ;; Max 100%
+        default-value: u50000,
+        auth-level: AUTH-LEVEL-ADMIN,
+        last-updated: burn-block-height,
+        last-updated-by: tx-sender
+      }
+    )
+    (map-set system-parameters
+      { param-name: "policy-activation-window-blocks" }
+      {
+        value: u144, ;; ~1 day
+        description: u"Time window in blocks after conditions are met for a user to activate a policy",
+        min-value: u0,
+        max-value: u10080, ;; Max ~10 weeks
+        default-value: u144,
+        auth-level: AUTH-LEVEL-ADMIN,
+        last-updated: burn-block-height,
+        last-updated-by: tx-sender
+      }
+    )
+
+    ;; Liquidity Pool Related
+    (map-set system-parameters
+      { param-name: "withdrawal-delay-blocks" }
+      {
+        value: u144, ;; ~1 day
+        description: u"Cooldown period in blocks required before a provider can withdraw non-locked funds",
+        min-value: u0,
+        max-value: u10080, ;; Max ~10 weeks
+        default-value: u144,
+        auth-level: AUTH-LEVEL-ADMIN,
+        last-updated: burn-block-height,
+        last-updated-by: tx-sender
+      }
+    )
+
+    ;; Oracle Related
+    (map-set system-parameters
+      { param-name: "oracle-max-price-deviation-pct" }
+      {
+        value: u50000, ;; 5%
+        description: u"Maximum allowed deviation percentage between a new price update and the current price",
+        min-value: u0,
+        max-value: u1000000, ;; Max 100%
+        default-value: u50000,
+        auth-level: AUTH-LEVEL-ADMIN,
+        last-updated: burn-block-height,
+        last-updated-by: tx-sender
+      }
+    )
+    (map-set system-parameters
+      { param-name: "oracle-minimum-providers" }
+      {
+        value: u3,
+        description: u"Minimum number of provider submissions required for consensus",
+        min-value: u1,
+        max-value: u10, ;; Max 10 providers
+        default-value: u3,
+        auth-level: AUTH-LEVEL-ADMIN,
+        last-updated: burn-block-height,
+        last-updated-by: tx-sender
+      }
+    )
+    (map-set system-parameters
+      { param-name: "oracle-max-price-age-seconds" }
+      {
+        value: u3600, ;; 1 hour
+        description: u"Maximum age in seconds for oracle price data to be considered valid",
+        min-value: u60, ;; Min 1 minute
+        max-value: u86400, ;; Max 1 day
+        default-value: u3600,
+        auth-level: AUTH-LEVEL-ADMIN,
+        last-updated: burn-block-height,
+        last-updated-by: tx-sender
+      }
+    )
+    (map-set system-parameters
+      { param-name: "oracle-volatility-window-days" }
+      {
+        value: u14,
+        description: u"Lookback period in days for volatility calculation",
+        min-value: u1,
+        max-value: u90, ;; Max 90 days
+        default-value: u14,
+        auth-level: AUTH-LEVEL-ADMIN,
+        last-updated: burn-block-height,
+        last-updated-by: tx-sender
+      }
+    )
+
+    ;; Treasury / Fee Related
+    (map-set system-parameters
+      { param-name: "fee-insurance-fund-pct" }
+      {
+        value: u40000, ;; 4%
+        description: u"Percentage of premium allocated to the Insurance Fund",
+        min-value: u0,
+        max-value: u1000000, ;; Max 100%
+        default-value: u40000,
+        auth-level: AUTH-LEVEL-ADMIN,
+        last-updated: burn-block-height,
+        last-updated-by: tx-sender
+      }
+    )
+    (map-set system-parameters
+      { param-name: "fee-provider-pct" }
+      {
+        value: u950000, ;; 95%
+        description: u"Percentage of premium allocated to the liquidity provider (calculated, ensure sum = 100%)",
+        min-value: u0,
+        max-value: u1000000, ;; Max 100%
+        default-value: u950000,
+        auth-level: AUTH-LEVEL-ADMIN,
+        last-updated: burn-block-height,
+        last-updated-by: tx-sender
+      }
+    )
+    (map-set system-parameters
+      { param-name: "fee-discount-tier1-pct" }
+      {
+        value: u0, ;; 0% for MVP
+        description: u"Fee discount percentage for Tier 1 users",
+        min-value: u0,
+        max-value: u1000000, ;; Max 100%
+        default-value: u0,
+        auth-level: AUTH-LEVEL-ADMIN,
+        last-updated: burn-block-height,
+        last-updated-by: tx-sender
+      }
+    )
+    (map-set system-parameters
+      { param-name: "fee-discount-tier2-pct" }
+      {
+        value: u0, ;; 0% for MVP
+        description: u"Fee discount percentage for Tier 2 users",
+        min-value: u0,
+        max-value: u1000000, ;; Max 100%
+        default-value: u0,
+        auth-level: AUTH-LEVEL-ADMIN,
+        last-updated: burn-block-height,
+        last-updated-by: tx-sender
+      }
+    )
+    (map-set system-parameters
+      { param-name: "fee-discount-threshold-tier1" }
+      {
+        value: u100000000000000, ;; Very high / Effectively disabled for MVP
+        description: u"Threshold (e.g., volume, stake) to qualify for Tier 1 discount",
+        min-value: u0,
+        max-value: u1000000000000000000, ;; Very large number
+        default-value: u100000000000000,
+        auth-level: AUTH-LEVEL-ADMIN,
+        last-updated: burn-block-height,
+        last-updated-by: tx-sender
+      }
+    )
+    (map-set system-parameters
+      { param-name: "fee-discount-threshold-tier2" }
+      {
+        value: u1000000000000000, ;; Very high / Effectively disabled for MVP
+        description: u"Threshold to qualify for Tier 2 discount",
+        min-value: u0,
+        max-value: u10000000000000000000, ;; Even larger number
+        default-value: u1000000000000000,
+        auth-level: AUTH-LEVEL-ADMIN,
+        last-updated: burn-block-height,
+        last-updated-by: tx-sender
+      }
+    )
+
+    ;; Insurance Fund Related
+    (map-set system-parameters
+      { param-name: "insurance-min-fund-size-stx" }
+      {
+        value: u1000000000000, ;; 1M STX
+        description: u"Minimum required capital in the Insurance Fund (STX equivalent)",
+        min-value: u0,
+        max-value: u100000000000000, ;; Max 100M STX
+        default-value: u1000000000000,
+        auth-level: AUTH-LEVEL-ADMIN,
+        last-updated: burn-block-height,
+        last-updated-by: tx-sender
+      }
+    )
+    (map-set system-parameters
+      { param-name: "insurance-target-reserve-ratio-pct" }
+      {
+        value: u50000, ;; 5%
+        description: u"Target fund size relative to total system TVL or risk exposure",
+        min-value: u0,
+        max-value: u1000000, ;; Max 100%
+        default-value: u50000,
+        auth-level: AUTH-LEVEL-ADMIN,
+        last-updated: burn-block-height,
+        last-updated-by: tx-sender
+      }
+    )
+    (map-set system-parameters
+      { param-name: "insurance-utilization-limit-pct" }
+      {
+        value: u250000, ;; 25%
+        description: u"Maximum percentage of the fund usable for a single shortfall event",
+        min-value: u0,
+        max-value: u1000000, ;; Max 100%
+        default-value: u250000,
+        auth-level: AUTH-LEVEL-ADMIN,
+        last-updated: burn-block-height,
+        last-updated-by: tx-sender
+      }
+    )
+
+    ;; Liquidation Engine Related
+    (map-set system-parameters
+      { param-name: "liquidation-threshold-ratio" }
+      {
+        value: u990000, ;; 99%
+        description: u"Collateralization ratio below which liquidation process begins",
+        min-value: u0, ;; Needs careful consideration - setting to 0 min for now
+        max-value: u1000000, ;; Max 100% - Also needs careful consideration
+        default-value: u990000,
+        auth-level: AUTH-LEVEL-ADMIN,
+        last-updated: burn-block-height,
+        last-updated-by: tx-sender
+      }
+    )
+    (map-set system-parameters
+      { param-name: "liquidation-penalty-pct" }
+      {
+        value: u100000, ;; 10%
+        description: u"Penalty percentage applied to collateral during liquidation",
+        min-value: u0,
+        max-value: u1000000, ;; Max 100%
+        default-value: u100000,
+        auth-level: AUTH-LEVEL-ADMIN,
+        last-updated: burn-block-height,
+        last-updated-by: tx-sender
+      }
+    )
+    (map-set system-parameters
+      { param-name: "liquidation-grace-period-blocks" }
+      {
+        value: u144, ;; ~1 day
+        description: u"Blocks allowed for a provider to top up collateral after a margin call",
+        min-value: u0,
+        max-value: u10080, ;; Max ~10 weeks
+        default-value: u144,
+        auth-level: AUTH-LEVEL-ADMIN,
+        last-updated: burn-block-height,
+        last-updated-by: tx-sender
+      }
+    )
+    (map-set system-parameters
+      { param-name: "liquidation-partial-pct" }
+      {
+        value: u500000, ;; 50%
+        description: u"Percentage of position liquidated during a partial liquidation event",
+        min-value: u0,
+        max-value: u1000000, ;; Max 100%
+        default-value: u500000,
+        auth-level: AUTH-LEVEL-ADMIN,
+        last-updated: burn-block-height,
+        last-updated-by: tx-sender
+      }
+    )
+
+    ;; Governance Related
+    (map-set system-parameters
+      { param-name: "gov-proposal-threshold" }
+      {
+        value: u1000000000000, ;; Example: 1M tokens
+        description: u"Minimum governance token balance required to create a proposal",
+        min-value: u0,
+        max-value: u10000000000000000000, ;; Very large number
+        default-value: u1000000000000,
+        auth-level: AUTH-LEVEL-ADMIN,
+        last-updated: burn-block-height,
+        last-updated-by: tx-sender
+      }
+    )
+    (map-set system-parameters
+      { param-name: "gov-proposal-period-blocks" }
+      {
+        value: u1008, ;; ~7 days
+        description: u"Duration of the voting period for proposals in blocks",
+        min-value: u144, ;; Min 1 day
+        max-value: u40320, ;; Max ~40 weeks
+        default-value: u1008,
+        auth-level: AUTH-LEVEL-ADMIN,
+        last-updated: burn-block-height,
+        last-updated-by: tx-sender
+      }
+    )
+    (map-set system-parameters
+      { param-name: "gov-quorum-pct" }
+      {
+        value: u200000, ;; 20%
+        description: u"Minimum percentage of total voting power required to participate for a vote to be valid",
+        min-value: u0,
+        max-value: u1000000, ;; Max 100%
+        default-value: u200000,
+        auth-level: AUTH-LEVEL-ADMIN,
+        last-updated: burn-block-height,
+        last-updated-by: tx-sender
+      }
+    )
+    (map-set system-parameters
+      { param-name: "gov-pass-threshold-pct" }
+      {
+        value: u510000, ;; 51%
+        description: u"Minimum percentage of participating voting power voting 'YES' for a proposal to pass",
+        min-value: u0,
+        max-value: u1000000, ;; Max 100%
+        default-value: u510000,
+        auth-level: AUTH-LEVEL-ADMIN,
+        last-updated: burn-block-height,
+        last-updated-by: tx-sender
+      }
+    )
+    (map-set system-parameters
+      { param-name: "gov-timelock-delay-blocks" }
+      {
+        value: u288, ;; ~2 days
+        description: u"Delay in blocks between proposal passing and execution",
+        min-value: u0,
+        max-value: u10080, ;; Max ~10 weeks
+        default-value: u288,
+        auth-level: AUTH-LEVEL-ADMIN,
+        last-updated: burn-block-height,
+        last-updated-by: tx-sender
+      }
+    )
+
+    ;; P2P Marketplace Related
+    (map-set system-parameters
+      { param-name: "p2p-listing-fee" }
+      {
+        value: u0, ;; 0 for MVP
+        description: u"Fee to list an offer on the P2P marketplace (STX satoshis)",
+        min-value: u0,
+        max-value: u10000000000, ;; Max 100 STX
+        default-value: u0,
+        auth-level: AUTH-LEVEL-ADMIN,
+        last-updated: burn-block-height,
+        last-updated-by: tx-sender
+      }
+    )
+    (map-set system-parameters
+      { param-name: "p2p-match-fee-pct" }
+      {
+        value: u5000, ;; 0.5%
+        description: u"Percentage fee charged on matched P2P premium",
+        min-value: u0,
+        max-value: u1000000, ;; Max 100%
+        default-value: u5000,
+        auth-level: AUTH-LEVEL-ADMIN,
+        last-updated: burn-block-height,
+        last-updated-by: tx-sender
+      }
+    )
+
+    ;; Dispute Resolution Related
+    (map-set system-parameters
+      { param-name: "dispute-filing-window-blocks" }
+      {
+        value: u1008, ;; ~7 days
+        description: u"Time window in blocks allowed to file a dispute after an event",
+        min-value: u144, ;; Min 1 day
+        max-value: u10080, ;; Max ~10 weeks
+        default-value: u1008,
+        auth-level: AUTH-LEVEL-ADMIN,
+        last-updated: burn-block-height,
+        last-updated-by: tx-sender
+      }
+    )
+    (map-set system-parameters
+      { param-name: "dispute-resolution-timeframe-blocks" }
+      {
+        value: u2016, ;; ~14 days
+        description: u"Maximum time in blocks allocated for resolving a dispute",
+        min-value: u144, ;; Min 1 day
+        max-value: u40320, ;; Max ~40 weeks
+        default-value: u2016,
+        auth-level: AUTH-LEVEL-ADMIN,
+        last-updated: burn-block-height,
+        last-updated-by: tx-sender
+      }
+    )
+    (map-set system-parameters
+      { param-name: "dispute-deposit-stx" }
+      {
+        value: u10000000, ;; 10 STX
+        description: u"Deposit amount in STX satoshis required to file a dispute",
+        min-value: u0,
+        max-value: u10000000000, ;; Max 100 STX
+        default-value: u10000000,
+        auth-level: AUTH-LEVEL-ADMIN,
+        last-updated: burn-block-height,
+        last-updated-by: tx-sender
+      }
+    )
+
+    ;; Return true to continue initialization
     true
   )
 )
@@ -672,7 +1127,7 @@
         enabled: true,
         description: u"Whether users can create new policies",
         auth-level: AUTH-LEVEL-ADMIN,
-        last-updated: block-height,
+        last-updated: burn-block-height,
         last-updated-by: tx-sender
       }
     )
@@ -683,7 +1138,7 @@
         enabled: true,
         description: u"Whether users can activate/exercise policies",
         auth-level: AUTH-LEVEL-ADMIN,
-        last-updated: block-height,
+        last-updated: burn-block-height,
         last-updated-by: tx-sender
       }
     )
@@ -694,7 +1149,7 @@
         enabled: true,
         description: u"Whether liquidity providers can deposit collateral",
         auth-level: AUTH-LEVEL-ADMIN,
-        last-updated: block-height,
+        last-updated: burn-block-height,
         last-updated-by: tx-sender
       }
     )
@@ -705,7 +1160,7 @@
         enabled: true,
         description: u"Whether liquidity providers can withdraw collateral",
         auth-level: AUTH-LEVEL-ADMIN,
-        last-updated: block-height,
+        last-updated: burn-block-height,
         last-updated-by: tx-sender
       }
     )
@@ -716,7 +1171,7 @@
         enabled: true,
         description: u"Whether liquidity providers can claim yield",
         auth-level: AUTH-LEVEL-ADMIN,
-        last-updated: block-height,
+        last-updated: burn-block-height,
         last-updated-by: tx-sender
       }
     )
@@ -741,7 +1196,7 @@
         auto-reset: false,
         reset-blocks: u0,
         triggered-at: u0,
-        last-updated: block-height,
+        last-updated: burn-block-height,
         last-updated-by: tx-sender
       }
     )
@@ -758,7 +1213,7 @@
         auto-reset: true,
         reset-blocks: u288,
         triggered-at: u0,
-        last-updated: block-height,
+        last-updated: burn-block-height,
         last-updated-by: tx-sender
       }
     )
@@ -775,7 +1230,7 @@
         auto-reset: true,
         reset-blocks: u144,
         triggered-at: u0,
-        last-updated: block-height,
+        last-updated: burn-block-height,
         last-updated-by: tx-sender
       }
     )
@@ -792,7 +1247,7 @@
         auto-reset: false,
         reset-blocks: u0,
         triggered-at: u0,
-        last-updated: block-height,
+        last-updated: burn-block-height,
         last-updated-by: tx-sender
       }
     )
@@ -810,7 +1265,7 @@
       {
         status: true,
         description: u"Check if oracle data is fresh",
-        last-checked: block-height,
+        last-checked: burn-block-height,
         failure-count: u0,
         auth-level: AUTH-LEVEL-GUARDIAN
       }
@@ -821,7 +1276,7 @@
       {
         status: true,
         description: u"Check if liquidity ratio is adequate",
-        last-checked: block-height,
+        last-checked: burn-block-height,
         failure-count: u0,
         auth-level: AUTH-LEVEL-GUARDIAN
       }
@@ -832,7 +1287,7 @@
       {
         status: true,
         description: u"Check if all system contracts are responsive",
-        last-checked: block-height,
+        last-checked: burn-block-height,
         failure-count: u0,
         auth-level: AUTH-LEVEL-GUARDIAN
       }
@@ -848,13 +1303,20 @@
   (begin
     (asserts! 
       (or
+        ;; Admin always has access
         (is-eq tx-sender (var-get system-admin))
+        ;; Guardian has access to guardian-level functions
         (and 
           (is-eq required-level AUTH-LEVEL-GUARDIAN)
           (is-eq tx-sender (var-get guardian-address)))
+        ;; Anyone has access to public functions
         (and
           (is-eq required-level AUTH-LEVEL-NONE)
           true)
+        ;; For governance-level actions, check if sender is governance contract
+        (and
+          (is-eq required-level AUTH-LEVEL-GOVERNANCE)
+          (is-eq tx-sender (var-get governance-address)))
       )
       ERR-NOT-AUTHORIZED)
     true
@@ -883,7 +1345,7 @@
 (define-private (check-flash-loan-protection)
   (let
     (
-      (current-time (get time (unwrap! (block-info?) ERR-INVALID-PARAMETER)))
+      (current-time burn-block-height)
       (min-time-diff (unwrap-panic (get-parameter "min-blocks-between-operations")))
       (last-time (var-get last-operation-timestamp))
     )
