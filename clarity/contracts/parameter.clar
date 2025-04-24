@@ -139,6 +139,39 @@
   }
 )
 
+;; Parameter change history (tracks all parameter changes)
+(define-map parameter-change-history
+  { 
+    param-name: (string-ascii 50),
+    change-id: uint 
+  }
+  {
+    previous-value: uint,
+    new-value: uint,
+    timestamp: uint,
+    change-by: principal,
+    proposal-id: (optional uint)
+  }
+)
+
+;; Feature flag change history (tracks all feature flag changes)
+(define-map feature-flag-change-history
+  { 
+    flag-name: (string-ascii 50),
+    change-id: uint 
+  }
+  {
+    previous-status: bool,
+    new-status: bool,
+    timestamp: uint,
+    change-by: principal,
+    proposal-id: (optional uint)
+  }
+)
+
+;; Counter for history entry IDs
+(define-data-var history-counter uint u0)
+
 ;; public functions
 ;;
 
@@ -177,11 +210,14 @@
 ;; Set system parameter
 (define-public (set-parameter 
     (param-name (string-ascii 50))
-    (value uint))
+    (value uint)
+    (proposal-id (optional uint)))
   (let
     (
       (param (unwrap! (map-get? system-parameters { param-name: param-name }) ERR-PARAM-NOT-FOUND))
       (current-time burn-block-height)
+      (current-value (get value param))
+      (change-id (var-get history-counter))
     )
     
     ;; Check system state
@@ -196,6 +232,21 @@
     
     ;; Validate parameter bounds
     (asserts! (and (>= value (get min-value param)) (<= value (get max-value param))) ERR-INVALID-PARAMETER)
+    
+    ;; Record parameter change in history
+    (map-set parameter-change-history
+      { param-name: param-name, change-id: change-id }
+      {
+        previous-value: current-value,
+        new-value: value,
+        timestamp: current-time,
+        change-by: tx-sender,
+        proposal-id: proposal-id
+      }
+    )
+    
+    ;; Increment history counter
+    (var-set history-counter (+ change-id u1))
     
     ;; Update parameter
     (map-set system-parameters
@@ -215,7 +266,8 @@
       event: "parameter-updated",
       param-name: param-name,
       value: value,
-      updater: tx-sender
+      updater: tx-sender,
+      proposal-id: proposal-id
     })
     
     (ok value)
@@ -225,11 +277,14 @@
 ;; Set feature flag
 (define-public (set-feature-flag
     (flag-name (string-ascii 50))
-    (enabled bool))
+    (enabled bool)
+    (proposal-id (optional uint)))
   (let
     (
       (flag (unwrap! (map-get? feature-flags { flag-name: flag-name }) ERR-PARAM-NOT-FOUND))
       (current-time burn-block-height)
+      (current-status (get enabled flag))
+      (change-id (var-get history-counter))
     )
     
     ;; Check system state
@@ -241,6 +296,21 @@
     
     ;; Check flash loan protection
     (check-flash-loan-protection)
+    
+    ;; Record feature flag change in history
+    (map-set feature-flag-change-history
+      { flag-name: flag-name, change-id: change-id }
+      {
+        previous-status: current-status,
+        new-status: enabled,
+        timestamp: current-time,
+        change-by: tx-sender,
+        proposal-id: proposal-id
+      }
+    )
+    
+    ;; Increment history counter
+    (var-set history-counter (+ change-id u1))
     
     ;; Update feature flag
     (map-set feature-flags
@@ -260,7 +330,8 @@
       event: "feature-flag-updated",
       flag-name: flag-name,
       enabled: enabled,
-      updater: tx-sender
+      updater: tx-sender,
+      proposal-id: proposal-id
     })
     
     (ok enabled)
@@ -473,7 +544,7 @@
       ;; For critical contracts, require governance approval
       (check-auth AUTH-LEVEL-GOVERNANCE)
       ;; For other contracts, admin is sufficient
-      (asserts! (is-eq tx-sender (var-get system-admin)) ERR-NOT-AUTHORIZED)
+    (asserts! (is-eq tx-sender (var-get system-admin)) ERR-NOT-AUTHORIZED)
     )
     
     ;; Update appropriate contract address
@@ -611,13 +682,59 @@
   )
 )
 
+;; Get parameter change history entry by ID
+(define-read-only (get-parameter-change-entry (param-name (string-ascii 50)) (change-id uint))
+  (map-get? parameter-change-history { param-name: param-name, change-id: change-id })
+)
+
+;; Get feature flag change history entry by ID
+(define-read-only (get-feature-flag-change-entry (flag-name (string-ascii 50)) (change-id uint))
+  (map-get? feature-flag-change-history { flag-name: flag-name, change-id: change-id })
+)
+
+;; Get the most recent parameter change
+(define-read-only (get-last-parameter-change (param-name (string-ascii 50)))
+  (let
+    (
+      (history-count (var-get history-counter))
+    )
+    (if (> history-count u0)
+      (map-get? parameter-change-history 
+        { param-name: param-name, change-id: (- history-count u1) })
+      none
+    )
+  )
+)
+
+;; Get the most recent feature flag change
+(define-read-only (get-last-feature-flag-change (flag-name (string-ascii 50)))
+  (let
+    (
+      (history-count (var-get history-counter))
+    )
+    (if (> history-count u0)
+      (map-get? feature-flag-change-history 
+        { flag-name: flag-name, change-id: (- history-count u1) })
+      none
+    )
+  )
+)
+
+;; Get latest history counter (useful for pagination)
+(define-read-only (get-history-counter)
+  (var-get history-counter)
+)
+
 ;; private functions
 ;;
 
 ;; Initialize default parameters
 (define-private (initialize-default-parameters)
   (begin
-    ;; Policy parameters
+    ;; Initialize the history counter
+    (var-set history-counter u0)
+    
+    ;; Set default system parameters
     (map-set system-parameters
       { param-name: "policy-min-premium" }
       {
@@ -1319,7 +1436,7 @@
           (is-eq tx-sender (var-get governance-address)))
       )
       ERR-NOT-AUTHORIZED)
-    true
+    (ok true)
   )
 )
 

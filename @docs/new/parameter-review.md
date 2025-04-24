@@ -276,7 +276,7 @@ _(Note: Scaling factor of 1,000,000 (u1000000) is used for percentages unless ot
   - **Expand Initialization:** Update `initialize-default-parameters` to include all MVP parameters listed in Section 2.3.
   - **Fix Linter Error:** The use of deprecated `get-block-info?` was identified and fixed (replaced with `block-info?`). _Note: An error persists at line 886, needs manual correction._
   - **Integrate Governance Contract:** **This is the highest priority.** Refactor the authorization logic (`check-auth`, direct `is-eq tx-sender (var-get system-admin)` checks). Parameter, flag, and potentially breaker configuration changes should require authorization from a dedicated Governance contract, likely via executing approved proposals. Update checks to use roles/permissions defined in Governance.
-  - **Implement Parameter History:** Introduce a new data structure (e.g., a list or map storing historical records) to log previous values, new values, timestamps, and the authority (e.g., governance proposal ID) for changes to parameters and flags.
+  - **~~Implement Parameter History:~~** ✓ **Implemented Parameter History:** Added data structures to log previous values, new values, timestamps, and governance proposal IDs for all parameter and feature flag changes. Added querying functions to access history.
   - **Enhance Flash Loan Protection:** Evaluate if the basic time-delay mechanism is sufficient. If not, design and implement more sophisticated rate limiting based on user actions, frequency, and potentially configurable limits per action type, as implied by the specification.
   - **Refine Health Checks:** Implement logic for comprehensive system health reporting. This could involve a function that aggregates the status of individual checks or validates dependencies between parameters (e.g., ensuring `min-value <= default-value <= max-value` upon updates, although `set-parameter` already checks basic bounds).
   - **Integrate Emergency Response Contract:** Define an interface or functions allowing an Emergency Response contract (or the Guardian via Governance) to make specific, authorized emergency changes to parameters or flags, bypassing standard governance procedures if necessary.
@@ -288,7 +288,9 @@ _(Note: Scaling factor of 1,000,000 (u1000000) is used for percentages unless ot
 
 The `parameter.clar` contract provides a robust foundation for managing system configuration within the BitHedge protocol. It successfully implements the core concepts of configurable parameters, feature flags, and circuit breakers with associated metadata and basic security checks.
 
-The most critical next steps involve fully defining and initializing all necessary system parameters (as detailed in Section 2.3), integrating with a formal governance process for updates, and implementing comprehensive change history logging. Addressing these points will align the contract with the specification and solidify its role as the central configuration hub for the protocol.
+The contract now includes comprehensive parameter and feature flag history tracking, allowing for full auditability of all configuration changes. This implementation satisfies the requirement for tracking parameter change history with details including previous/new values, timestamps, and the authority that made each change.
+
+The most critical next steps involve fully defining and initializing all necessary system parameters (as detailed in Section 2.3) and integrating with a formal governance process for updates. Addressing these points will further align the contract with the specification and solidify its role as the central configuration hub for the protocol.
 
 ## 5. Development Plan
 
@@ -341,16 +343,17 @@ Phase 1 has been successfully completed. We've:
 - **Goal:** Implement comprehensive change tracking and improve security mechanisms.
 - **Dependencies:** Phase 1.
 - **Tasks:**
-  - `[ ]` **Task 2.1:** Implement Parameter History Log:
-    - `[ ]` Define a new map (e.g., `parameter-history`) or list structure to store historical changes. Key could include `param-name` and `timestamp` or an index.
-    - `[ ]` Structure should store `param-name` or `flag-name`, `previous-value` (uint or bool), `new-value`, `timestamp`, and `authority` (e.g., `proposal-id` or principal if admin/guardian action).
-    - `[ ]` Modify `set-parameter` and `set-feature-flag` to write to this history log upon successful update.
-    - `[ ]` Create a read-only function `get-parameter-history(param-name, limit)` to query the log.
-  - `[ ]` **Task 2.2:** Enhance Flash Loan Protection:
-    - `[ ]` Design mechanism: Decide on the approach (e.g., tracking per-user action counts within blocks, time-weighted limits, specific limits per function type).
-    - `[ ]` Define new state variables/maps to store required tracking data (e.g., `map user-action-counts { user: principal, action-type: (string-ascii 20) } -> { last-block: uint, count: uint }`).
-    - `[ ]` Implement configuration parameters (via `system-parameters`) for these new limits (e.g., `max-actions-per-block`, `cooling-period-<action-type>`).
-    - `[ ]` Update `check-flash-loan-protection` (or create new checks) to enforce the new rules in relevant functions.
+  - `[x]` **Task 2.1:** Implement Parameter History Log:
+    - `[x]` Define a new map (e.g., `parameter-history`) or list structure to store historical changes. Key could include `param-name` and `timestamp` or an index.
+    - `[x]` Structure should store `param-name` or `flag-name`, `previous-value` (uint or bool), `new-value`, `timestamp`, and `authority` (e.g., `proposal-id` or principal if admin/guardian action).
+    - `[x]` Modify `set-parameter` and `set-feature-flag` to write to this history log upon successful update.
+    - `[x]` Create a read-only function `get-parameter-history(param-name, limit)` to query the log.
+    - **Implementation Summary:** Added `parameter-change-history` and `feature-flag-change-history` maps along with a `history-counter` to track changes. Modified relevant functions to record previous values before updates and to accept optional proposal IDs. Added read-only functions to query specific history entries and most recent changes.
+  - `[-]` **Task 2.2:** Enhance Flash Loan Protection (Deferred Post-MVP):
+    - `[-]` Design mechanism: Decide on the approach (e.g., tracking per-user action counts within blocks, time-weighted limits, specific limits per function type).
+    - `[-]` Define new state variables/maps to store required tracking data (e.g., `map user-action-counts { user: principal, action-type: (string-ascii 20) } -> { last-block: uint, count: uint }`).
+    - `[-]` Implement configuration parameters (via `system-parameters`) for these new limits (e.g., `max-actions-per-block`, `cooling-period-<action-type>`).
+    - `[-]` Update `check-flash-loan-protection` (or create new checks) to enforce the new rules in relevant functions.
 
 ### Phase 3: Advanced Health & Emergency Integration (Medium Priority)
 

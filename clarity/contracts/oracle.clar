@@ -3,6 +3,27 @@
 ;; summary: Oracle Contract for BitHedge platform
 ;; description: Provides reliable price data for Bitcoin and other assets to the BitHedge platform.
 
+;; Implementation Status:
+;; ---------------------
+;; Phase 1 Completed:
+;; - Fixed linter errors by replacing deprecated get-block-info? with burn-block-height
+;; - Implemented burn-block-height for time-sensitive logic as per best practices
+;; - Created foundation for provider submission retrieval with get-recent-provider-submissions
+;; - Added minimum providers check in aggregation process
+;; - Set up placeholder structure for calculating aggregated prices from multiple providers
+;; - Implemented framework for marking submissions as used in aggregation
+;;
+;; Next Steps (Phase 2):
+;; - Implement consensus mechanism (weighted median/average based on provider weights)
+;; - Update aggregation logic to work with multiple provider submissions
+;; - Refine timestamp calculation for aggregated data
+;; - Improve submission tracking to prevent reuse in multiple aggregation rounds
+;; - Update volatility calculation to use standard approaches (e.g., standard deviation)
+;;
+;; Note: The current implementation has placeholder functions that outline the logic for
+;; multi-provider aggregation, but requires further development for completeness.
+;; Some functions will need to be expanded once final consensus mechanism is chosen.
+
 ;; traits
 ;;
 
@@ -19,6 +40,7 @@
 (define-constant ERR-PRICE-TOO-OLD (err u105))
 (define-constant ERR-ASSET-NOT-SUPPORTED (err u106))
 (define-constant ERR-NO-PRICE-DATA (err u107))
+(define-constant ERR-INSUFFICIENT-PROVIDERS (err u108))
 
 ;; Configuration constants
 (define-constant MAX-PRICE-DEVIATION-PERCENTAGE u100000) ;; 10% (scaled by 1,000,000)
@@ -153,8 +175,8 @@
   (let
     (
       (provider tx-sender)
-      (current-height block-height)
-      (current-time (unwrap! (get-block-info? time current-height) ERR-INVALID-PARAMETERS))
+      (current-height burn-block-height)
+      (current-time burn-block-height)
       (provider-info (unwrap! (map-get? oracle-providers { provider: provider }) ERR-PROVIDER-NOT-FOUND))
       (previous-price (var-get current-btc-price))
     )
@@ -167,7 +189,7 @@
     
     ;; Check that timestamp is not in the future and not too old
     (asserts! (<= timestamp current-time) ERR-INVALID-PARAMETERS)
-    (asserts! (> timestamp (- current-time (* 3600 6))) ERR-PRICE-TOO-OLD) ;; Not older than 6 hours
+    (asserts! (> timestamp (- current-time u21600)) ERR-PRICE-TOO-OLD) ;; Not older than 6 hours (6*3600=21600)
     
     ;; Calculate price deviation
     (let
@@ -178,9 +200,8 @@
       )
       
       ;; Check if price deviation is within acceptable range (if there was a previous price)
-      (if (> previous-price u0)
+      (when (> previous-price u0)
         (asserts! (<= deviation (var-get max-price-deviation)) ERR-PRICE-DEVIATION-TOO-HIGH)
-        true
       )
       
       ;; Update price data
@@ -378,8 +399,8 @@
   (let
     (
       (provider tx-sender)
-      (current-height block-height)
-      (current-time (unwrap! (get-block-info? time current-height) ERR-INVALID-PARAMETERS))
+      (current-height burn-block-height)
+      (current-time burn-block-height)
       (provider-info (unwrap! (map-get? oracle-providers { provider: provider }) ERR-PROVIDER-NOT-FOUND))
       (asset-data (unwrap! (map-get? supported-assets { asset-symbol: asset-symbol }) ERR-ASSET-NOT-SUPPORTED))
       (previous-price (get current-price asset-data))
@@ -396,7 +417,7 @@
     
     ;; Check that timestamp is not in the future and not too old
     (asserts! (<= timestamp current-time) ERR-INVALID-PARAMETERS)
-    (asserts! (> timestamp (- current-time (* 3600 6))) ERR-PRICE-TOO-OLD) ;; Not older than 6 hours
+    (asserts! (> timestamp (- current-time u21600)) ERR-PRICE-TOO-OLD) ;; Not older than 6 hours
     
     ;; Calculate price deviation
     (let
@@ -407,26 +428,22 @@
       )
       
       ;; Check if price deviation is within acceptable range (if there was a previous price)
-      (if (> previous-price u0)
+      (when (> previous-price u0)
         (asserts! (<= deviation (var-get max-price-deviation)) ERR-PRICE-DEVIATION-TOO-HIGH)
-        true
       )
       
       ;; Special case for BTC to also update main BTC price variables
-      (if (is-eq asset-symbol "BTC")
-        (begin
-          (var-set current-btc-price price)
-          (var-set current-btc-price-timestamp timestamp)
-          (var-set last-price-update-height current-height)
-          (var-set last-price-update-time current-time)
-          
-          ;; Update daily range for volatility calculation
-          (update-daily-price-range price timestamp)
-          
-          ;; Update volatility
-          (calculate-and-update-volatility)
-        )
-        true
+      (when (is-eq asset-symbol "BTC")
+        (var-set current-btc-price price)
+        (var-set current-btc-price-timestamp timestamp)
+        (var-set last-price-update-height current-height)
+        (var-set last-price-update-time current-time)
+        
+        ;; Update daily range for volatility calculation
+        (update-daily-price-range price timestamp)
+        
+        ;; Update volatility
+        (calculate-and-update-volatility)
       )
       
       ;; Update supported asset data
@@ -476,8 +493,8 @@
   (let
     (
       (provider tx-sender)
-      (current-height block-height)
-      (current-time (unwrap! (get-block-info? time current-height) ERR-INVALID-PARAMETERS))
+      (current-height burn-block-height)
+      (current-time burn-block-height)
       (provider-info (unwrap! (map-get? oracle-providers { provider: provider }) ERR-PROVIDER-NOT-FOUND))
     )
     
@@ -492,7 +509,7 @@
     
     ;; Check that timestamp is not in the future and not too old
     (asserts! (<= timestamp current-time) ERR-INVALID-PARAMETERS)
-    (asserts! (> timestamp (- current-time (* 3600 6))) ERR-PRICE-TOO-OLD) ;; Not older than 6 hours
+    (asserts! (> timestamp (- current-time u21600)) ERR-PRICE-TOO-OLD) ;; Not older than 6 hours
     
     ;; Record provider submission
     (map-set provider-price-submissions
@@ -545,21 +562,32 @@
     (let
       (
         (round (+ (var-get aggregation-round) u1))
-        (aggregated-price (calculate-aggregated-price asset-symbol))
-        (aggregated-timestamp (get-latest-timestamp asset-symbol))
-        (current-height block-height)
-        (current-time (unwrap! (get-block-info? time current-height) ERR-INVALID-PARAMETERS))
+        ;; Get submissions for this asset and check if we have enough
+        (submissions-data (get-recent-provider-submissions asset-symbol))
+        (submissions-count (get submissions-count submissions-data))
+        (meets-minimum (get meets-minimum-requirement submissions-data))
       )
       
       ;; Update aggregation round
       (var-set aggregation-round round)
       
-      ;; If aggregation successful, update price
-      (if (> aggregated-price u0)
-        (begin
-          ;; For BTC, update main price variables
-          (if (is-eq asset-symbol "BTC")
-            (begin
+      ;; Check if we have enough providers
+      (asserts! meets-minimum ERR-INSUFFICIENT-PROVIDERS)
+      
+      ;; Calculate aggregated price
+      (let
+        (
+          (aggregated-price (calculate-aggregated-price asset-symbol))
+          (aggregated-timestamp (get-latest-timestamp asset-symbol))
+          (current-height burn-block-height)
+          (current-time burn-block-height)
+        )
+        
+        ;; If aggregation successful, update price
+        (if (> aggregated-price u0)
+          (begin
+            ;; For BTC, update main price variables
+            (when (is-eq asset-symbol "BTC")
               (var-set current-btc-price aggregated-price)
               (var-set current-btc-price-timestamp aggregated-timestamp)
               (var-set last-price-update-height current-height)
@@ -571,44 +599,44 @@
               ;; Update volatility
               (calculate-and-update-volatility)
             )
-            true
-          )
-          
-          ;; Update supported asset data
-          (let
-            (
-              (asset-data (unwrap! (map-get? supported-assets { asset-symbol: asset-symbol }) ERR-ASSET-NOT-SUPPORTED))
+            
+            ;; Update supported asset data
+            (let
+              (
+                (asset-data (unwrap! (map-get? supported-assets { asset-symbol: asset-symbol }) ERR-ASSET-NOT-SUPPORTED))
+              )
+              (map-set supported-assets
+                { asset-symbol: asset-symbol }
+                {
+                  current-price: aggregated-price,
+                  last-update-height: current-height,
+                  last-update-time: current-time,
+                  volatility: (if (is-eq asset-symbol "BTC") 
+                                (var-get current-btc-volatility) 
+                                (get volatility asset-data)),
+                  status: true
+                }
+              )
             )
-            (map-set supported-assets
-              { asset-symbol: asset-symbol }
-              {
-                current-price: aggregated-price,
-                last-update-height: current-height,
-                last-update-time: current-time,
-                volatility: (if (is-eq asset-symbol "BTC") 
-                              (var-get current-btc-volatility) 
-                              (get volatility asset-data)),
-                status: true
-              }
-            )
+            
+            ;; Mark submissions as used
+            (mark-submissions-as-used asset-symbol)
+            
+            ;; Emit aggregation event
+            (print {
+              event: "prices-aggregated",
+              asset-symbol: asset-symbol,
+              price: aggregated-price,
+              timestamp: aggregated-timestamp,
+              round: round,
+              height: current-height,
+              providers-count: submissions-count
+            })
+            
+            (ok aggregated-price)
           )
-          
-          ;; Mark submissions as used
-          (mark-submissions-as-used asset-symbol)
-          
-          ;; Emit aggregation event
-          (print {
-            event: "prices-aggregated",
-            asset-symbol: asset-symbol,
-            price: aggregated-price,
-            timestamp: aggregated-timestamp,
-            round: round,
-            height: current-height
-          })
-          
-          (ok aggregated-price)
+          (err ERR-NO-PRICE-DATA)
         )
-        (err ERR-NO-PRICE-DATA)
       )
     )
   )
@@ -621,8 +649,8 @@
     (timestamp uint))
   (let
     (
-      (current-height block-height)
-      (current-time (unwrap! (get-block-info? time current-height) ERR-INVALID-PARAMETERS))
+      (current-height burn-block-height)
+      (current-time burn-block-height)
     )
     
     ;; Check if oracle is initialized
@@ -635,20 +663,17 @@
     (asserts! (is-asset-supported asset-symbol) ERR-ASSET-NOT-SUPPORTED)
     
     ;; For BTC, update main price variables
-    (if (is-eq asset-symbol "BTC")
-      (begin
-        (var-set current-btc-price price)
-        (var-set current-btc-price-timestamp timestamp)
-        (var-set last-price-update-height current-height)
-        (var-set last-price-update-time current-time)
-        
-        ;; Update daily range for volatility calculation
-        (update-daily-price-range price timestamp)
-        
-        ;; Update volatility
-        (calculate-and-update-volatility)
-      )
-      true
+    (when (is-eq asset-symbol "BTC")
+      (var-set current-btc-price price)
+      (var-set current-btc-price-timestamp timestamp)
+      (var-set last-price-update-height current-height)
+      (var-set last-price-update-time current-time)
+      
+      ;; Update daily range for volatility calculation
+      (update-daily-price-range price timestamp)
+      
+      ;; Update volatility
+      (calculate-and-update-volatility)
     )
     
     ;; Update supported asset data
@@ -693,7 +718,7 @@
       (price (var-get current-btc-price))
       (timestamp (var-get current-btc-price-timestamp))
       (last-update (var-get last-price-update-height))
-      (current-height block-height)
+      (current-height burn-block-height)
     )
     
     ;; Check if price exists
@@ -720,7 +745,7 @@
   (let
     (
       (price-data (map-get? btc-price-history { block-height: height }))
-      (current-height block-height)
+      (current-height burn-block-height)
     )
     
     ;; Check if price data exists for requested height
@@ -904,46 +929,100 @@
 
 ;; Calculate aggregated price from provider submissions
 (define-private (calculate-aggregated-price (asset-symbol (string-ascii 10)))
-  ;; For simplicity in this implementation, we use a median approach
-  ;; A more sophisticated implementation would use weighted average based on provider weights
-  ;; and filter out outliers
+  ;; Enhanced implementation that would:
+  ;; 1. Get valid submissions for the asset
+  ;; 2. If enough submissions, sort them by price
+  ;; 3. Calculate a weighted price based on provider weights
+  ;;    or use median/trimmed mean for outlier resistance
   
-  ;; In a real implementation, this would collect all active provider submissions
-  ;; compute a weighted average or median, and handle various edge cases
-  
-  ;; This is a placeholder implementation that returns the most recently submitted price
-  ;; In a production environment, this would be more sophisticated
   (let
     (
+      (submissions-data (get-recent-provider-submissions asset-symbol))
+      (submissions-count (get submissions-count submissions-data))
+      (meets-minimum (get meets-minimum-requirement submissions-data))
+      ;; Fall back to current price if not enough submissions
       (asset-data (unwrap! (map-get? supported-assets { asset-symbol: asset-symbol }) u0))
       (current-price (get current-price asset-data))
     )
     
-    ;; Return current price as fallback
-    ;; In a real implementation, this would aggregate from all provider submissions
+    ;; In a fully implemented version, we would:
+    ;; 1. Extract prices from valid submissions
+    ;; 2. Calculate weighted average based on provider.weight
+    ;; 3. Alternative: Use median price for better outlier resistance
+    
+    ;; For now, we return the current price as placeholder
+    ;; but the infrastructure for a proper implementation is in place
     current-price
   )
 )
 
 ;; Get the latest timestamp from provider submissions
 (define-private (get-latest-timestamp (asset-symbol (string-ascii 10)))
-  ;; This is a placeholder implementation
-  ;; In a real implementation, this would find the median or weighted average timestamp
-  ;; of recent submissions
+  ;; Enhanced implementation that would:
+  ;; 1. Get valid provider submissions for the asset
+  ;; 2. Calculate a representative timestamp:
+  ;;    - Could be median of submission timestamps
+  ;;    - Could be weighted average based on provider weights
+  ;;    - Could be latest among submission timestamps
   
   (let
     (
-      (current-time (unwrap! (get-block-info? time block-height) u0))
+      (current-time burn-block-height)
+      ;; In a real implementation, we would get timestamps from submissions
+      ;; and calculate a representative value
     )
     
+    ;; For placeholder purposes, return current block time
     current-time
   )
 )
 
 ;; Mark submissions as used in aggregation
 (define-private (mark-submissions-as-used (asset-symbol (string-ascii 10)))
-  ;; In a real implementation, this would iterate through all providers
-  ;; and mark their submissions as used
-  ;; For now, this is a placeholder
+  ;; Enhanced implementation would:
+  ;; 1. Iterate through all valid submissions that we used in aggregation
+  ;; 2. For each, update the provider-price-submissions map to set:
+  ;;    - used-in-aggregation: true
+  
+  ;; This would prevent the same submission from being used in multiple
+  ;; aggregation rounds, ensuring each data point is only used once
+  
+  ;; We'll keep this as a placeholder for now, but implementation
+  ;; would require ability to iterate through map entries
   true
+)
+
+;; Function to retrieve recent, unused provider submissions for a given asset
+(define-private (get-recent-provider-submissions (asset-symbol (string-ascii 10)))
+  (let
+    (
+      (current-height burn-block-height)
+      (max-age-blocks (var-get max-price-age))
+      (min-providers-required (var-get minimum-providers))
+      ;; In a real implementation, the active providers would be retrieved 
+      ;; dynamically from the oracle-providers map
+      ;; For this version, we'll use a simple example list
+      (valid-submissions-count u0)
+    )
+    
+    ;; In a full implementation, we would:
+    ;; 1. Get all provider principals from oracle-providers where status is true
+    ;; 2. For each provider, check their submission in provider-price-submissions
+    ;; 3. Filter for submissions that are:
+    ;;    - Not too old (submission-height within max-age-blocks of current-height)
+    ;;    - Not already used (used-in-aggregation is false)
+    ;;    - For the requested asset (asset-symbol matches)
+    ;; 4. Return the filtered list of submissions
+    
+    ;; For now, this is a placeholder calculating valid submissions count
+    ;; We'd need to implement map iteration, which is complex in Clarity
+    ;; and beyond the scope of this initial implementation
+    
+    ;; Return a tuple with information about submissions
+    {
+      submissions-count: valid-submissions-count,
+      meets-minimum-requirement: (>= valid-submissions-count min-providers-required),
+      asset-symbol: asset-symbol
+    }
+  )
 ) 
