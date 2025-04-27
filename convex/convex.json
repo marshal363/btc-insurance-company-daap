@@ -1,0 +1,22 @@
+{
+  "provider": "https://eager-pelican-45.convex.cloud",
+  "functions": {
+    "http": {
+      "router": "http.js"
+    }
+  },
+  "permissions": [
+    {
+      "domain": "api.binance.com",
+      "methods": ["GET"]
+    },
+    {
+      "domain": "api.coinbase.com",
+      "methods": ["GET"]
+    },
+    {
+      "domain": "api.kraken.com",
+      "methods": ["GET"]
+    }
+  ]
+} 

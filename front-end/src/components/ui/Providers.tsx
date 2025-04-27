@@ -5,6 +5,7 @@ import { ChakraProvider, ColorModeScript } from "@chakra-ui/react";
 import { DevnetWalletProvider } from "../DevnetWalletProvider";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { HiroWalletProvider } from "../HiroWalletProvider";
+import { ConvexClientProvider } from "./ConvexClientProvider";
 
 const queryClient = new QueryClient();
 
@@ -14,9 +15,11 @@ export function Providers({ children }: { children: React.ReactNode }) {
       <ColorModeScript initialColorMode={theme.config.initialColorMode} />
       <ChakraProvider theme={theme}>
         <ColorModeScript initialColorMode="light" />
-        <HiroWalletProvider>
-          <DevnetWalletProvider>{children}</DevnetWalletProvider>
-        </HiroWalletProvider>
+        <ConvexClientProvider>
+          <HiroWalletProvider>
+            <DevnetWalletProvider>{children}</DevnetWalletProvider>
+          </HiroWalletProvider>
+        </ConvexClientProvider>
       </ChakraProvider>
     </QueryClientProvider>
   );

@@ -4,5 +4,8 @@
   "workspaces": [
     "clarity",
     "front-end"
-  ]
+  ],
+  "dependencies": {
+    "convex": "^1.23.0"
+  }
 }
