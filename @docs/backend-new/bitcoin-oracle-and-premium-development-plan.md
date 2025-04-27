@@ -45,45 +45,48 @@ This development plan outlines the strategy for implementing the hybrid Oracle a
 
 | Task ID | Description                                    | Est. Hours | Status | Dependencies | Assignee |
 | ------- | ---------------------------------------------- | ---------- | ------ | ------------ | -------- |
-| CV-101  | Initialize Convex project and configuration    | 4          | ⬜     | -            |          |
-| CV-102  | Set up authentication for wallet integration   | 5          | ⬜     | CV-101       |          |
-| CV-103  | Create core data schema for price and premiums | 6          | ⬜     | CV-101       |          |
-| CV-104  | Implement environment variables and config     | 3          | ⬜     | CV-101       |          |
-| CV-105  | Configure TypeScript for type safety           | 3          | ⬜     | CV-101       |          |
-| CV-106  | Set up HTTP handlers for external APIs         | 4          | ⬜     | CV-101       |          |
+| CV-101  | Initialize Convex project and configuration    | 4          | 🟢     | -            |          |
+| CV-102  | Set up authentication for wallet integration   | 5          | 🟡     | CV-101       |          |
+| CV-103  | Create core data schema for price and premiums | 6          | 🟢     | CV-101       |          |
+| CV-104  | Implement environment variables and config     | 3          | 🟢     | CV-101       |          |
+| CV-105  | Configure TypeScript for type safety           | 3          | 🟢     | CV-101       |          |
+| CV-106  | Set up HTTP handlers for external APIs         | 4          | 🟢     | CV-101       |          |
 
 #### Oracle Implementation - Convex Tasks
 
 | Task ID | Description                                | Est. Hours | Status | Dependencies           | Assignee |
 | ------- | ------------------------------------------ | ---------- | ------ | ---------------------- | -------- |
-| OF-101  | Set up Binance price feed API client       | 3          | ⬜     | CV-106                 |          |
-| OF-102  | Set up Coinbase price feed API client      | 3          | ⬜     | CV-106                 |          |
-| OF-103  | Set up Kraken price feed API client        | 3          | ⬜     | CV-106                 |          |
-| OF-104  | Create error handling for API failures     | 4          | ⬜     | OF-101, OF-102, OF-103 |          |
-| OF-105  | Implement data normalization functions     | 4          | ⬜     | OF-104                 |          |
-| OF-106  | Build basic median price aggregation       | 5          | ⬜     | OF-105                 |          |
-| OF-107  | Create priceHistory table schema in Convex | 2          | ⬜     | CV-103                 |          |
-| OF-108  | Implement price storage function           | 3          | ⬜     | OF-106, OF-107         |          |
-| OF-109  | Create scheduled price collection job      | 4          | ⬜     | OF-108                 |          |
+| OF-101  | Set up Binance price feed API client       | 3          | 🟢     | CV-106                 |          |
+| OF-102  | Set up Coinbase price feed API client      | 3          | 🟢     | CV-106                 |          |
+| OF-103  | Set up Kraken price feed API client        | 3          | 🟢     | CV-106                 |          |
+| OF-104  | Create error handling for API failures     | 4          | 🟡     | OF-101, OF-102, OF-103 |          |
+| OF-105  | Implement data normalization functions     | 4          | 🟢     | OF-104                 |          |
+| OF-106  | Build basic median price aggregation       | 5          | 🟢     | OF-105                 |          |
+| OF-107  | Create priceHistory table schema in Convex | 2          | 🟢     | CV-103                 |          |
+| OF-108  | Implement price storage function           | 3          | 🟢     | OF-106, OF-107         |          |
+| OF-109  | Create scheduled price collection job      | 4          | 🟢     | OF-108                 |          |
+| OF-110  | Add Bitfinex price feed API client         | 3          | ⬜     | CV-106                 |          |
+| OF-111  | Add Gemini price feed API client           | 3          | 🟡     | CV-106                 |          |
+| OF-112  | Add Bitstamp price feed API client         | 3          | 🟢     | CV-106                 |          |
 
 #### Premium Calculator - Convex Tasks
 
 | Task ID | Description                                 | Est. Hours | Status | Dependencies           | Assignee |
 | ------- | ------------------------------------------- | ---------- | ------ | ---------------------- | -------- |
-| PF-101  | Implement Black-Scholes core algorithm      | 8          | ⬜     | CV-103                 |          |
+| PF-101  | Implement Black-Scholes core algorithm      | 8          | 🟡     | CV-103                 |          |
 | PF-102  | Create time value calculation function      | 4          | ⬜     | PF-101                 |          |
-| PF-103  | Build volatility impact model               | 6          | ⬜     | PF-101                 |          |
-| PF-104  | Implement historical volatility calculation | 5          | ⬜     | OF-107, OF-108         |          |
-| PF-105  | Create premium parameters table in Convex   | 2          | ⬜     | CV-103                 |          |
-| PF-106  | Design premium calculation API interface    | 4          | ⬜     | PF-101, PF-102, PF-103 |          |
+| PF-103  | Build volatility impact model               | 6          | 🟡     | PF-101                 |          |
+| PF-104  | Implement historical volatility calculation | 5          | 🟢     | OF-107, OF-108         |          |
+| PF-105  | Create premium parameters table in Convex   | 2          | 🟢     | CV-103                 |          |
+| PF-106  | Design premium calculation API interface    | 4          | 🟡     | PF-101, PF-102, PF-103 |          |
 | PF-107  | Implement basic caching for calculations    | 3          | ⬜     | PF-106                 |          |
-| PF-108  | Create premium estimation query endpoint    | 5          | ⬜     | PF-106, PF-107         |          |
+| PF-108  | Create premium estimation query endpoint    | 5          | 🟡     | PF-106, PF-107         |          |
 
 #### Blockchain Integration Foundation
 
 | Task ID | Description                                       | Est. Hours | Status | Dependencies   | Assignee |
 | ------- | ------------------------------------------------- | ---------- | ------ | -------------- | -------- |
-| BI-101  | Set up Stacks blockchain connection from Convex   | 6          | ⬜     | CV-101         |          |
+| BI-101  | Set up Stacks blockchain connection from Convex   | 6          | 🟡     | CV-101         |          |
 | BI-102  | Create contract address configuration management  | 3          | ⬜     | BI-101         |          |
 | BI-103  | Implement transaction building utilities          | 8          | ⬜     | BI-101         |          |
 | BI-104  | Build basic on-chain read functions for Oracle    | 5          | ⬜     | BI-102         |          |
@@ -92,10 +95,10 @@ This development plan outlines the strategy for implementing the hybrid Oracle a
 
 **Phase 1 Deliverables:**
 
-- Functioning Convex backend with price data collection
-- Initial Premium Calculator implementation with Black-Scholes model
-- Basic blockchain integration for reading and writing to Oracle contract
-- Foundation for real-time data flow between components
+- Functioning Convex backend with price data collection ✅
+- Initial Premium Calculator implementation with Black-Scholes model 🔄
+- Basic blockchain integration for reading and writing to Oracle contract 🔄
+- Foundation for real-time data flow between components 🔄
 
 ### Phase 2: Core Functionality (Duration: 2 weeks)
 
@@ -103,16 +106,18 @@ This development plan outlines the strategy for implementing the hybrid Oracle a
 
 | Task ID | Description                                          | Est. Hours | Status | Dependencies   | Assignee |
 | ------- | ---------------------------------------------------- | ---------- | ------ | -------------- | -------- |
-| OF-201  | Enhance price aggregation with statistical filtering | 6          | ⬜     | OF-106         |          |
+| OF-201  | Enhance price aggregation with statistical filtering | 6          | 🟡     | OF-106         |          |
 | OF-202  | Implement outlier detection algorithm                | 5          | ⬜     | OF-201         |          |
-| OF-203  | Add weighted average calculation                     | 4          | ⬜     | OF-201         |          |
-| OF-204  | Implement confidence scoring for price data          | 5          | ⬜     | OF-202, OF-203 |          |
+| OF-203  | Add weighted average calculation                     | 4          | 🟢     | OF-201         |          |
+| OF-204  | Implement confidence scoring for price data          | 5          | 🟡     | OF-202, OF-203 |          |
 | OF-205  | Build source reliability tracking                    | 5          | ⬜     | OF-204         |          |
 | OF-206  | Create monitoring for data source availability       | 4          | ⬜     | OF-205         |          |
-| OF-207  | Implement scheduled price update jobs                | 3          | ⬜     | OF-201         |          |
+| OF-207  | Implement scheduled price update jobs                | 3          | 🟢     | OF-201         |          |
 | OF-208  | Create health check system for price feeds           | 4          | ⬜     | OF-206         |          |
 | OF-209  | Implement multi-asset price support                  | 6          | ⬜     | OF-107         |          |
 | OF-210  | Build real-time price update notifications           | 5          | ⬜     | OF-207         |          |
+| OF-211  | Integrate NumJs for improved numerical calculations  | 4          | ⬜     | OF-201         |          |
+| OF-212  | Implement Danfo.js for data series manipulation      | 6          | ⬜     | OF-211         |          |
 
 #### Premium Calculator Enhancements - Convex Tasks
 
@@ -127,6 +132,8 @@ This development plan outlines the strategy for implementing the hybrid Oracle a
 | PF-207  | Develop premium factor breakdown explanations           | 5          | ⬜     | PF-201         |          |
 | PF-208  | Create monitoring dashboard data endpoints              | 4          | ⬜     | PF-207         |          |
 | PF-209  | Implement multi-tier pricing models                     | 5          | ⬜     | PF-201         |          |
+| PF-210  | Calculate volatility across multiple timeframes         | 6          | ⬜     | OF-212, PF-104 |          |
+| PF-211  | Implement EWMA volatility calculation method            | 5          | ⬜     | OF-212         |          |
 
 #### Blockchain Integration Enhancements
 
@@ -141,10 +148,10 @@ This development plan outlines the strategy for implementing the hybrid Oracle a
 
 **Phase 2 Deliverables:**
 
-- Enhanced Oracle with robust price aggregation and reliability features
-- Advanced Premium Calculator with Bitcoin-specific adjustments
-- Real-time data synchronization between Convex and blockchain
-- Monitoring system for data reliability and availability
+- Enhanced Oracle with robust price aggregation and reliability features 🔄
+- Advanced Premium Calculator with Bitcoin-specific adjustments 🔄
+- Real-time data synchronization between Convex and blockchain ⬜
+- Monitoring system for data reliability and availability ⬜
 
 ### Phase 3: Advanced Features & Hardening (Duration: 2 weeks)
 
@@ -156,11 +163,14 @@ This development plan outlines the strategy for implementing the hybrid Oracle a
 | OF-302  | Create advanced anomaly detection for price manipulation | 8          | ⬜     | OF-202         |          |
 | OF-303  | Build comprehensive monitoring and alerting system       | 6          | ⬜     | OF-206, OF-208 |          |
 | OF-304  | Develop auto-scaling for high-volume periods             | 5          | ⬜     | OF-207         |          |
-| OF-305  | Implement historical volatility analysis                 | 6          | ⬜     | PF-202         |          |
+| OF-305  | Implement historical volatility analysis                 | 6          | 🟡     | PF-202         |          |
 | OF-306  | Create automated failover between price sources          | 5          | ⬜     | OF-301         |          |
 | OF-307  | Build self-healing mechanisms for data collection        | 7          | ⬜     | OF-301, OF-306 |          |
 | OF-308  | Implement admin control panel for oracle management      | 8          | ⬜     | OF-303         |          |
 | OF-309  | Create comprehensive logging system                      | 4          | ⬜     | OF-303         |          |
+| OF-310  | Implement WebSocket connections for supported exchanges  | 7          | ⬜     | OF-304         |          |
+| OF-311  | Develop adaptive scheduling based on market conditions   | 6          | ⬜     | OF-302, OF-304 |          |
+| OF-312  | Implement data pruning and archiving mechanisms          | 5          | ⬜     | OF-309         |          |
 
 #### Premium Calculator Advanced Features - Convex Tasks
 
@@ -175,6 +185,8 @@ This development plan outlines the strategy for implementing the hybrid Oracle a
 | PF-307  | Create performance optimizations and enhanced caching     | 5          | ⬜     | PF-206         |          |
 | PF-308  | Implement correlation analysis for multi-asset strategies | 7          | ⬜     | PF-302         |          |
 | PF-309  | Add backtesting capability for premium models             | 8          | ⬜     | PF-301, PF-304 |          |
+| PF-310  | Integrate network health metrics into premium calculation | 6          | ⬜     | PF-201         |          |
+| PF-311  | Implement Parkinson's volatility calculation method       | 5          | ⬜     | OF-212, PF-202 |          |
 
 #### Blockchain Integration Advanced Features
 
@@ -189,10 +201,10 @@ This development plan outlines the strategy for implementing the hybrid Oracle a
 
 **Phase 3 Deliverables:**
 
-- Fully hardened Oracle system with advanced reliability features
-- Comprehensive Premium Calculator with simulation and optimization tools
-- Complete security and governance mechanisms for blockchain interactions
-- Performance optimizations across all components
+- Fully hardened Oracle system with advanced reliability features 🔄
+- Comprehensive Premium Calculator with simulation and optimization tools 🔄
+- Complete security and governance mechanisms for blockchain interactions 🔄
+- Performance optimizations across all components 🔄
 
 ### Phase 4: Integration & Testing (Duration: 2 weeks)
 
@@ -200,7 +212,7 @@ This development plan outlines the strategy for implementing the hybrid Oracle a
 
 | Task ID | Description                                           | Est. Hours | Status | Dependencies           | Assignee |
 | ------- | ----------------------------------------------------- | ---------- | ------ | ---------------------- | -------- |
-| FI-401  | Set up Convex React provider for frontend integration | 4          | ⬜     | CV-101                 |          |
+| FI-401  | Set up Convex React provider for frontend integration | 4          | 🟡     | CV-101                 |          |
 | FI-402  | Implement price feed hooks for Protection Center      | 6          | ⬜     | OF-210, FI-401         |          |
 | FI-403  | Create premium calculation hooks for frontend         | 8          | ⬜     | PF-208, FI-401         |          |
 | FI-404  | Build transaction submission UI components            | 7          | ⬜     | BI-206, FI-401         |          |
@@ -220,6 +232,7 @@ This development plan outlines the strategy for implementing the hybrid Oracle a
 | QA-405  | Perform performance optimization for calculation engine | 10         | ⬜     | PF-307                 |          |
 | QA-406  | Conduct end-to-end testing with frontend integration    | 12         | ⬜     | FI-407                 |          |
 | QA-407  | Create automated regression test suite                  | 10         | ⬜     | QA-401, QA-402, QA-403 |          |
+| QA-408  | Develop backtesting framework for premium calculations  | 8          | ⬜     | PF-309                 |          |
 
 #### Documentation & Deployment
 
@@ -236,10 +249,10 @@ This development plan outlines the strategy for implementing the hybrid Oracle a
 
 **Phase 4 Deliverables:**
 
-- Complete frontend integration with Convex backend
-- Comprehensive test suite and performance optimizations
-- Production-ready deployment scripts and monitoring
-- Complete documentation and operational procedures
+- Complete frontend integration with Convex backend 🔄
+- Comprehensive test suite and performance optimizations 🔄
+- Production-ready deployment scripts and monitoring 🔄
+- Complete documentation and operational procedures 🔄
 
 ## 4. Task Status Tracking
 
@@ -262,11 +275,11 @@ The progress of each phase will be tracked using the following metrics:
 
 | Phase                          | Total Tasks | Not Started | In Progress | Completed | Completion % |
 | ------------------------------ | ----------- | ----------- | ----------- | --------- | ------------ |
-| Phase 1: Foundation            | 32          | 32          | 0           | 0         | 0%           |
-| Phase 2: Core Functionality    | 26          | 26          | 0           | 0         | 0%           |
-| Phase 3: Advanced Features     | 24          | 24          | 0           | 0         | 0%           |
-| Phase 4: Integration & Testing | 24          | 24          | 0           | 0         | 0%           |
-| **Overall Project**            | **106**     | **106**     | **0**       | **0**     | **0%**       |
+| Phase 1: Foundation            | 36          | 12          | 6           | 18        | 50%          |
+| Phase 2: Core Functionality    | 29          | 23          | 3           | 3         | 10%          |
+| Phase 3: Advanced Features     | 28          | 27          | 1           | 0         | 0%           |
+| Phase 4: Integration & Testing | 25          | 24          | 1           | 0         | 0%           |
+| **Overall Project**            | **118**     | **86**      | **11**      | **21**    | **18%**      |
 
 ## 6. Technical Implementation Example: Convex Price Aggregation
 
@@ -430,6 +443,12 @@ export const action.updateOracleOnChain = action(
 - **Transaction Flow**: Test complete blockchain transaction lifecycle
 - **User Experience**: Validate frontend integration for usability
 
+### 7.6 Backtesting
+
+- **Historical Performance**: Test premium calculation accuracy against historical price movements
+- **Volatility Models**: Compare different volatility calculation methods against real-world data
+- **Pricing Accuracy**: Validate premium pricing against market-based benchmarks
+
 ## 8. Deployment Strategy
 
 ### 8.1 Staging Deployment
@@ -497,10 +516,10 @@ This development plan provides a comprehensive roadmap for implementing the BitH
 
 ### Immediate Next Steps:
 
-1. Review and approve the detailed task breakdown
-2. Assign team members to specific tasks
-3. Initialize the Convex project and establish development environment
-4. Begin implementing Foundation phase tasks
-5. Establish weekly progress review meetings
+1. Complete the remaining Foundation phase tasks, particularly focusing on the Black-Scholes implementation
+2. Begin implementing the numerical libraries (NumJs and Danfo.js) for enhanced volatility calculation
+3. Expand the price sources to include all 7 exchanges identified in the enhancement plan
+4. Implement advanced statistical filtering and outlier detection for more reliable price aggregation
+5. Continue development of the blockchain integration layer
 
 With proper execution of this plan, BitHedge will have a production-ready Oracle and Premium Calculator system that provides reliable price data and accurate premium calculations for the entire platform.

@@ -1,0 +1,38 @@
+graph TD
+A[initializePriceFeed] --> B[fetchPrices]
+A --> C[fetchHistoricalPrices]
+
+    B --> D1[Source: CoinGecko]
+    B --> D2[Source: Binance]
+    B --> D3[Source: Kraken]
+    B --> D4[Source: Coinbase]
+    B --> D5[Source: Bitstamp]
+    B --> D6[Source: Gemini]
+    B --> D7[Source: Huobi]
+
+    D1 --> E[storePriceFeed]
+    D2 --> E
+    D3 --> E
+    D4 --> E
+    D5 --> E
+    D6 --> E
+    D7 --> E
+
+    E --> F[Database: priceFeed table]
+
+    B --> G[Calculate Weighted Average]
+    G --> H[storeAggregatedPrice]
+    H --> I[Database: aggregatedPrices table]
+
+    C --> J[Fetch 30 Days Historical Data]
+    J --> K[storeHistoricalPrice]
+    K --> L[Database: historicalPrices table]
+
+    L --> M[calculateVolatility]
+    M --> N[storeVolatility]
+    N --> O[Database: historicalVolatility table]
+
+    M --> H
+
+    I --> P[getLatestPrice]
+    P --> Q[UI/Client]
