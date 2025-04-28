@@ -20,13 +20,13 @@ This document outlines the enhancement plan for the BitHedge Oracle implementati
 | Enhancement Area                     | Total Tasks | Not Started | In Progress | Completed | Completion % |
 | ------------------------------------ | ----------- | ----------- | ----------- | --------- | ------------ |
 | Price Source Expansion & Aggregation | 10          | 6           | 2           | 2         | 20%          |
-| Volatility Calculation Enhancement   | 24          | 13          | 0           | 11        | 46%          |
+| Volatility Calculation Enhancement   | 24          | 12          | 0           | 12        | 50%          |
 | Data Management & Performance Opt.   | 4           | 4           | 0           | 0         | 0%           |
-| Premium Calculation Advancement      | 6           | 5           | 1           | 0         | 0%           |
+| Premium Calculation Advancement      | 6           | 4           | 0           | 2         | 33%          |
 | Resilience and Error Handling        | 5           | 5           | 0           | 0         | 0%           |
 | Monitoring and Alerting System       | 6           | 5           | 1           | 0         | 0%           |
 | Real-time Capabilities               | 4           | 4           | 0           | 0         | 0%           |
-| **Overall Project**                  | **59**      | **42**      | **4**       | **13**    | **22%**      |
+| **Overall Project**                  | **59**      | **40**      | **3**       | **16**    | **27%**      |
 
 _Note: Task counts and estimates are initial values and may be refined._
 
@@ -92,7 +92,7 @@ _Note: Task counts and estimates are initial values and may be refined._
   | ------- | --------------------------------------------------------------------------------------- | ---------- | ------ | ------------ | -------- |
   | VCE-220 | Integrate Danfo.js for time series manipulation in volatility calculation               | 6          | ⬜     | VCE-211      |          |
   | VCE-221 | Integrate NumJs for efficient array operations (if needed beyond Danfo.js)              | 4          | ⬜     | VCE-211      |          |
-  | VCE-222 | Integrate math.js for advanced mathematical functions (if needed beyond Danfo.js/NumJs) | 3          | ⬜     | VCE-211      |          |
+  | VCE-222 | Integrate math.js for advanced mathematical functions (if needed beyond Danfo.js/NumJs) | 3          | 🟢     | VCE-211      |          |
 
   _Note: Code snippets for libraries like Danfo.js, CCXT, etc., demonstrate concepts. Actual implementation will use Convex actions/mutations and adapt syntax._
 
@@ -159,8 +159,8 @@ _Note: Task counts and estimates are initial values and may be refined._
 
 | Task ID | Description                                                                       | Est. Hours | Status | Dependencies     | Assignee |
 | ------- | --------------------------------------------------------------------------------- | ---------- | ------ | ---------------- | -------- |
-| PCA-401 | Implement full Black-Scholes model using math.js within a Convex function         | 8          | 🟡     | math.js integ.   |          |
-| PCA-402 | Integrate dynamic volatility (based on option duration/VCE-214) into B-S call     | 4          | ⬜     | PCA-401, VCE-214 |          |
+| PCA-401 | Implement full Black-Scholes model using math.js within a Convex function         | 8          | 🟢     | math.js integ.   |          |
+| PCA-402 | Integrate dynamic volatility (based on option duration/VCE-214) into B-S call     | 4          | 🟢     | PCA-401, VCE-214 |          |
 | PCA-403 | Integrate other risk factors (Liquidity, Network Health, Macro - placeholders)    | 6          | ⬜     | PCA-401          |          |
 | PCA-404 | Design structure for scenario simulation engine (inputs, outputs)                 | 5          | ⬜     | PCA-401          |          |
 | PCA-405 | Implement basic scenario simulation capability                                    | 7          | ⬜     | PCA-404          |          |
@@ -273,3 +273,47 @@ This section is now integrated into the task tables under **Volatility Calculati
 5.  **Testing and Optimization**: Integrated into specific tasks (e.g., PCA-406, DMP-304) and requires a separate QA plan.
 
 This task-based approach allows for clearer tracking of progress on these critical components.
+
+_End of Document Notes (Added [Current Date]):_
+
+- Completed PCA-401 (Black-Scholes) & PCA-402 (Dynamic Vol Integration) using VCE-222 (math.js).
+- **Next Steps Recommendation:** Focus on implementing alternative volatility methods (VCE-230 Parkinson's, VCE-231 EWMA) OR continue with Premium Calculation advancements (PCA-403 Risk Factors, PCA-404/405 Scenario Simulation).
+
+## MVP Scope Analysis and Final Task Recommendations ([Current Date])
+
+**Objective:** Define the minimum viable set of tasks required to ship a simple but well-structured oracle, volatility, and premium calculation system, given the current progress and limited MVP timeline.
+
+**Current MVP-Ready Core Functionality:**
+
+Based on completed tasks (`🟢`), the following core pipeline is functional:
+
+1.  **Price Fetching & Basic Aggregation:** Implemented (`PEA-101` to `PEA-107`, basic aggregation in `convex/prices.ts`).
+2.  **Historical Data:** Fetching, fallback, and daily updates are implemented (`VCE-201`, `VCE-202`, `VCE-203`, `VCE-205`, `VCE-206`).
+3.  **Standard Volatility:** Calculation and storage for standard timeframes (`VCE-210`, `VCE-211`, `VCE-212`, `VCE-213`, `VCE-240`, `VCE-241`).
+4.  **Dynamic Volatility Selection:** Implemented (`VCE-214`).
+5.  **Core Premium Calculation:** Black-Scholes implemented (`PCA-401`), using `math.js` (`VCE-222`) and dynamic volatility (`PCA-402`).
+
+**Final MVP Task Prioritization:**
+
+1.  **Required for MVP Launch:**
+
+    - **`MAS-601`: Implement comprehensive logging (`🟡` -> `🟢`).** Essential for debugging and visibility of the core pipeline.
+
+2.  **Highly Recommended for MVP Stability (Prioritize if time permits):**
+
+    - **`REH-501`: Implement circuit breakers (`⬜`).** Protects against external API failures.
+    - **`REH-503`: Implement rate limit handling (`⬜`).** Prevents API blocking.
+    - **`REH-504`: Create a health check system/function (`⬜`).** Monitors external dependencies.
+    - **`MAS-602`: Implement metrics collection (`⬜`).** Provides basic operational insight.
+
+3.  **Deferrable Post-MVP Tasks:**
+    - Advanced Price Aggregation (`PEA-108` to `PEA-110`)
+    - Alternative Volatility Methods (`VCE-230`, `VCE-231`, `VCE-232`)
+    - Advanced Libraries (`VCE-220`, `VCE-221`)
+    - Data Management/Optimization (`DMP-301` to `DMP-304`)
+    - Advanced Premium Features (`PCA-403` to `PCA-406`)
+    - Advanced Resilience (`REH-502`, `REH-505`)
+    - Advanced Monitoring/Alerting (`MAS-603` to `MAS-606`)
+    - Real-time Capabilities (`RTC-701` to `RTC-704`)
+
+**Conclusion:** Completing `MAS-601` delivers the absolute minimum functional MVP. Adding the highly recommended `REH` and `MAS` tasks will significantly improve the robustness and observability of the initial release.
