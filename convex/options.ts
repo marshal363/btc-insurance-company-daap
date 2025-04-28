@@ -1,5 +1,6 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { mutation, query, internalMutation, internalQuery } from "./_generated/server";
+import { internal } from "./_generated/api";
 
 export const createContract = mutation({
   args: {
@@ -19,14 +20,26 @@ export const createContract = mutation({
       .first();
     
     if (!latestPrice) {
-      throw new Error("No price data available");
+      throw new Error("No price data available to calculate premium");
     }
+
+    // --- NEW: Get dynamic volatility based on duration ---
+    const dynamicVolatility = await ctx.runQuery(internal.prices.getVolatilityForDuration, {
+      durationSeconds: args.duration
+    });
+
+    if (dynamicVolatility === null) {
+      // Log the critical error from the query function if needed, but throw here
+      console.error(`Failed to retrieve volatility for duration ${args.duration} seconds. Cannot create contract.`);
+      throw new Error("Volatility data unavailable for the specified duration. Cannot calculate premium.");
+    }
+    // --- END NEW ---
 
     // Calculate premium using Black-Scholes
     const premium = calculatePremium({
       currentPrice: latestPrice.price,
       strikePrice: args.strikePrice,
-      volatility: latestPrice.volatility,
+      volatility: dynamicVolatility,
       duration: args.duration,
       amount: args.amount,
     });
@@ -79,6 +92,11 @@ function calculatePremium({
   // Simple premium calculation for now
   // TODO: Implement full Black-Scholes
   const daysToExpiry = duration / (24 * 60 * 60);
+  // Ensure volatility is non-zero and days are positive before sqrt
+  if (volatility <= 0 || daysToExpiry <= 0) {
+      console.warn(`Invalid input for premium calculation: Volatility=${volatility}, Days=${daysToExpiry}. Returning 0 premium.`);
+      return 0;
+  }
   const premium = currentPrice * volatility * Math.sqrt(daysToExpiry/365) * amount;
-  return Math.round(premium * 100) / 100;
+  return Math.max(0, Math.round(premium * 100) / 100); // Ensure premium is not negative
 }

@@ -76,7 +76,15 @@ _Note: Task counts and estimates are initial values and may be refined._
   | VCE-211 | Implement core volatility calculation function (std dev of log returns)              | 5          | 🟢     | VCE-201          |          |
   | VCE-212 | Integrate function to calculate and store volatility for all required timeframes     | 4          | 🟢     | VCE-210, VCE-211 |          |
   | VCE-213 | Trigger volatility recalculation after daily price fetch                             | 2          | 🟢     | VCE-205, VCE-212 |          |
-  | VCE-214 | Implement weight-based volatility model logic based on option duration (placeholder) | 3          | ⬜     | VCE-212          |          |
+  | VCE-214 | Implement weight-based volatility model logic based on option duration (placeholder) | 3          | 🟢     | VCE-212          |          |
+
+  _Implementation Notes (VCE-214):_
+
+  - Implemented as `internal.prices.getVolatilityForDuration` query.
+  - Uses closest standard timeframe (30, 60, 90, 180, 360) with fallback.
+  - **Next Steps:** Integrate this query into premium calculation (PCA-401/402).
+  - **Future:** Update to handle multiple calculation methods per VCE-232 strategy.
+  - **Future:** Ensure consuming functions handle potential `null` return robustly.
 
 - **Numerical Computation Libraries Integration**:
 

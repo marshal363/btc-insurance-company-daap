@@ -602,3 +602,72 @@ async function fetchLatestDailyPriceFallback(ctx: any) {
     return null; // Return null if both primary and fallback fail
   }
 }
+
+// NEW FUNCTION: Get the most relevant volatility based on option duration
+export const getVolatilityForDuration = internalQuery({
+  args: {
+    durationSeconds: v.number(),
+  },
+  // TODO (VCE-214 Integration): This function needs to be called by the premium calculation logic (PCA-401/402).
+  // TODO (VCE-230/231/232): Update logic/filters based on strategy for handling multiple calculation methods (Parkinson's, EWMA) when implemented.
+  handler: async (ctx, args): Promise<number | null> => {
+    const { durationSeconds } = args;
+    const durationDays = Math.round(durationSeconds / (60 * 60 * 24));
+    console.log(`getVolatilityForDuration called for duration: ${durationDays} days (${durationSeconds} seconds)`);
+
+    const standardTimeframes = [30, 60, 90, 180, 360]; // Available calculated timeframes (in days)
+
+    // Find the ideal timeframe (closest match)
+    let idealTimeframe = standardTimeframes[0];
+    let minDiff = Math.abs(durationDays - idealTimeframe);
+
+    for (let i = 1; i < standardTimeframes.length; i++) {
+      const diff = Math.abs(durationDays - standardTimeframes[i]);
+      if (diff < minDiff) {
+        minDiff = diff;
+        idealTimeframe = standardTimeframes[i];
+      }
+    }
+    console.log(`Ideal volatility timeframe determined: ${idealTimeframe} days`);
+
+    // Attempt to fetch the latest volatility for the ideal timeframe
+    // Assuming "standard" calculation method for now
+    let latestVolatilityRecord = await ctx.db
+      .query("historicalVolatility")
+      .withIndex("by_timeframe_and_timestamp", (q) => q.eq("timeframe", idealTimeframe))
+      .order("desc")
+      .first();
+
+    if (latestVolatilityRecord) {
+      console.log(`Found volatility for ideal timeframe ${idealTimeframe}: ${latestVolatilityRecord.volatility}`);
+      return latestVolatilityRecord.volatility;
+    }
+
+    // Fallback: If ideal timeframe data is missing, find the next closest available
+    console.warn(`Volatility data not found for ideal timeframe ${idealTimeframe}. Searching for fallbacks...`);
+
+    const fallbackTimeframes = standardTimeframes
+      .filter(tf => tf !== idealTimeframe) // Exclude the ideal one
+      .map(tf => ({ timeframe: tf, diff: Math.abs(durationDays - tf) }))
+      .sort((a, b) => a.diff - b.diff); // Sort by closeness
+
+    for (const fallback of fallbackTimeframes) {
+      console.log(`Attempting fallback timeframe: ${fallback.timeframe} days (Difference: ${fallback.diff})`);
+      latestVolatilityRecord = await ctx.db
+        .query("historicalVolatility")
+        .withIndex("by_timeframe_and_timestamp", (q) => q.eq("timeframe", fallback.timeframe))
+        .order("desc")
+        .first();
+
+      if (latestVolatilityRecord) {
+        console.warn(`Using fallback volatility from timeframe ${fallback.timeframe}: ${latestVolatilityRecord.volatility}`);
+        return latestVolatilityRecord.volatility;
+      }
+    }
+
+    // If no data found for any timeframe
+    console.error(`CRITICAL: No historical volatility data found for any standard timeframe. Cannot determine volatility for duration ${durationDays} days.`);
+    // TODO (VCE-214 Error Handling): Ensure the consuming function handles this null return gracefully.
+    return null;
+  }
+});
