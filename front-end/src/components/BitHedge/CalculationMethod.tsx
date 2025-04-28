@@ -82,13 +82,13 @@ export default function CalculationMethod() {
         </Grid>
       </Box>
       
-      <Box bg="blue.50" p={5} borderRadius="md" mb={4}>
+      <Box bg="blue.50" p={5} borderRadius="lg" mb={4}>
         <Heading as="h3" fontSize="md" fontWeight="bold" mb={3}>
           Option Greeks (Sensitivity)
         </Heading>
         
         <Grid templateColumns={{ base: "1fr", md: "repeat(2, 1fr)" }} gap={4}>
-          <Box bg="white" p={3} borderRadius="md">
+          <Box bg="white" p={3} borderRadius="lg">
             <Heading as="h4" fontSize="sm" fontWeight="semibold" color="blue.600" mb={1}>
               Delta
             </Heading>
@@ -97,7 +97,7 @@ export default function CalculationMethod() {
             </Text>
           </Box>
           
-          <Box bg="white" p={3} borderRadius="md">
+          <Box bg="white" p={3} borderRadius="lg">
             <Heading as="h4" fontSize="sm" fontWeight="semibold" color="blue.600" mb={1}>
               Gamma
             </Heading>
@@ -106,7 +106,7 @@ export default function CalculationMethod() {
             </Text>
           </Box>
           
-          <Box bg="white" p={3} borderRadius="md">
+          <Box bg="white" p={3} borderRadius="lg">
             <Heading as="h4" fontSize="sm" fontWeight="semibold" color="blue.600" mb={1}>
               Theta
             </Heading>
@@ -115,7 +115,7 @@ export default function CalculationMethod() {
             </Text>
           </Box>
           
-          <Box bg="white" p={3} borderRadius="md">
+          <Box bg="white" p={3} borderRadius="lg">
             <Heading as="h4" fontSize="sm" fontWeight="semibold" color="blue.600" mb={1}>
               Vega
             </Heading>

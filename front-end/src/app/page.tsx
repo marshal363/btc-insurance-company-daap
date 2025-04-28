@@ -13,8 +13,8 @@ import BitHedgeFooter from "@/components/BitHedge/BitHedgeFooter";
 
 export default function Home() {
   return (
-    <Box as="main" bg="white" py={8}>
-      <Container maxWidth="5xl" px={4}>
+    <Box as="main" bg="white" py={8} borderRadius="lg">
+      <Container maxWidth="5xl" px={4} borderRadius="lg">
         <BitHedgeHeader />
         
         <Box mt={8}>

@@ -36,12 +36,19 @@ export default function BitcoinPriceCard() {
   const lastUpdated = "2 minutes ago";
   const activeSources = 7;
   
+  // Neumorphic styles
+  const neumorphicBg = "#E8EAE9"; // Use the color from the image
+  const neumorphicShadowLight = "-10px -10px 20px rgba(255, 255, 255, 0.8)"; // Adjusted light shadow
+  const neumorphicShadowDark = "10px 10px 20px rgba(163, 177, 198, 0.6)"; // Adjusted dark shadow based on common neumorphic examples for a similar bg
+  const neumorphicBoxShadow = `${neumorphicShadowLight}, ${neumorphicShadowDark}`;
+  const neumorphicBorderRadius = "xl"; // Consistent rounded corners
+
   return (
-    <Box>
-      {/* Main Card */}
-      <Box borderTopWidth="1px" borderTopColor="gray.200" p={4} bg="white" borderRadius="lg" boxShadow="sm">
+    <Box borderRadius="lg" bg={neumorphicBg} p={4}> {/* Set base background color and padding */}
+      {/* Main Card Container - remove default white bg and shadow, adjust padding */}
+      <Box borderTopWidth="1px" borderTopColor="gray.300" p={0} bg="transparent" borderRadius="lg" boxShadow="none">
         {/* Header Section */}
-        <Flex justifyContent="space-between" alignItems="center" mb={4}>
+        <Flex justifyContent="space-between" alignItems="center" mb={4} px={4} pt={4}> {/* Add padding back to header */}
           <Flex alignItems="center" gap={3}>
             <Circle size="40px" bg="blue.500">
               <Icon as={IoTrendingUp} color="white" boxSize={5} />
@@ -81,15 +88,20 @@ export default function BitcoinPriceCard() {
         </Flex>
         
         {/* Price Cards Grid */}
-        <Grid templateColumns="repeat(3, 1fr)" gap={4}>
-          {/* Current Price Card */}
-          <GridItem bg="gray.50" p={4} borderRadius="md">
+        <Grid templateColumns="repeat(3, 1fr)" gap={6} p={4}> {/* Increased gap and added padding */}
+          {/* Current Price Card - Apply Neumorphic Style */}
+          <GridItem 
+            bg={neumorphicBg} 
+            p={6} // Increased padding
+            borderRadius={neumorphicBorderRadius}
+            boxShadow={neumorphicBoxShadow}
+          >
             <Flex alignItems="center" gap={2} mb={2}>
               <Icon as={IoTrendingUp} color="blue.500" />
-              <Text fontWeight="medium">Current Price</Text>
+              <Text fontWeight="medium" color="gray.700">Current Price</Text> {/* Adjusted text color */}
             </Flex>
             
-            <Heading as="h3" fontSize="3xl" fontWeight="bold" mb={1}>
+            <Heading as="h3" fontSize="3xl" fontWeight="bold" mb={1} color="gray.800"> {/* Adjusted text color */}
               ${btcPrice.toLocaleString()}
             </Heading>
             
@@ -103,7 +115,7 @@ export default function BitcoinPriceCard() {
               ↑ {priceChange}%
             </Badge>
             
-            <Text fontSize="sm" mt={4} color="gray.500">
+            <Text fontSize="sm" mt={4} color="gray.600"> {/* Adjusted text color */}
               Change in the last 24 hours
             </Text>
             
@@ -111,74 +123,74 @@ export default function BitcoinPriceCard() {
               mt={4}
               size="sm"
               rightIcon={showSources ? <IoChevronUp /> : <IoChevronDown />}
-              variant="outline"
+              variant="ghost" // Changed variant for better neumorphic fit
+              colorScheme="blue" 
               onClick={() => setShowSources(!showSources)}
               w="full"
+              _hover={{ bg: "rgba(0, 0, 0, 0.05)" }} // Subtle hover
             >
               {showSources ? "Hide Sources" : "View Sources"}
             </Button>
           </GridItem>
           
-          {/* 24h Trading Range Card */}
-          <GridItem bg="gray.50" p={4} borderRadius="md">
+          {/* 24h Trading Range Card - Apply Neumorphic Style */}
+          <GridItem 
+            bg={neumorphicBg} 
+            p={6} // Increased padding
+            borderRadius={neumorphicBorderRadius}
+            boxShadow={neumorphicBoxShadow}
+          >
             <Flex alignItems="center" gap={2} mb={2}>
               <Icon as={IoSwapHorizontal} color="blue.500" />
-              <Text fontWeight="medium">24h Trading Range</Text>
+              <Text fontWeight="medium" color="gray.700">24h Trading Range</Text> {/* Adjusted text color */}
             </Flex>
             
             <Flex justifyContent="space-between" mb={4}>
               <Box>
-                <Text fontSize="sm" color="gray.500">24h Low</Text>
-                <Text fontWeight="bold">${rangeLow.toLocaleString()}</Text>
+                <Text fontSize="sm" color="gray.600">24h Low</Text> {/* Adjusted text color */}
+                <Text fontWeight="bold" color="gray.800">${rangeLow.toLocaleString()}</Text> {/* Adjusted text color */}
               </Box>
-              <Box>
-                <Text fontSize="sm" color="gray.500">24h High</Text>
-                <Text fontWeight="bold">${rangeHigh.toLocaleString()}</Text>
+              <Box textAlign="right"> {/* Ensure high value aligns right */}
+                <Text fontSize="sm" color="gray.600">24h High</Text> {/* Adjusted text color */}
+                <Text fontWeight="bold" color="gray.800">${rangeHigh.toLocaleString()}</Text> {/* Adjusted text color */}
               </Box>
             </Flex>
             
-            <Text fontSize="sm" color="gray.500" mb={1}>
+            <Text fontSize="sm" color="gray.600" mb={1}> {/* Adjusted text color */}
               Current Price Position
             </Text>
             
-            <Box position="relative" h="24px">
+            <Box position="relative" h="24px" mt={2}> {/* Added margin top */}
               <Progress 
                 value={((btcPrice - rangeLow) / (rangeHigh - rangeLow)) * 100} 
                 borderRadius="full" 
                 h="8px"
                 colorScheme="blue"
-                bg="gray.200"
+                bg="gray.300" // Adjusted progress background
               />
-              <Flex 
-                position="absolute" 
-                top="100%" 
-                left="0" 
-                right="0" 
+              {/* Removed the absolute positioned price labels below progress bar for cleaner look */}
+            </Box>
+             <Flex 
+                position="relative" // Changed from absolute for simplicity below progress
                 justifyContent="space-between" 
                 mt={1}
               >
                 <Text fontSize="xs" color="gray.500">${rangeLow.toLocaleString()}</Text>
-                <Text 
-                  position="absolute" 
-                  top="0" 
-                  left={`${((btcPrice - rangeLow) / (rangeHigh - rangeLow)) * 100}%`} 
-                  transform="translateX(-50%)"
-                  fontSize="xs" 
-                  fontWeight="bold"
-                  color="blue.500"
-                >
-                  ${btcPrice.toLocaleString()}
-                </Text>
+                {/* Removed middle price label */}
                 <Text fontSize="xs" color="gray.500">${rangeHigh.toLocaleString()}</Text>
               </Flex>
-            </Box>
           </GridItem>
           
-          {/* Volatility Index Card */}
-          <GridItem bg="gray.50" p={4} borderRadius="md">
+          {/* Volatility Index Card - Apply Neumorphic Style */}
+           <GridItem 
+            bg={neumorphicBg} 
+            p={6} // Increased padding
+            borderRadius={neumorphicBorderRadius}
+            boxShadow={neumorphicBoxShadow}
+          >
             <Flex alignItems="center" gap={2} mb={2}>
               <Icon as={IoFlash} color="blue.500" />
-              <Text fontWeight="medium">Volatility Index</Text>
+              <Text fontWeight="medium" color="gray.700">Volatility Index</Text> {/* Adjusted text color */}
               <Badge 
                 size="sm" 
                 colorScheme="blue" 
@@ -186,45 +198,35 @@ export default function BitcoinPriceCard() {
                 ml="auto"
                 borderRadius="full"
                 px={2}
+                borderColor="blue.300" // Slightly adjust border
               >
                 30 days
               </Badge>
             </Flex>
             
-            <Heading as="h3" fontSize="3xl" fontWeight="bold" mb={3}>
+            <Heading as="h3" fontSize="3xl" fontWeight="bold" mb={3} color="gray.800"> {/* Adjusted text color */}
               {volatility}%
             </Heading>
             
-            <Box mb={1}>
+            <Box mb={1} position="relative"> {/* Added position relative */}
               <Progress 
                 value={volatility} 
                 max={100} 
                 borderRadius="full" 
                 h="8px"
                 colorScheme="blue"
-                bg="gray.200"
+                bg="gray.300" // Adjusted progress background
               />
-              <Box
-                position="absolute"
-                top="-4px"
-                left={`${volatility}%`}
-                transform="translateX(-50%)"
-                w="16px"
-                h="16px"
-                bg="blue.600"
-                borderRadius="full"
-                border="2px solid white"
-                boxShadow="sm"
-              />
+              {/* Removed the absolute positioned dot on progress bar */}
             </Box>
             
-            <Flex justifyContent="flex-end" mb={3}>
+            <Flex justifyContent="flex-end" mt={2} mb={3}> {/* Added margin top */}
               <Text color="purple.500" fontWeight="medium" fontSize="sm">
-                Medium
+                Medium {/* Consider how to visually represent this better */}
               </Text>
             </Flex>
             
-            <Text fontSize="sm" color="gray.500">
+            <Text fontSize="sm" color="gray.600"> {/* Adjusted text color */}
               Drives premium pricing
             </Text>
           </GridItem>
