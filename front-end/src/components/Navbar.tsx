@@ -10,7 +10,17 @@ export const Navbar = () => {
   const { currentWallet, wallets, setCurrentWallet } = useDevnetWallet();
 
   return (
-    <Box as="nav" bg="white" boxShadow="sm">
+    <Box
+      as="nav"
+      boxShadow="sm"
+      position="sticky"
+      top="0"
+      zIndex="sticky"
+      sx={{
+        backdropFilter: 'blur(10px)',
+        backgroundColor: 'rgba(255, 255, 255, 0.8)',
+      }}
+    >
       <Container maxW="5xl">
         <Flex justify="space-between" h={16} align="center">
           <Flex align="center">
