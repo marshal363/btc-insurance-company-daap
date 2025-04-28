@@ -8,6 +8,7 @@ import {
   MenuButton,
   MenuItem,
   MenuList,
+  Portal,
 } from "@chakra-ui/react";
 import { useContext } from "react";
 import HiroWalletContext from "./HiroWalletProvider";
@@ -39,9 +40,11 @@ export const ConnectWalletButton = (buttonProps: ConnectWalletButtonProps) => {
           <Box>{formatStxAddress(currentWalletAddress || "")}</Box>
         </Flex>
       </MenuButton>
-      <MenuList>
-        <MenuItem onClick={disconnect}>Disconnect Wallet</MenuItem>
-      </MenuList>
+      <Portal>
+        <MenuList zIndex={1100}>
+          <MenuItem onClick={disconnect}>Disconnect Wallet</MenuItem>
+        </MenuList>
+      </Portal>
     </Menu>
   ) : (
     <Button
