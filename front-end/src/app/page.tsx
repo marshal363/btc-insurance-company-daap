@@ -1,30 +1,52 @@
-// import CampaignDetails from "@/components/CampaignDetails"; // Removed for CWI-109
-// import { promises as fs } from "fs"; // Removed unused import
-// import path from "path"; // Removed unused import
+"use client";
 
-// Keep this function for now if other parts of the page might need it,
-// otherwise it can be removed later.
-// async function getData() {
-//   const campaignDir = path.join(process.cwd(), "public/campaign");
-//   const imageFiles = await fs.readdir(campaignDir);
-//   const images = imageFiles.map((file) => `/campaign/${file}`);
+import { Box, Container } from "@chakra-ui/react";
+import BitHedgeHeader from "@/components/BitHedge/BitHedgeHeader";
+import BitcoinPriceCard from "@/components/BitHedge/BitcoinPriceCard";
+import PremiumCalculatorTabs from "@/components/BitHedge/PremiumCalculatorTabs";
+import ProtectionParameters from "@/components/BitHedge/ProtectionParameters";
+import AdvancedParameters from "@/components/BitHedge/AdvancedParameters";
+import ProtectionVisualization from "@/components/BitHedge/ProtectionVisualization";
+import ProtectionCost from "@/components/BitHedge/ProtectionCost";
+import CalculationMethod from "@/components/BitHedge/CalculationMethod";
+import BitHedgeFooter from "@/components/BitHedge/BitHedgeFooter";
 
-//   const markdownPath = path.join(process.cwd(), "public/campaign-details.md");
-//   const markdownContent = await fs.readFile(markdownPath, "utf8");
-
-//   return { images, markdownContent };
-// }
-
-export default async function Home() {
-  // const { images, markdownContent } = await getData(); // Removed for CWI-109
-
+export default function Home() {
   return (
-    // Replace with actual BitHedge page content later (e.g., AccountDashboard)
-    <main
-      className="flex min-h-screen flex-col items-center justify-between p-24"
-    >
-      BitHedge Home Page Placeholder
-      {/* <CampaignDetails images={images} markdownContent={markdownContent} /> */}
-    </main>
+    <Box as="main" bg="white" py={8}>
+      <Container maxWidth="5xl" px={4}>
+        <BitHedgeHeader />
+        
+        <Box mt={8}>
+          <BitcoinPriceCard />
+        </Box>
+        
+        <Box mt={8}>
+          <PremiumCalculatorTabs />
+        </Box>
+        
+        <Box mt={8}>
+          <ProtectionParameters />
+        </Box>
+        
+        <Box mt={8}>
+          <AdvancedParameters />
+        </Box>
+        
+        <Box mt={8}>
+          <ProtectionVisualization />
+        </Box>
+        
+        <Box mt={8}>
+          <ProtectionCost />
+        </Box>
+        
+        <Box mt={8}>
+          <CalculationMethod />
+        </Box>
+        
+        <BitHedgeFooter />
+      </Container>
+    </Box>
   );
 }
