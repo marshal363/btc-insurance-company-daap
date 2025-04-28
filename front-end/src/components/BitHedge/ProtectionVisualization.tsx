@@ -8,20 +8,109 @@ import {
   Badge,
   Icon,
   SimpleGrid,
+  useTheme,
 } from "@chakra-ui/react";
 import { 
   IoStatsChart, 
-  IoCaretDown, 
-  IoCaretUp,
   IoInformationCircle,
+  IoShieldCheckmarkOutline,
+  IoWalletOutline,
+  IoSwapHorizontalOutline,
 } from "react-icons/io5";
+import { 
+  ResponsiveContainer, 
+  LineChart, 
+  Line, 
+  XAxis, 
+  YAxis, 
+  CartesianGrid, 
+  Tooltip, 
+  Legend,
+  ReferenceLine 
+} from 'recharts';
+
+// Helper function to format currency
+const formatCurrency = (value: number) => `$${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 export default function ProtectionVisualization() {
+  const theme = useTheme(); // Access Chakra theme colors
+
   // Mock data
   const triggerPrice = 94270.88;
-  const maxRecovery = 23567.72;
   const breakEven = 89871.69;
   const btcAmount = 0.25;
+  
+  // Derived calculations
+  const premiumPerBTC = triggerPrice - breakEven;
+  const totalPremium = premiumPerBTC * btcAmount;
+  const protectedValueAtTrigger = triggerPrice * btcAmount; // Max recovery is essentially this value
+
+  // Generate data for the chart
+  const generateChartData = () => {
+    const data = [];
+    const currentPrice = triggerPrice; // Assuming protection bought at trigger price for simplicity
+    const rangeMultiplier = 0.5; // Show 50% above and below current price
+    const lowerBound = currentPrice * (1 - rangeMultiplier);
+    const upperBound = currentPrice * (1 + rangeMultiplier);
+    const steps = 20; // Number of data points
+
+    for (let i = 0; i <= steps; i++) {
+      const btcPrice = lowerBound + (upperBound - lowerBound) * (i / steps);
+      const unprotectedValue = btcPrice * btcAmount;
+      let protectedValue;
+
+      if (btcPrice >= triggerPrice) {
+        // Above trigger: Value is BTC value minus premium
+        protectedValue = unprotectedValue - totalPremium;
+      } else {
+        // Below trigger: Value is capped at trigger value minus premium
+        protectedValue = protectedValueAtTrigger - totalPremium;
+      }
+
+      data.push({
+        btcPrice: btcPrice,
+        unprotectedValue: unprotectedValue,
+        protectedValue: protectedValue,
+      });
+    }
+    return data;
+  };
+
+  const chartData = generateChartData();
+
+  // Define the shape of our chart data points
+  type ChartDataPoint = {
+    btcPrice: number;
+    unprotectedValue: number;
+    protectedValue: number;
+  };
+
+  // Define type for CustomTooltip props using ChartDataPoint
+  type CustomTooltipProps = {
+    active?: boolean;
+    payload?: Array<{ 
+      payload: ChartDataPoint; // Use the specific data point type
+      value: number; 
+      name: string; 
+      color: string; 
+    }>;
+    label?: number; // The X-axis value (btcPrice)
+  };
+
+  // Custom Tooltip with defined types
+  const CustomTooltip = ({ active, payload, label }: CustomTooltipProps) => {
+    if (active && payload && payload.length && label !== undefined) {
+      return (
+        <Box bg="white" p={3} borderRadius="md" boxShadow="md" borderWidth="1px" borderColor="gray.200">
+          <Text fontWeight="bold" mb={1}>BTC Price: {formatCurrency(label)}</Text>
+          {/* Ensure payload has expected structure before accessing */}
+          {payload[0] && <Text fontSize="sm" color={theme.colors.orange[500]}>{payload[0].name}: {formatCurrency(payload[0].value)}</Text>}
+          {payload[1] && <Text fontSize="sm" color={theme.colors.blue[500]}>{payload[1].name}: {formatCurrency(payload[1].value)}</Text>}
+        </Box>
+      );
+    }
+    return null;
+  };
   
   return (
     <Box>
@@ -45,80 +134,66 @@ export default function ProtectionVisualization() {
         </Badge>
       </Flex>
       
-      {/* Graph Placeholder - In a real implementation, this would be a real chart */}
-      <Box 
-        height="200px" 
-        bg="gray.50" 
-        borderRadius="md" 
-        position="relative" 
-        mb={8}
-      >
-        {/* This is a simple placeholder for the graph, a real app would use a charting library */}
-        <Box 
-          position="absolute" 
-          bottom="0" 
-          left="0" 
-          right="0" 
-          height="80%" 
-          bgGradient="linear(to-tr, green.100, blue.50)"
-          opacity={0.8}
-          borderTopLeftRadius="md"
-          borderTopRightRadius="md"
-        />
-        
-        <Box 
-          position="absolute" 
-          bottom="0" 
-          left="20%" 
-          width="60%" 
-          height="70%" 
-          bg="green.100"
-          opacity={0.6}
-          borderTopLeftRadius="md"
-          borderTopRightRadius="md"
-        />
-        
-        {/* Break-even Line */}
-        <Box
-          position="absolute"
-          top="40%"
-          left="0"
-          right="0"
-          borderTopWidth="2px"
-          borderTopStyle="dashed"
-          borderTopColor="blue.400"
-          zIndex={2}
-        >
-          <Text
-            position="absolute"
-            top="-25px"
-            right="0"
-            fontSize="xs"
-            fontWeight="medium"
-            color="blue.500"
-            bg="white"
-            px={2}
-            py={0.5}
-            borderRadius="md"
-            boxShadow="sm"
+      {/* --- Recharts Payoff Chart --- */}
+      <Box height="300px" mb={8}> 
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart 
+            data={chartData}
+            margin={{ top: 5, right: 20, left: 30, bottom: 5 }} // Adjusted margins for labels
           >
-            Break-even
-          </Text>
-        </Box>
-        
-        <Text 
-          position="absolute" 
-          top="15px" 
-          left="10px" 
-          fontSize="sm" 
-          fontWeight="semibold" 
-          color="gray.600"
-        >
-          Drag to zoom
-        </Text>
+            <CartesianGrid strokeDasharray="3 3" stroke={theme.colors.gray[200]} />
+            <XAxis 
+              dataKey="btcPrice" 
+              type="number"
+              domain={['dataMin', 'dataMax']}
+              tickFormatter={(value) => `$${Math.round(value / 1000)}k`} // Format ticks as $XXk
+              label={{ value: 'BTC Price at Expiry', position: 'insideBottom', offset: -5, dy: 10, fontSize: '12px', fill: theme.colors.gray[600] }}
+              stroke={theme.colors.gray[400]}
+              tick={{ fontSize: '11px', fill: theme.colors.gray[600] }}
+            />
+            <YAxis 
+              tickFormatter={(value) => `$${Math.round(value / 1000)}k`} // Format ticks as $Xk
+              label={{ value: 'Portfolio Value', angle: -90, position: 'insideLeft', offset: -20, dx: -10, fontSize: '12px', fill: theme.colors.gray[600] }}
+              stroke={theme.colors.gray[400]}
+              tick={{ fontSize: '11px', fill: theme.colors.gray[600] }}
+              width={80} // Give YAxis more space
+            />
+            <Tooltip content={<CustomTooltip />} />
+            <Legend verticalAlign="top" height={36} wrapperStyle={{ fontSize: '12px' }} />
+            <Line 
+              type="monotone" 
+              dataKey="unprotectedValue" 
+              name="Unprotected Value" 
+              stroke={theme.colors.orange[400]} // Use theme color
+              strokeWidth={2}
+              dot={false} 
+            />
+            <Line 
+              type="monotone" 
+              dataKey="protectedValue" 
+              name="Protected Value" 
+              stroke={theme.colors.blue[500]} // Use theme color
+              strokeWidth={2}
+              dot={false} 
+            />
+            {/* Reference Lines for Key Metrics */}
+            <ReferenceLine 
+              x={triggerPrice} 
+              stroke={theme.colors.red[400]} 
+              strokeDasharray="3 3" 
+              label={{ value: 'Trigger', position: 'insideTopLeft', fill: theme.colors.red[500], fontSize: '10px', dy: -5 }} 
+            />
+            <ReferenceLine 
+              x={breakEven} 
+              stroke={theme.colors.green[500]} 
+              strokeDasharray="3 3" 
+              label={{ value: 'Break-even', position: 'insideTopRight', fill: theme.colors.green[600], fontSize: '10px', dy: -5 }} 
+            />
+          </LineChart>
+        </ResponsiveContainer>
       </Box>
       
-      {/* Key Metrics */}
+      {/* Key Metrics - Icons Updated */}
       <SimpleGrid columns={{ base: 1, md: 3 }} spacing={4} mb={8}>
         {/* Protection Trigger */}
         <Box 
@@ -129,18 +204,18 @@ export default function ProtectionVisualization() {
           bg="blue.50"
         >
           <Flex align="center" mb={1}>
-            <Icon as={IoCaretDown} color="blue.500" />
+            <Icon as={IoShieldCheckmarkOutline} color="blue.500" /> 
             <Text fontWeight="semibold" fontSize="sm" ml={1}>
               Protection Trigger
             </Text>
           </Flex>
           
           <Heading as="h3" fontSize="xl" fontWeight="bold" color="blue.700">
-            ${triggerPrice.toLocaleString()}
+            {formatCurrency(triggerPrice)}
           </Heading>
           
           <Text fontSize="xs" color="gray.500">
-            100% of current price
+            100% of current price (estimate)
           </Text>
         </Box>
         
@@ -153,18 +228,18 @@ export default function ProtectionVisualization() {
           bg="blue.50"
         >
           <Flex align="center" mb={1}>
-            <Icon as={IoCaretDown} color="green.500" />
+            <Icon as={IoWalletOutline} color="green.500" />
             <Text fontWeight="semibold" fontSize="sm" ml={1}>
-              Max Recovery
+              Protected Value
             </Text>
           </Flex>
           
           <Heading as="h3" fontSize="xl" fontWeight="bold" color="blue.700">
-            ${maxRecovery.toLocaleString()}
+            {formatCurrency(protectedValueAtTrigger)}
           </Heading>
           
           <Text fontSize="xs" color="gray.500">
-            For {btcAmount} BTC @ ${triggerPrice.toLocaleString()}
+            Value protected below trigger for {btcAmount} BTC
           </Text>
         </Box>
         
@@ -177,18 +252,18 @@ export default function ProtectionVisualization() {
           bg="blue.50"
         >
           <Flex align="center" mb={1}>
-            <Icon as={IoCaretUp} color="blue.500" />
+            <Icon as={IoSwapHorizontalOutline} color="blue.500" /> 
             <Text fontWeight="semibold" fontSize="sm" ml={1}>
-              Break-even
+              Break-even Price
             </Text>
           </Flex>
           
           <Heading as="h3" fontSize="xl" fontWeight="bold" color="blue.700">
-            ${breakEven.toLocaleString()}
+            {formatCurrency(breakEven)}
           </Heading>
           
           <Text fontSize="xs" color="gray.500">
-            95% of current price
+            Price needed to cover premium
           </Text>
         </Box>
       </SimpleGrid>
