@@ -49,6 +49,18 @@ export const ConnectWalletButton = (buttonProps: ConnectWalletButtonProps) => {
   ) : (
     <Button
       size="sm"
+      colorScheme="blue"
+      variant="solid"
+      bgGradient="linear(to-r, blue.600, blue.700)"
+      color="white"
+      _hover={{
+        bgGradient: "linear(to-r, blue.700, blue.800)",
+        shadow: "md"
+      }}
+      _active={{
+        bgGradient: "linear(to-r, blue.800, blue.900)",
+      }}
+      shadow="base"
       onClick={authenticate}
       data-testid="wallet-connect-button"
       {...buttonProps}

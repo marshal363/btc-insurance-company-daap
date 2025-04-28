@@ -150,7 +150,7 @@ export default function ProtectionCost() {
                     </Heading>
                   </Flex>
                   <Badge colorScheme="whiteAlpha" variant="subtle" px={2} py={0.5} fontSize="xs">
-                    Protection Premium
+                    Premium
                   </Badge>
                 </Flex>
                 

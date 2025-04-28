@@ -22,7 +22,6 @@ import {
   IoChevronDown,
   IoChevronUp,
 } from "react-icons/io5";
-import PriceOracleNetwork from "./PriceOracleNetwork";
 
 export default function BitcoinPriceCard() {
   const [showSources, setShowSources] = useState(false);
@@ -201,7 +200,20 @@ export default function BitcoinPriceCard() {
                 max={100} 
                 borderRadius="full" 
                 h="8px"
-                bgGradient="linear(to-r, green.200, yellow.200, red.200)"
+                colorScheme="blue"
+                bg="gray.200"
+              />
+              <Box
+                position="absolute"
+                top="-4px"
+                left={`${volatility}%`}
+                transform="translateX(-50%)"
+                w="16px"
+                h="16px"
+                bg="blue.600"
+                borderRadius="full"
+                border="2px solid white"
+                boxShadow="sm"
               />
             </Box>
             
@@ -219,7 +231,7 @@ export default function BitcoinPriceCard() {
       </Box>
       
       {/* Oracle Network (conditional rendering) */}
-      {showSources && <PriceOracleNetwork />}
+      {/* {showSources && <PriceOracleNetwork />} */}
     </Box>
   );
 } 

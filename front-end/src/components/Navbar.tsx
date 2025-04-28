@@ -1,6 +1,6 @@
 "use client";
 
-import { Box, Container, Flex, Link } from "@chakra-ui/react";
+import { Box, Container, Flex, Link, Image } from "@chakra-ui/react";
 import { isDevnetEnvironment } from "@/lib/contract-utils";
 import { useDevnetWallet } from "@/lib/devnet-wallet-context";
 import { DevnetWalletButton } from "./DevnetWalletButton";
@@ -11,29 +11,19 @@ export const Navbar = () => {
 
   return (
     <Box as="nav" bg="white" boxShadow="sm">
-      <Container maxW="container.xl">
+      <Container maxW="5xl">
         <Flex justify="space-between" h={16} align="center">
           <Flex align="center">
-            <Flex
-              bg="white"
-              borderRadius="md"
-              border="2px"
-              borderColor="gray.700"
-              letterSpacing="-.05em"
-              fontSize="xl"
-              fontWeight="bold"
-              w="52px"
-              h="52px"
-              justify="center"
-              align="center"
-              color="gray.900"
-              shrink="0"
-            >
-              /-/
-            </Flex>
-            <Link href="/" textDecoration="none">
-              <Box fontSize="lg" fontWeight="bold" color="gray.900" ml={4}>
-                Fundraising
+            <Image
+              src="/Bitcoin_Écusson_Élégant-removebg-preview.png"
+              alt="BitHedge Logo"
+              boxSize="52px"
+              objectFit="contain"
+              mr={2}
+            />
+            <Link href="/" textDecoration="none" _hover={{ textDecoration: 'none' }}>
+              <Box fontSize="lg" fontWeight="bold" color="gray.900" ml={2}>
+                Bithedge
               </Box>
             </Link>
           </Flex>

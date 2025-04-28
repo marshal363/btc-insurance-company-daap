@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef } from "react";
 import {
   Box,
   Flex,
@@ -17,6 +17,8 @@ import {
   Grid,
   GridItem,
   Input,
+  VStack,
+  Divider,
 } from "@chakra-ui/react";
 import { IoInformationCircle } from "react-icons/io5";
 
@@ -24,43 +26,49 @@ export default function ProtectionParameters() {
   // Mock data and state
   const [protectedValue, setProtectedValue] = useState(100);
   const [protectionAmount, setProtectionAmount] = useState(0.25);
-  const [protectionPeriod, setProtectionPeriod] = useState(30);
+  const [protectionPeriod, setProtectionPeriod] = useState(90);
   const [inputValue, setInputValue] = useState("0.25");
   
-  const protectedValueRef = useRef(null);
-  const protectionAmountRef = useRef(null);
+  const protectedValueRef = useRef<HTMLDivElement>(null);
+  const protectionAmountRef = useRef<HTMLDivElement>(null);
   
   const currentPrice = 94270.88;
   const protectedValueUSD = (currentPrice * protectedValue) / 100;
   const protectionAmountUSD = parseFloat(inputValue || "0") * currentPrice;
   
-  // Handle manual input changes
-  const handleInputChange = (e) => {
+  // Handle manual input changes with type
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     // Allow any input including empty string, dots, and partial numbers
     const value = e.target.value;
     setInputValue(value);
     
     // Only update actual amount if it's a valid number
-    if (!isNaN(parseFloat(value))) {
-      setProtectionAmount(parseFloat(value));
+    // Handle case where input is just '.' or ends with '.'
+    const numericValue = parseFloat(value);
+    if (!isNaN(numericValue)) {
+      setProtectionAmount(numericValue);
+    } else if (value === "" || value === "." || value.endsWith(".")) {
+      // Keep input value as is, but maybe reset protectionAmount if needed or handle validation elsewhere
+      // For now, do nothing with protectionAmount if not a valid number
     }
   };
   
-  // Handle button click for preset values
-  const handleAmountSelection = (amount) => {
+  // Handle button click for preset values with type
+  const handleAmountSelection = (amount: number) => {
     setProtectionAmount(amount);
     setInputValue(amount.toString());
   };
   
-  // Effect to match heights (for debugging)
-  useEffect(() => {
-    if (protectedValueRef.current && protectionAmountRef.current) {
-      const height1 = protectedValueRef.current.offsetHeight;
-      const height2 = protectionAmountRef.current.offsetHeight;
-      console.log('Protected Value height:', height1);
-      console.log('Protection Amount height:', height2);
+  // Helper function to get period description
+  const getPeriodDescription = (period: number) => {
+    switch (period) {
+      case 30: return "Short Term";
+      case 90: return "Balanced";
+      case 180: return "Strategic";
+      case 360: return "Maximum Coverage";
+      default: return "";
     }
-  }, []);
+  };
   
   return (
     <Box>
@@ -106,10 +114,16 @@ export default function ProtectionParameters() {
               mb={4}
               colorScheme="blue"
             >
-              <SliderTrack bg="blue.100">
-                <SliderFilledTrack />
+              <SliderTrack bg="gray.200">
+                <SliderFilledTrack bg="blue.500" />
               </SliderTrack>
-              <SliderThumb boxSize={6} bg="white" borderWidth="2px" borderColor="blue.500" />
+              <SliderThumb 
+                boxSize={6} 
+                bg="blue.600"
+                borderWidth="2px" 
+                borderColor="white"
+                _focus={{ boxShadow: "outline" }}
+              />
             </Slider>
             
             <Flex justify="space-between" color="gray.600">
@@ -125,6 +139,9 @@ export default function ProtectionParameters() {
                 size="sm" 
                 onClick={() => setProtectedValue(80)}
                 flex="1"
+                _active={{
+                  bg: protectedValue === 80 ? "blue.700" : undefined
+                }}
               >
                 80%
               </Button>
@@ -134,6 +151,9 @@ export default function ProtectionParameters() {
                 size="sm" 
                 onClick={() => setProtectedValue(90)}
                 flex="1"
+                _active={{
+                  bg: protectedValue === 90 ? "blue.700" : undefined
+                }}
               >
                 90%
               </Button>
@@ -143,6 +163,9 @@ export default function ProtectionParameters() {
                 size="sm" 
                 onClick={() => setProtectedValue(100)}
                 flex="1"
+                _active={{
+                  bg: protectedValue === 100 ? "blue.700" : undefined
+                }}
               >
                 100%
               </Button>
@@ -152,6 +175,9 @@ export default function ProtectionParameters() {
                 size="sm" 
                 onClick={() => setProtectedValue(110)}
                 flex="1"
+                _active={{
+                  bg: protectedValue === 110 ? "blue.700" : undefined
+                }}
               >
                 110%
               </Button>
@@ -212,42 +238,22 @@ export default function ProtectionParameters() {
             </Flex>
             
             <HStack spacing={2} mt="auto" mb={1}>
-              <Button 
-                variant={protectionAmount === 0.25 ? "solid" : "outline"} 
-                colorScheme="blue" 
-                size="sm" 
-                onClick={() => handleAmountSelection(0.25)}
-                flex="1"
-              >
-                0.25 BTC
-              </Button>
-              <Button 
-                variant={protectionAmount === 0.50 ? "solid" : "outline"} 
-                colorScheme="blue" 
-                size="sm" 
-                onClick={() => handleAmountSelection(0.50)}
-                flex="1"
-              >
-                0.50 BTC
-              </Button>
-              <Button 
-                variant={protectionAmount === 0.75 ? "solid" : "outline"} 
-                colorScheme="blue" 
-                size="sm" 
-                onClick={() => handleAmountSelection(0.75)}
-                flex="1"
-              >
-                0.75 BTC
-              </Button>
-              <Button 
-                variant={protectionAmount === 1.0 ? "solid" : "outline"} 
-                colorScheme="blue" 
-                size="sm" 
-                onClick={() => handleAmountSelection(1.0)}
-                flex="1"
-              >
-                1.00 BTC
-              </Button>
+              {/* Amount buttons */}
+              {[0.25, 0.50, 0.75, 1.00].map((amount) => (
+                <Button 
+                  key={amount}
+                  variant={protectionAmount === amount ? "solid" : "outline"} 
+                  colorScheme="blue" 
+                  size="sm" 
+                  onClick={() => handleAmountSelection(amount)}
+                  flex="1"
+                  _active={{
+                    bg: protectionAmount === amount ? "blue.700" : undefined
+                  }}
+                >
+                  {amount.toFixed(2)} BTC
+                </Button>
+              ))}
             </HStack>
             
             <Box mt={4} p={3} bg="blue.50" borderRadius="md">
@@ -289,102 +295,64 @@ export default function ProtectionParameters() {
             gap={4}
             mt={4}
           >
-            <GridItem>
-              <Button
-                h="auto"
-                py={6}
-                width="100%"
-                display="flex"
-                flexDirection="column"
-                alignItems="center"
-                variant={protectionPeriod === 30 ? "solid" : "outline"}
-                bg={protectionPeriod === 30 ? "blue.50" : "white"}
-                color={protectionPeriod === 30 ? "blue.600" : "gray.600"}
-                borderColor={protectionPeriod === 30 ? "blue.200" : "gray.200"}
-                _hover={{ bg: protectionPeriod === 30 ? "blue.50" : "gray.50" }}
-                onClick={() => setProtectionPeriod(30)}
-              >
-                <Heading as="h4" fontSize="3xl" fontWeight="bold" mb={1}>
-                  30
-                </Heading>
-                <Text>days</Text>
-                <Text fontSize="sm" mt={2} fontWeight="normal">
-                  Short Term
-                </Text>
-              </Button>
-            </GridItem>
-            <GridItem>
-              <Button
-                h="auto"
-                py={6}
-                width="100%"
-                display="flex"
-                flexDirection="column"
-                alignItems="center"
-                variant={protectionPeriod === 90 ? "solid" : "outline"}
-                bg={protectionPeriod === 90 ? "blue.50" : "white"}
-                color={protectionPeriod === 90 ? "blue.600" : "gray.600"}
-                borderColor={protectionPeriod === 90 ? "blue.200" : "gray.200"}
-                _hover={{ bg: protectionPeriod === 90 ? "blue.50" : "gray.50" }}
-                onClick={() => setProtectionPeriod(90)}
-              >
-                <Heading as="h4" fontSize="3xl" fontWeight="bold" mb={1}>
-                  90
-                </Heading>
-                <Text>days</Text>
-                <Text fontSize="sm" mt={2} fontWeight="normal">
-                  Balanced
-                </Text>
-              </Button>
-            </GridItem>
-            <GridItem>
-              <Button
-                h="auto"
-                py={6}
-                width="100%"
-                display="flex"
-                flexDirection="column"
-                alignItems="center"
-                variant={protectionPeriod === 180 ? "solid" : "outline"}
-                bg={protectionPeriod === 180 ? "blue.50" : "white"}
-                color={protectionPeriod === 180 ? "blue.600" : "gray.600"}
-                borderColor={protectionPeriod === 180 ? "blue.200" : "gray.200"}
-                _hover={{ bg: protectionPeriod === 180 ? "blue.50" : "gray.50" }}
-                onClick={() => setProtectionPeriod(180)}
-              >
-                <Heading as="h4" fontSize="3xl" fontWeight="bold" mb={1}>
-                  180
-                </Heading>
-                <Text>days</Text>
-                <Text fontSize="sm" mt={2} fontWeight="normal">
-                  Strategic
-                </Text>
-              </Button>
-            </GridItem>
-            <GridItem>
-              <Button
-                h="auto"
-                py={6}
-                width="100%"
-                display="flex"
-                flexDirection="column"
-                alignItems="center"
-                variant={protectionPeriod === 360 ? "solid" : "outline"}
-                bg={protectionPeriod === 360 ? "blue.50" : "white"}
-                color={protectionPeriod === 360 ? "blue.600" : "gray.600"}
-                borderColor={protectionPeriod === 360 ? "blue.200" : "gray.200"}
-                _hover={{ bg: protectionPeriod === 360 ? "blue.50" : "gray.50" }}
-                onClick={() => setProtectionPeriod(360)}
-              >
-                <Heading as="h4" fontSize="3xl" fontWeight="bold" mb={1}>
-                  360
-                </Heading>
-                <Text>days</Text>
-                <Text fontSize="sm" mt={2} fontWeight="normal">
-                  Maximum Coverage
-                </Text>
-              </Button>
-            </GridItem>
+            {[30, 90, 180, 360].map((period) => {
+              const isSelected = protectionPeriod === period;
+              return (
+                <GridItem key={period} h="100%">
+                  <Box
+                    h="100%"
+                    p={4}
+                    borderWidth="1px"
+                    borderRadius="lg"
+                    cursor="pointer"
+                    onClick={() => setProtectionPeriod(period)}
+                    transition="all 0.2s ease-in-out"
+                    bg={isSelected ? "blue.600" : "white"}
+                    bgGradient={isSelected ? "linear(to-b, blue.600, blue.700)" : undefined}
+                    color={isSelected ? "white" : "gray.700"}
+                    borderColor={isSelected ? "blue.600" : "gray.200"}
+                    shadow={isSelected ? "md" : "xs"}
+                    _hover={{
+                      shadow: "md",
+                      borderColor: isSelected ? "blue.700" : "gray.300",
+                      bg: isSelected ? undefined : "gray.50",
+                      bgGradient: isSelected ? "linear(to-b, blue.700, blue.800)" : undefined,
+                    }}
+                  >
+                    <VStack spacing={2} align="center" h="100%" justify="center"> 
+                      <Heading 
+                        as="h4" 
+                        fontSize="3xl" 
+                        fontWeight="bold" 
+                        mb={0}
+                        color={isSelected ? "white" : "blue.600"}
+                      >
+                        {period}
+                      </Heading>
+                      <Text 
+                        fontSize="md" 
+                        color={isSelected ? "blue.100" : "gray.500"}
+                      >
+                        days
+                      </Text>
+                      <Divider 
+                        my={2} 
+                        borderColor={isSelected ? "blue.500" : "gray.200"} 
+                        opacity={isSelected ? 0.5 : 1}
+                      />
+                      <Text 
+                        fontSize="sm" 
+                        fontWeight="medium"
+                        color={isSelected ? "blue.100" : "gray.600"}
+                        textAlign="center"
+                      >
+                        {getPeriodDescription(period)}
+                      </Text>
+                    </VStack>
+                  </Box>
+                </GridItem>
+              );
+            })}
           </Grid>
           
           <Box mt={4} p={3} bg="blue.50" borderRadius="md">

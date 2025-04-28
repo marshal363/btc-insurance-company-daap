@@ -6,22 +6,22 @@ export default function BitHedgeHeader() {
   return (
     <Box 
       as="header"
-      bgGradient="linear(to-r, blue.50, blue.100)"
+      bgGradient="linear(to-r, blue.600, blue.700)"
       p={6}
-      borderRadius="2xl"
-      boxShadow="sm"
+      borderRadius="lg"
+      boxShadow="md"
     >
       <Heading 
         as="h1" 
         fontSize="3xl" 
         fontWeight="bold" 
-        color="blue.600"
+        color="white"
       >
         BitHedge Premium Calculator
       </Heading>
       <Text 
         mt={2} 
-        color="gray.500"
+        color="blue.100"
       >
         Calculate Bitcoin PUT option premiums using the Black-Scholes model
       </Text>
