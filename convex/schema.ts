@@ -13,13 +13,30 @@ export default defineSchema({
   historicalPrices: defineTable({
     timestamp: v.number(),
     price: v.number(),
-  }).index("by_timestamp", ["timestamp"]),
+    source: v.optional(v.string()),
+    isDaily: v.optional(v.boolean()),
+    dayIndex: v.optional(v.number()),
+    high: v.optional(v.number()),
+    low: v.optional(v.number()),
+    open: v.optional(v.number()),
+    volume: v.optional(v.number()),
+  })
+  .index("by_timestamp", ["timestamp"])
+  .index("by_source_and_timestamp", ["source", "timestamp"])
+  .index("by_day_index", ["dayIndex"]),
   
   historicalVolatility: defineTable({
     period: v.number(),
     volatility: v.number(),
     timestamp: v.number(),
-  }).index("by_timestamp", ["timestamp"]),
+    timeframe: v.optional(v.number()),
+    calculationMethod: v.optional(v.string()),
+    dataPoints: v.optional(v.number()),
+    startTimestamp: v.optional(v.number()),
+    endTimestamp: v.optional(v.number()),
+  })
+  .index("by_timestamp", ["timestamp"])
+  .index("by_timeframe_and_timestamp", ["timeframe", "timestamp"]),
   
   aggregatedPrices: defineTable({
     price: v.number(),
