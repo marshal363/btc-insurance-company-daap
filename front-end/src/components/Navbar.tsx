@@ -1,6 +1,6 @@
 "use client";
 
-import { Box, Container, Flex, Link, Image } from "@chakra-ui/react";
+import { Box, Container, Flex, Link, Image, Button } from "@chakra-ui/react";
 import { isDevnetEnvironment } from "@/lib/contract-utils";
 import { useDevnetWallet } from "@/lib/devnet-wallet-context";
 import { DevnetWalletButton } from "./DevnetWalletButton";
@@ -38,6 +38,12 @@ export const Navbar = () => {
             </Link>
           </Flex>
           <Flex align="center" gap={4}>
+            {/* Dashboard Link */}
+            <Link href="/dashboard" _hover={{ textDecoration: 'none' }}>
+              <Button variant="ghost" colorScheme="gray" size="sm">
+                Dashboard
+              </Button>
+            </Link>
             {isDevnetEnvironment() ? (
               <DevnetWalletButton
                 currentWallet={currentWallet}

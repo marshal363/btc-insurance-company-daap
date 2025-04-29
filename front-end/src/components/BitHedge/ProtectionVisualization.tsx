@@ -32,7 +32,15 @@ import {
 // Helper function to format currency
 const formatCurrency = (value: number) => `$${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-export default function ProtectionVisualization() {
+// Define user roles if not already globally defined
+type UserRole = 'buyer' | 'provider';
+
+// Update props interface
+interface ProtectionVisualizationProps {
+  currentUserRole: UserRole;
+}
+
+export default function ProtectionVisualization({ currentUserRole }: ProtectionVisualizationProps) {
   const theme = useTheme(); // Access Chakra theme colors
   
   // Neumorphic styles (same as BitcoinPriceCard)

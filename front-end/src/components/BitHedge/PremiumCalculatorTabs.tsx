@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import {
   Box,
   Flex,
@@ -12,9 +11,13 @@ import {
 } from "@chakra-ui/react";
 import { IoShieldOutline, IoBusinessOutline } from "react-icons/io5";
 
-export default function PremiumCalculatorTabs() {
-  const [tabIndex, setTabIndex] = useState(0);
-  
+// Define prop types
+interface PremiumCalculatorTabsProps {
+  tabIndex: number;
+  onTabChange: (index: number) => void;
+}
+
+export default function PremiumCalculatorTabs({ tabIndex, onTabChange }: PremiumCalculatorTabsProps) {
   // Neumorphic styles
   const neumorphicBg = "#E8EAE9"; 
   const neumorphicShadowLight = "-10px -10px 20px rgba(255, 255, 255, 0.8)"; 
@@ -35,7 +38,7 @@ export default function PremiumCalculatorTabs() {
     >
       <Tabs 
         index={tabIndex} 
-        onChange={setTabIndex}
+        onChange={onTabChange}
         variant="unstyled" 
         isFitted
         mt={2} // Add some margin top

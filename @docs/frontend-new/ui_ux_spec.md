@@ -80,7 +80,19 @@ This document outlines the key UI/UX components of the BitHedge Premium Calculat
 - **Tab Buttons:**
   - Style: Large clickable areas within a shared light gray background container. The active tab has a white background, shadow, and blue icon/text. The inactive tab has a gray icon/text. Rounded corners for the container.
   - Content: Each tab has an icon, a title ("Protection Buyer" or "Liquidity Provider"), and a subtitle ("Buy Insurance for your BTC" or "Earn Income on your BTC").
-- **Tab Content Area:** The area below the tabs displays different parameter sections based on the active tab. The screenshots primarily show the "Protection Buyer" view.
+- **Tab Content Area & Component Behavior:**
+  - The entire content section _below_ the `PremiumCalculatorTabs` component changes dynamically based on the active tab.
+  - When switching from "Protection Buyer" to "Liquidity Provider" (or vice versa), the following components are replaced or updated:
+    - `Protection Parameters Section` (Section 6) will be replaced by a corresponding "Liquidity Provision Parameters" section (specific UI TBD).
+    - `Protection Visualization Section` (Section 8) will likely be replaced by a visualization relevant to liquidity providers (e.g., potential yield, risk exposure) or hidden. MOst likely adpts PNL visualization fro put sellers
+    - `Protection Cost Section` (Section 9) will be replaced by a section displaying potential income or yield for the provider.
+    - `Advanced Parameters Section` (Section 7) and `Calculation Method Section` (Section 10) might remain structurally similar but will update their displayed values and potentially default parameters based on the selected role (Buyer vs. Provider).
+  - Components _above_ the tabs remain static and unaffected by the tab switch:
+    - `Header Section` (Section 2)
+    - `Bitcoin Price Feed Card` (Section 3)
+    - `Price Oracle Network Table` (Section 4, if visible)
+  - The `Footer` (Section 11) also remains static.
+  - The transition between the content areas for each tab should be smooth, as described in Section 12 (Animations & Transitions).
 
 ## 6. Protection Parameters Section (Buyer View)
 
@@ -173,3 +185,29 @@ This document outlines the key UI/UX components of the BitHedge Premium Calculat
 - **Styling:** Gray text (`text-gray-500`), small font size (`text-sm`), top padding (`pt-6`), top margin (`mt-12`).
 
 This specification details the observed components and styling. An AI agent should use this as a guide, inferring component relationships and detailed styling where necessary, potentially referencing the provided `app/page.tsx` and its sub-components for structural hints.
+
+## 12. Animations & Transitions (Inferred)
+
+While static screenshots don't show motion, the following animations and transitions are inferred or recommended for a smooth user experience:
+
+- **Loading States (`BitcoinPriceCard`, `PremiumCalculatorTabs`):**
+  - When price data is loading (`isLoading` state), relevant sections (e.g., price values, volatility, premium calculations) should display subtle loading indicators. This could be a skeleton placeholder (gray shapes mimicking the content layout) or a small spinner icon near the affected values.
+  - Consider a gentle fade-in transition for the data once it arrives to replace the loading state.
+- **Conditional Rendering (`BitcoinPriceCard`, `Advanced Parameters`):**
+  - **Price Oracle Network Table:** When the "View Sources" button is clicked, the table should smoothly appear (e.g., slide down and fade in) rather than abruptly popping into view. Collapsing it should use a reverse animation (slide up and fade out).
+  - **Advanced Parameters Accordion:** Expanding/collapsing this section should involve a smooth height transition (slide down/up) for the content area. The chevron icon in the header should rotate smoothly (e.g., 90 or 180 degrees) to indicate the open/closed state.
+- **Tab Switching (`PremiumCalculatorTabs`):**
+  - When switching between the "Protection Buyer" and "Liquidity Provider" tabs, the content area below should transition smoothly. A subtle cross-fade or a gentle horizontal slide effect could be used. The active tab's visual state change (background, text color) should also have a brief transition.
+- **Value Updates (`BitcoinPriceCard`, Calculation Results):**
+  - When dynamic values like the "Current Price", "Volatility Index", or calculated "Protection Cost" update (e.g., after a refresh or parameter change), consider a brief visual cue like a subtle background flash/highlight or a quick fade effect on the number itself to draw attention to the change.
+- **Interactive Elements (Buttons, Sliders, Tabs):**
+  - **Hover Effects:** Buttons, clickable cards (like Protection Period selectors), and tabs should have subtle transitions on hover (e.g., slight background color change, minor scale increase, or shadow intensity change) that animate smoothly over a short duration (e.g., 100-200ms).
+  - **Active/Pressed State:** Clicking buttons or selecting options should have a quick visual feedback animation (e.g., a slightly more pronounced scale change or color shift).
+  - **Sliders:** The slider thumb/handle should move smoothly when dragged or when its value changes programmatically.
+- **Chart Interactions (`Protection Visualization`):**
+  - Initial chart load could feature lines drawing themselves or data points fading/scaling in.
+  - Zooming/panning via drag interactions should feel fluid and responsive.
+- **Tooltips (Info Icons):**
+  - Tooltips appearing on hover/click of the info icons should fade in smoothly rather than appearing instantly.
+
+These animations should generally be quick and subtle (e.g., 150-300ms duration) to enhance the user experience without being distracting or causing perceived delays. Easing functions (like `ease-in-out`) should be used for more natural motion.

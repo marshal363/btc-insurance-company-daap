@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from 'react';
 import { Box, Container } from "@chakra-ui/react";
 import BitHedgeHeader from "@/components/BitHedge/BitHedgeHeader";
 import BitcoinPriceCard from "@/components/BitHedge/BitcoinPriceCard";
@@ -11,7 +12,21 @@ import ProtectionCost from "@/components/BitHedge/ProtectionCost";
 import CalculationMethod from "@/components/BitHedge/CalculationMethod";
 import BitHedgeFooter from "@/components/BitHedge/BitHedgeFooter";
 
+// Define user roles
+type UserRole = 'buyer' | 'provider';
+
 export default function Home() {
+  // State for the selected tab index
+  const [tabIndex, setTabIndex] = useState(0);
+
+  // Determine the current user role based on the tab index
+  const currentUserRole: UserRole = tabIndex === 0 ? 'buyer' : 'provider';
+
+  // Handler for tab changes
+  const handleTabChange = (index: number) => {
+    setTabIndex(index);
+  };
+
   return (
     <Box as="main" bg="white" py={8} borderRadius="lg">
       <Container maxWidth="5xl" px={4} borderRadius="lg">
@@ -22,23 +37,23 @@ export default function Home() {
         </Box>
         
         <Box mt={8}>
-          <PremiumCalculatorTabs />
+          <PremiumCalculatorTabs tabIndex={tabIndex} onTabChange={handleTabChange} />
         </Box>
         
         <Box mt={8}>
-          <ProtectionParameters />
+          <ProtectionParameters currentUserRole={currentUserRole} />
         </Box>
         
         <Box mt={8}>
-          <AdvancedParameters />
+          <AdvancedParameters currentUserRole={currentUserRole} />
         </Box>
         
         <Box mt={8}>
-          <ProtectionVisualization />
+          <ProtectionVisualization currentUserRole={currentUserRole} />
         </Box>
         
         <Box mt={8}>
-          <ProtectionCost />
+          <ProtectionCost currentUserRole={currentUserRole} />
         </Box>
         
         <Box mt={8}>

@@ -11,7 +11,15 @@ import {
 } from "@chakra-ui/react";
 import { IoSettingsOutline, IoChevronDown, IoChevronUp } from "react-icons/io5";
 
-export default function AdvancedParameters() {
+// Define user roles if not already globally defined
+type UserRole = 'buyer' | 'provider';
+
+// Update props interface
+interface AdvancedParametersProps {
+  currentUserRole: UserRole;
+}
+
+export default function AdvancedParameters({ currentUserRole }: AdvancedParametersProps) {
   const { isOpen, onToggle } = useDisclosure();
   
   return (

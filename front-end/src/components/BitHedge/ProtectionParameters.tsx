@@ -22,7 +22,15 @@ import {
 } from "@chakra-ui/react";
 import { IoInformationCircle } from "react-icons/io5";
 
-export default function ProtectionParameters() {
+// Define user roles if not already globally defined
+type UserRole = 'buyer' | 'provider';
+
+// Update props interface
+interface ProtectionParametersProps {
+  currentUserRole: UserRole;
+}
+
+export default function ProtectionParameters({ currentUserRole }: ProtectionParametersProps) {
   // Mock data and state
   const [protectedValue, setProtectedValue] = useState(100);
   const [protectionAmount, setProtectionAmount] = useState(0.25);

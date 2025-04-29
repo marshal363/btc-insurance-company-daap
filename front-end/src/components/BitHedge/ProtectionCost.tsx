@@ -26,7 +26,15 @@ import {
   IoWallet
 } from "react-icons/io5";
 
-export default function ProtectionCost() {
+// Define user roles if not already globally defined
+type UserRole = 'buyer' | 'provider';
+
+// Update props interface
+interface ProtectionCostProps {
+  currentUserRole: UserRole;
+}
+
+export default function ProtectionCost({ currentUserRole }: ProtectionCostProps) {
   // Mock data
   const premiumSTX = 942.75;
   const premiumUSD = 440.54;
