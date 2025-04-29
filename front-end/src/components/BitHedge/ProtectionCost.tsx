@@ -25,9 +25,7 @@ import {
   IoShieldCheckmark,
   IoWallet
 } from "react-icons/io5";
-
-// Define user roles if not already globally defined
-type UserRole = 'buyer' | 'provider';
+import type { UserRole } from '@/types'; // Import the centralized type
 
 // Update props interface
 interface ProtectionCostProps {

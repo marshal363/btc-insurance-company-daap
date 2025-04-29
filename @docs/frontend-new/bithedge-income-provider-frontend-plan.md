@@ -21,11 +21,11 @@ This plan assumes the completion of Area 1 (Convex Client & Wallet Provider Setu
 
 | Implementation Area                     | Total Tasks | Not Started | In Progress | Completed | Completion % |
 | --------------------------------------- | ----------- | ----------- | ----------- | --------- | ------------ |
-| 1. State Management & Role Propagation  | 3           | 3           | 0           | 0         | 0%           |
-| 2. Dynamic Component UI (Provider View) | 12          | 12          | 0           | 0         | 0%           |
+| 1. State Management & Role Propagation  | 3           | 0           | 0           | 3         | 100%         |
+| 2. Dynamic Component UI (Provider View) | 12          | 7           | 0           | 5         | ~42%         |
 | 3. Copy & Terminology Updates           | 5           | 5           | 0           | 0         | 0%           |
 | 4. Convex Integration (Provider Logic)  | 8           | 8           | 0           | 0         | 0%           |
-| **Overall Project**                     | **28**      | **28**      | **0**       | **0**     | **0%**       |
+| **Overall Project**                     | **28**      | **20**      | **0**       | **8**     | **~29%**     |
 
 _Note: Task counts and estimates are initial values and may be refined._
 
@@ -37,9 +37,9 @@ _Note: Task counts and estimates are initial values and may be refined._
 
 | Task ID | Description                                                                                                                                       | Est. Hours                                                        | Status | Dependencies                                  | Assignee                             |
 | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- | ------ | --------------------------------------------- | ------------------------------------ | --- |
-| SRP-101 | Identify/Refactor the parent component that renders the sections below `PremiumCalculatorTabs.tsx`.                                               | 1                                                                 | ⬜     | Understanding of `src/app/page.tsx` structure |                                      |
-| SRP-102 | Lift state up or use Context: Manage `currentUserRole: 'buyer'                                                                                    | 'provider'`state in the parent component, derived from`tabIndex`. | 2      | ⬜                                            | SRP-101, `PremiumCalculatorTabs.tsx` |     |
-| SRP-103 | Propagate `currentUserRole` down to child components (`ProtectionParameters`, `ProtectionVisualization`, `ProtectionCost`, `AdvancedParameters`). | 1.5                                                               | ⬜     | SRP-102                                       |                                      |
+| SRP-101 | Identify/Refactor the parent component that renders the sections below `PremiumCalculatorTabs.tsx`.                                               | 1                                                                 | 🟢     | Understanding of `src/app/page.tsx` structure |                                      |
+| SRP-102 | Lift state up or use Context: Manage `currentUserRole: 'buyer'                                                                                    | 'provider'`state in the parent component, derived from`tabIndex`. | 2      | 🟢                                            | SRP-101, `PremiumCalculatorTabs.tsx` |     |
+| SRP-103 | Propagate `currentUserRole` down to child components (`ProtectionParameters`, `ProtectionVisualization`, `ProtectionCost`, `AdvancedParameters`). | 1.5                                                               | 🟢     | SRP-102                                       |                                      |
 
 ### Area 2: Dynamic Component UI (Provider View)
 
@@ -47,11 +47,11 @@ _Note: Task counts and estimates are initial values and may be refined._
 
 | Task ID | Description                                                                                                                                                                                                  | Est. Hours | Status | Dependencies                                                                         | Assignee |
 | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------- | ------ | ------------------------------------------------------------------------------------ | -------- |
-| DCU-201 | **ProtectionParameters:** Add conditional rendering logic based on `currentUserRole`.                                                                                                                        | 1          | ⬜     | SRP-103, `ProtectionParameters.tsx`                                                  |          |
-| DCU-202 | **ProtectionParameters:** Implement "Risk-Reward Tier" selection UI (e.g., cards/buttons) for provider view.                                                                                                 | 2.5        | ⬜     | DCU-201, `@docs/frontend-new/bithedge-income-provider-center-streamlined-ux-spec.md` |          |
-| DCU-203 | **ProtectionParameters:** Implement "Capital Commitment" selection UI (e.g., input field, quick-select buttons) for provider view.                                                                           | 2.5        | ⬜     | DCU-201, Provider UX Spec                                                            |          |
-| DCU-204 | **ProtectionParameters:** Implement "Income Period" selection UI (e.g., duration cards/tabs) for provider view.                                                                                              | 2.5        | ⬜     | DCU-201, Provider UX Spec                                                            |          |
-| DCU-205 | **ProtectionParameters:** Implement state management within the component to handle provider inputs.                                                                                                         | 2          | ⬜     | DCU-202, DCU-203, DCU-204                                                            |          |
+| DCU-201 | **ProtectionParameters:** Add conditional rendering logic based on `currentUserRole`. _(Refactored component internally into `BuyerParametersUI` and `ProviderParametersUI`)_                                | 1          | 🟢     | SRP-103, `ProtectionParameters.tsx`                                                  |          |
+| DCU-202 | **ProtectionParameters:** Implement "Risk-Reward Tier" selection UI (e.g., cards/buttons) for provider view (`ProviderParametersUI`).                                                                        | 2.5        | 🟢     | DCU-201, `@docs/frontend-new/bithedge-income-provider-center-streamlined-ux-spec.md` |          |
+| DCU-203 | **ProtectionParameters:** Implement "Capital Commitment" selection UI (e.g., input field, quick-select buttons) for provider view (`ProviderParametersUI`).                                                  | 2.5        | 🟢     | DCU-201, Provider UX Spec                                                            |          |
+| DCU-204 | **ProtectionParameters:** Implement "Income Period" selection UI (e.g., duration cards/tabs) for provider view (`ProviderParametersUI`).                                                                     | 2.5        | 🟢     | DCU-201, Provider UX Spec                                                            |          |
+| DCU-205 | **ProtectionParameters:** Implement state management within the component (`ProviderParametersUI`) to handle provider inputs. _(Addressed via local state in DCU-202, DCU-203, DCU-204)_                     | 2          | 🟢     | DCU-202, DCU-203, DCU-204                                                            |          |
 | DCU-206 | **ProtectionVisualization:** Add conditional rendering logic based on `currentUserRole`.                                                                                                                     | 1          | ⬜     | SRP-103, `ProtectionVisualization.tsx`                                               |          |
 | DCU-207 | **ProtectionVisualization:** Adapt the chart component to display potential income/loss scenarios for selling protection (provider view). Consider using or adapting existing chart library.                 | 4          | ⬜     | DCU-206, Provider UX Spec                                                            |          |
 | DCU-208 | **ProtectionVisualization:** Update summary boxes below the chart to display provider-relevant metrics (e.g., Max Potential Yield, Strike Price Provided, Break-even for Provider).                          | 2          | ⬜     | DCU-206, Provider UX Spec                                                            |          |
@@ -91,7 +91,7 @@ _Note: Task counts and estimates are initial values and may be refined._
 ## 5. Implementation Strategy
 
 1.  **State First (Area 1):** Implement the `currentUserRole` state management and propagation.
-2.  **UI Scaffolding (Area 2):** Add the conditional rendering logic and basic UI structure for the provider view **within the existing components (`ProtectionParameters`, `ProtectionVisualization`, `ProtectionCost`, `AdvancedParameters`)**. This approach is preferred for the MVP to maintain simplicity and reduce code duplication. Avoid creating entirely separate component trees for the provider flow unless absolutely necessary.
+2.  **UI Scaffolding (Area 2):** Add the conditional rendering logic and basic UI structure for the provider view **within the existing components (`ProtectionParameters`, `ProtectionVisualization`, `ProtectionCost`, `AdvancedParameters`)**. This approach is preferred for the MVP to maintain simplicity and reduce code duplication. Avoid creating entirely separate component trees for the provider flow unless absolutely necessary. _Note: For `ProtectionParameters`, this was achieved by creating internal `BuyerParametersUI` and `ProviderParametersUI` functional components within the main file to keep the main component clean._
 3.  **Copy Updates (Area 3):** Populate the provider UI structure with the correct terminology.
 4.  **Convex Connections (Area 4):** Connect the provider UI elements to Convex queries for displaying data (yield) and then implement the transaction hook for submitting provider actions.
 5.  **Testing:** Test each component's dynamic behavior and the end-to-end flow for providers thoroughly.
@@ -105,3 +105,50 @@ _Note: Task counts and estimates are initial values and may be refined._
 ## 7. Conclusion
 
 This plan addresses the gap identified in the current frontend implementation by outlining the steps to make the UI fully dynamic for both Protection Buyers and Income Providers. Completing these tasks will result in a unified interface that adapts correctly based on user role selection, moving closer to the MVP goal.
+
+## 8. Refactoring Recommendations & Next Steps (Pre-Area 2 Continuation)
+
+Based on the implementation progress through DCU-205, several scalability and maintainability improvements are recommended before proceeding with further tasks in Area 2 (DCU-206 onwards) or Area 4 (Convex Integration). Addressing these now will establish a cleaner foundation.
+
+### Summary of Recommendations:
+
+1.  **Centralized `UserRole` Type (Completed):**
+
+    - **Status:** Done.
+    - **Description:** The `UserRole` type (`'buyer' | 'provider'`) was initially defined in multiple components. It has been centralized into `front-end/src/types/index.ts` and imported where needed.
+    - **Benefit:** Improves maintainability and type consistency across the application.
+
+2.  **Lift Provider State from `ProviderParametersUI`:**
+
+    - **Status:** Done.
+    - **Description:** The state variables managing the provider's selections (`selectedTier`, `commitmentAmount`, `selectedPeriod`) and their corresponding handler functions (e.g., `handleCommitmentChange`, `handleQuickSelect`, `setSelectedTier`, `setSelectedPeriod`) were previously defined locally.
+    - **Recommendation:** Lift this state and the handlers up into the main `ProtectionParameters` component. (Completed)
+    - **Benefit:** Centralizes the complete provider configuration state in one place (`ProtectionParameters`). This is crucial for Area 4, where this combined state will be needed to trigger Convex queries (like `calculatePotentialYield`) and mutations (like `prepareCommitment`). It avoids prop drilling _up_ or needing complex callbacks later.
+
+3.  **Extract `ProviderParametersUI` Component:**
+
+    - **Status:** Done.
+    - **Description:** The `ProviderParametersUI` component was previously an internal functional component within `ProtectionParameters.tsx`.
+    - **Recommendation:** Extract this component into its own file: `front-end/src/components/BitHedge/ProviderParametersUI.tsx`. This new component will accept the lifted state and handlers (from Recommendation #2) as props. (Completed)
+    - **Benefit:** Reduces the size and complexity of `ProtectionParameters.tsx`, improving readability and separation of concerns. `ProtectionParameters.tsx` becomes primarily responsible for role switching and managing the state for the _active_ role's UI.
+
+4.  **Extract `BuyerParametersUI` Component (Optional but Recommended):**
+
+    - **Status:** Done.
+    - **Description:** Similar to `ProviderParametersUI`, the `BuyerParametersUI` was previously an internal component.
+    - **Recommendation:** Extract this component into its own file: `front-end/src/components/BitHedge/BuyerParametersUI.tsx`. It would continue managing its own state for now, unless buyer state also needs to be accessed by the parent for backend integration. (Completed)
+    - **Benefit:** Further cleans up `ProtectionParameters.tsx` and maintains consistency in component structure.
+
+5.  **Shared Constants/Hooks (Future Consideration):**
+    - **Status:** Future Improvement.
+    - **Description:** Neumorphic style constants and potentially data arrays (like `tiers`, period definitions) are duplicated or defined within components.
+    - **Recommendation:** Consider extracting these into shared constant files (e.g., `src/styles/neumorphism.ts`) or custom hooks if logic becomes more complex.
+    - **Benefit:** Reduces code duplication and centralizes theme/configuration elements.
+
+### Immediate Next Steps:
+
+The refactoring steps (Lifting provider state, Extracting UI components) identified previously have been confirmed as completed.
+
+The next critical step, as outlined in the `state-management-and-data-flow.md` document, is to implement the **Shared Data Layer** using React Context API (e.g., `PremiumDataContext`). This will facilitate communication of calculation inputs and results between `ProtectionParameters`, `ProtectionVisualization`, and `ProtectionCost` before proceeding with DCU-206 or Area 4 tasks.
+
+Once this refactoring is complete and verified, the codebase will be better structured for the remaining tasks.

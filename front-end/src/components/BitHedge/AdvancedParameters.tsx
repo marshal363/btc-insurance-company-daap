@@ -10,9 +10,7 @@ import {
   useDisclosure,
 } from "@chakra-ui/react";
 import { IoSettingsOutline, IoChevronDown, IoChevronUp } from "react-icons/io5";
-
-// Define user roles if not already globally defined
-type UserRole = 'buyer' | 'provider';
+import type { UserRole } from '@/types';
 
 // Update props interface
 interface AdvancedParametersProps {

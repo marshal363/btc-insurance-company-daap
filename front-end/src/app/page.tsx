@@ -11,9 +11,8 @@ import ProtectionVisualization from "@/components/BitHedge/ProtectionVisualizati
 import ProtectionCost from "@/components/BitHedge/ProtectionCost";
 import CalculationMethod from "@/components/BitHedge/CalculationMethod";
 import BitHedgeFooter from "@/components/BitHedge/BitHedgeFooter";
-
-// Define user roles
-type UserRole = 'buyer' | 'provider';
+import type { UserRole } from '@/types';
+import { PremiumDataProvider } from '@/contexts/PremiumDataContext';
 
 export default function Home() {
   // State for the selected tab index
@@ -40,21 +39,23 @@ export default function Home() {
           <PremiumCalculatorTabs tabIndex={tabIndex} onTabChange={handleTabChange} />
         </Box>
         
-        <Box mt={8}>
-          <ProtectionParameters currentUserRole={currentUserRole} />
-        </Box>
-        
-        <Box mt={8}>
-          <AdvancedParameters currentUserRole={currentUserRole} />
-        </Box>
-        
-        <Box mt={8}>
-          <ProtectionVisualization currentUserRole={currentUserRole} />
-        </Box>
-        
-        <Box mt={8}>
-          <ProtectionCost currentUserRole={currentUserRole} />
-        </Box>
+        <PremiumDataProvider>
+          <Box mt={8}>
+            <ProtectionParameters currentUserRole={currentUserRole} />
+          </Box>
+          
+          <Box mt={8}>
+            <AdvancedParameters currentUserRole={currentUserRole} />
+          </Box>
+          
+          <Box mt={8}>
+            <ProtectionVisualization currentUserRole={currentUserRole} />
+          </Box>
+          
+          <Box mt={8}>
+            <ProtectionCost currentUserRole={currentUserRole} />
+          </Box>
+        </PremiumDataProvider>
         
         <Box mt={8}>
           <CalculationMethod />
