@@ -14,7 +14,6 @@ import {
   IoStatsChart, 
   IoInformationCircle,
   IoShieldCheckmarkOutline,
-  IoWalletOutline,
   IoSwapHorizontalOutline,
   IoTrendingUpOutline,
   IoReceiptOutline,
@@ -31,9 +30,19 @@ import {
   ReferenceLine 
 } from 'recharts';
 import { usePremiumData } from '@/contexts/PremiumDataContext';
+import { 
+  generateChartData, 
+  ChartDataPoint, 
+  calculateProviderBreakEven 
+} from './utils/chartUtils'; // Import from the new utility file
 
 // Helper function to format currency
-const formatCurrency = (value: number) => `$${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const formatCurrency = (value: number | null | undefined, placeholder: string = '$--.--') => {
+  if (value === null || value === undefined) {
+    return placeholder;
+  }
+  return `$${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+};
 
 export default function ProtectionVisualization() {
   const theme = useTheme();
@@ -41,6 +50,11 @@ export default function ProtectionVisualization() {
   // --- Consume Context --- 
   const { 
     currentUserRole,
+    // TODO: Add providerInputs and calculationResults when context is ready
+    // Example:
+    // buyerInputs: { btcAmount, triggerPrice }, 
+    // providerInputs: { selectedTier, commitmentAmount, selectedPeriod }, // Need strikePrice, premiumReceivedPerBtc from tier/period
+    // calculationResults: { /* buyerBreakEven, providerYield, etc. */ } 
   } = usePremiumData();
   const isProvider = currentUserRole === 'provider';
 
@@ -51,71 +65,36 @@ export default function ProtectionVisualization() {
   const neumorphicBoxShadow = `${neumorphicShadowLight}, ${neumorphicShadowDark}`;
   const neumorphicBorderRadius = "xl"; 
 
-  // --- Conditional Data & Logic --- 
-  // TODO: Replace mock data with data from context (providerInputs, calculationResults)
-  const triggerPrice = 94270.88; // Mock Buyer Data
-  const breakEven = 89871.69;    // Mock Buyer Data
-  const btcAmount = 0.25;       // Mock Buyer Data (Needs lifting or context)
+  // --- Data for Chart and Metrics --- 
+  // TODO: Replace MOCK data with data from context
+  // Mock Buyer Data (Eventually from context.buyerInputs & context.calculationResults)
+  const mockBuyerTriggerPrice = 94270.88; 
+  const mockBuyerBreakEven = 89871.69;    
+  const mockBuyerBtcAmount = 0.25;       
 
-  // TODO: Define provider-specific mock data or derive from context
-  // Example placeholder data:
-  const potentialYield = 0.15; // 15% APY (Mock Provider Data)
-  const strikePriceProvided = 90000; // Mock Provider Data
-  const providerBreakEven = 85000; // Below this BTC price, provider starts losing (Mock Provider Data)
+  // Mock Provider Data (Eventually from context.providerInputs & context.calculationResults)
+  const mockProviderPotentialYield = 0.15; // 15% APY 
+  const mockProviderStrikePrice = 90000; 
+  const mockProviderPremiumPerBtc = 500; // Needed for chart/break-even
+  const mockProviderCommitmentBtc = 1; // Needed for chart PnL scaling
 
-  // Calculations (Currently Buyer Specific)
-  const premiumPerBTC = triggerPrice - breakEven;
-  const totalPremium = premiumPerBTC * btcAmount;
-  const protectedValueAtTrigger = triggerPrice * btcAmount;
+  // Calculate Provider Break-Even (using mock data)
+  const providerBreakEven = calculateProviderBreakEven(mockProviderStrikePrice, mockProviderPremiumPerBtc);
 
-  // Generate data for the chart (Currently Buyer Specific)
-  // TODO: Adapt this function based on currentUserRole (DCU-207)
-  const generateChartData = () => {
-    // ... (existing buyer chart logic) ...
-    // Placeholder for provider chart data generation
-    if (isProvider) {
-        // Return data structure suitable for provider income/loss scenarios
-        // e.g., [{ btcPrice: ..., income: ..., capitalAtRisk: ... }, ...]
-        return []; // Return empty array for now
-    }
+  // Generate data for the chart using the utility function
+  // Pass role and mock data for now; replace mocks with context values later
+  const chartData = generateChartData({ 
+    role: currentUserRole,
+    // Pass relevant mock data based on role
+    triggerPrice: mockBuyerTriggerPrice,
+    breakEvenBuyer: mockBuyerBreakEven,
+    btcAmount: mockBuyerBtcAmount,
+    strikePrice: mockProviderStrikePrice,
+    premiumReceivedPerBtc: mockProviderPremiumPerBtc,
+    commitmentAmountBtc: mockProviderCommitmentBtc,
+  });
 
-    const data = [];
-    const currentPrice = triggerPrice; 
-    const rangeMultiplier = 0.5; 
-    const lowerBound = currentPrice * (1 - rangeMultiplier);
-    const upperBound = currentPrice * (1 + rangeMultiplier);
-    const steps = 20; 
-
-    for (let i = 0; i <= steps; i++) {
-      const btcPrice = lowerBound + (upperBound - lowerBound) * (i / steps);
-      const unprotectedValue = btcPrice * btcAmount;
-      let protectedValue;
-      if (btcPrice >= triggerPrice) {
-        protectedValue = unprotectedValue - totalPremium;
-      } else {
-        protectedValue = protectedValueAtTrigger - totalPremium;
-      }
-      data.push({
-        btcPrice: btcPrice,
-        unprotectedValue: unprotectedValue,
-        protectedValue: protectedValue,
-      });
-    }
-    return data;
-  };
-
-  const chartData = generateChartData();
-
-  // Define the shape of chart data points (Potentially needs conditional types)
-  type ChartDataPoint = {
-    btcPrice: number;
-    unprotectedValue?: number; // Optional for provider
-    protectedValue?: number;   // Optional for provider
-    income?: number;           // Optional for buyer
-    capitalAtRisk?: number;    // Optional for buyer
-  };
-
-  // Define type for CustomTooltip props (Needs adaptation for provider)
+  // Define type for CustomTooltip props (using ChartDataPoint from utils)
   type CustomTooltipProps = {
     active?: boolean;
     payload?: Array<{ 
@@ -127,10 +106,9 @@ export default function ProtectionVisualization() {
     label?: number; // The X-axis value (btcPrice)
   };
 
-  // Custom Tooltip (Needs adaptation for provider)
+  // Custom Tooltip (Adapted for provider)
   const CustomTooltip = ({ active, payload, label }: CustomTooltipProps) => {
     if (active && payload && payload.length && label !== undefined) {
-      // TODO: Conditionally render tooltip content based on isProvider
       return (
         <Box 
           bg="rgba(255, 255, 255, 0.9)"
@@ -141,11 +119,21 @@ export default function ProtectionVisualization() {
           borderColor="gray.300"
         >
           <Text fontWeight="bold" mb={1} color="gray.800">BTC Price: {formatCurrency(label)}</Text>
-          {/* Buyer View (Example) */} 
-          {!isProvider && payload[0] && <Text fontSize="sm" color={theme.colors.orange[600]}>{payload[0].name}: {formatCurrency(payload[0].value)}</Text>} 
-          {!isProvider && payload[1] && <Text fontSize="sm" color={theme.colors.blue[600]}>{payload[1].name}: {formatCurrency(payload[1].value)}</Text>} 
-          {/* Provider View (Placeholder) */} 
-          {isProvider && payload[0] && <Text fontSize="sm" color={theme.colors.green[600]}>Potential Income: {formatCurrency(payload[0].value)}</Text>} 
+          {isProvider ? (
+            // Provider View
+            payload.map((item, index) => (
+              <Text key={index} fontSize="sm" color={item.color || theme.colors.green[600]}>
+                {item.name}: {formatCurrency(item.value)} 
+              </Text>
+            ))
+          ) : (
+            // Buyer View
+            payload.map((item, index) => (
+              <Text key={index} fontSize="sm" color={item.color || theme.colors.blue[600]}>
+                {item.name}: {formatCurrency(item.value)}
+              </Text>
+            ))
+          )}
         </Box>
       );
     }
@@ -203,8 +191,17 @@ export default function ProtectionVisualization() {
                 tickFormatter={(value) => `$${Math.round(value / 1000)}k`}
                 stroke={theme.colors.gray[500]}
                 tick={{ fontSize: '11px', fill: theme.colors.gray[700] }}
-                label={{ value: 'Portfolio Value', angle: -90, position: 'insideLeft', offset: -20, dx: -10, fontSize: '12px', fill: theme.colors.gray[700] }}
+                label={{ 
+                  value: isProvider ? 'Provider Profit/Loss' : 'Portfolio Value', 
+                  angle: -90, 
+                  position: 'insideLeft', 
+                  offset: -20, 
+                  dx: -10, 
+                  fontSize: '12px', 
+                  fill: theme.colors.gray[700] 
+                }}
                 width={80}
+                domain={isProvider ? ['auto', 'auto'] : [0, 'auto']} 
               />
               <Tooltip content={<CustomTooltip />} />
               <Legend verticalAlign="top" height={36} wrapperStyle={{ fontSize: '12px', color: theme.colors.gray[700] }} /> 
@@ -225,13 +222,13 @@ export default function ProtectionVisualization() {
                 dot={false} 
               />
               <ReferenceLine 
-                x={triggerPrice} 
+                x={mockBuyerTriggerPrice} 
                 stroke={theme.colors.red[500]}
                 strokeDasharray="3 3" 
                 label={{ value: 'Trigger', position: 'insideTopLeft', fill: theme.colors.red[600], fontSize: '10px', dy: -5 }} 
               />
               <ReferenceLine 
-                x={breakEven} 
+                x={mockBuyerBreakEven} 
                 stroke={theme.colors.green[600]}
                 strokeDasharray="3 3" 
                 label={{ value: 'Break-even', position: 'insideTopRight', fill: theme.colors.green[700], fontSize: '10px', dy: -5 }} 
@@ -246,44 +243,72 @@ export default function ProtectionVisualization() {
       <SimpleGrid columns={{ base: 1, md: 3 }} spacing={6} mb={8}>
         {isProvider ? (
           <> 
-            {/* Provider Metric Box 1 (Placeholder) */}
-            <Box p={5} borderRadius="lg" bgGradient="linear(to-b, green.500, green.600)" color="white" shadow="md">
-              <Flex align="center" mb={1}><Icon as={IoTrendingUpOutline} /><Text fontWeight="semibold" fontSize="sm" ml={1} color="green.100">Max Potential Yield (APY)</Text></Flex>
-              <Heading as="h3" fontSize="xl" fontWeight="bold">{(potentialYield * 100).toFixed(1)}%</Heading>
-              <Text fontSize="xs" color="green.200">Based on selected Tier & Period</Text>
+            {/* Provider Metric Box 1: Max Potential Yield */}
+            <Box p={5} borderRadius="lg" bgGradient="linear(to-br, green.400, teal.500)" color="white" shadow="md">
+              <Flex align="center" mb={2}>
+                <Icon as={IoTrendingUpOutline} mr={2} boxSize={5}/>
+                <Text fontWeight="bold" fontSize="md">Max Potential Yield (APY)</Text>
+              </Flex>
+              {/* TODO: Use actual calculated yield from context */}
+              <Text fontSize="3xl" fontWeight="bold">{`${(mockProviderPotentialYield * 100).toFixed(1)}%`}</Text> 
+              <Text fontSize="xs" opacity={0.8}>Estimated annual yield if price stays above strike.</Text>
             </Box>
-            {/* Provider Metric Box 2 (Placeholder) */}
-            <Box p={5} borderRadius="lg" bgGradient="linear(to-b, green.500, green.600)" color="white" shadow="md">
-              <Flex align="center" mb={1}><Icon as={IoSwapHorizontalOutline} /><Text fontWeight="semibold" fontSize="sm" ml={1} color="green.100">Strike Price Provided</Text></Flex>
-              <Heading as="h3" fontSize="xl" fontWeight="bold">{formatCurrency(strikePriceProvided)}</Heading>
-              <Text fontSize="xs" color="green.200">Protection activates below this</Text>
+            
+            {/* Provider Metric Box 2: Strike Price Provided */}
+            <Box p={5} borderRadius="lg" bgGradient="linear(to-br, purple.400, pink.500)" color="white" shadow="md">
+              <Flex align="center" mb={2}>
+                <Icon as={IoShieldCheckmarkOutline} mr={2} boxSize={5}/>
+                <Text fontWeight="bold" fontSize="md">Strike Price Provided</Text>
+              </Flex>
+              {/* TODO: Use actual strike from context.providerInputs */}
+              <Text fontSize="3xl" fontWeight="bold">{formatCurrency(mockProviderStrikePrice)}</Text>
+              <Text fontSize="xs" opacity={0.8}>Price below which provider payout occurs.</Text>
             </Box>
-            {/* Provider Metric Box 3 (Placeholder) */}
-            <Box p={5} borderRadius="lg" bgGradient="linear(to-b, green.500, green.600)" color="white" shadow="md">
-              <Flex align="center" mb={1}><Icon as={IoReceiptOutline} /><Text fontWeight="semibold" fontSize="sm" ml={1} color="green.100">Break-even (Provider)</Text></Flex>
-              <Heading as="h3" fontSize="xl" fontWeight="bold">{formatCurrency(providerBreakEven)}</Heading>
-              <Text fontSize="xs" color="green.200">BTC price where income equals loss</Text>
+
+            {/* Provider Metric Box 3: Provider Break-even */}
+            <Box p={5} borderRadius="lg" bgGradient="linear(to-br, orange.400, yellow.500)" color="white" shadow="md">
+              <Flex align="center" mb={2}>
+                <Icon as={IoSwapHorizontalOutline} mr={2} boxSize={5}/>
+                <Text fontWeight="bold" fontSize="md">Break-even Price (Provider)</Text>
+              </Flex>
+              {/* Use calculated break-even */}
+              <Text fontSize="3xl" fontWeight="bold">{formatCurrency(providerBreakEven)}</Text>
+              <Text fontSize="xs" opacity={0.8}>BTC price where provider PnL is zero.</Text>
             </Box>
           </>
         ) : (
           <> 
-            {/* Buyer Metric Box 1 (Original) */}
-            <Box p={5} borderRadius="lg" bgGradient="linear(to-b, blue.600, blue.700)" color="white" shadow="md">
-              <Flex align="center" mb={1}><Icon as={IoShieldCheckmarkOutline} /><Text fontWeight="semibold" fontSize="sm" ml={1} color="blue.100">Protection Trigger</Text></Flex>
-              <Heading as="h3" fontSize="xl" fontWeight="bold">{formatCurrency(triggerPrice)}</Heading>
-              <Text fontSize="xs" color="blue.200">100% of current price (estimate)</Text>
+            {/* Buyer Metric Box 1: Trigger Price */}
+            <Box p={5} borderRadius="lg" bgGradient="linear(to-br, red.400, orange.500)" color="white" shadow="md">
+              <Flex align="center" mb={2}>
+                <Icon as={IoShieldCheckmarkOutline} mr={2} boxSize={5}/>
+                <Text fontWeight="bold" fontSize="md">Trigger Price</Text>
+              </Flex>
+              {/* TODO: Use actual trigger from context */}
+              <Text fontSize="3xl" fontWeight="bold">{formatCurrency(mockBuyerTriggerPrice)}</Text>
+              <Text fontSize="xs" opacity={0.8}>Price below which protection activates.</Text>
             </Box>
-            {/* Buyer Metric Box 2 (Original - Max Recovery) */} 
-            <Box p={5} borderRadius="lg" bgGradient="linear(to-b, blue.600, blue.700)" color="white" shadow="md">
-              <Flex align="center" mb={1}><Icon as={IoWalletOutline} /><Text fontWeight="semibold" fontSize="sm" ml={1} color="blue.100">Max Recovery Value</Text></Flex>
-              <Heading as="h3" fontSize="xl" fontWeight="bold">{formatCurrency(protectedValueAtTrigger)}</Heading>
-              <Text fontSize="xs" color="blue.200">Equivalent value if triggered</Text>
+            
+            {/* Buyer Metric Box 2: Break-even Price */}
+             <Box p={5} borderRadius="lg" bgGradient="linear(to-br, green.400, teal.500)" color="white" shadow="md">
+              <Flex align="center" mb={2}>
+                <Icon as={IoSwapHorizontalOutline} mr={2} boxSize={5}/>
+                <Text fontWeight="bold" fontSize="md">Break-even Price (Buyer)</Text>
+              </Flex>
+              {/* TODO: Use actual break-even from context */}
+              <Text fontSize="3xl" fontWeight="bold">{formatCurrency(mockBuyerBreakEven)}</Text>
+              <Text fontSize="xs" opacity={0.8}>Effective purchase price after premium.</Text>
             </Box>
-            {/* Buyer Metric Box 3 (Original) */}
-            <Box p={5} borderRadius="lg" bgGradient="linear(to-b, blue.600, blue.700)" color="white" shadow="md">
-              <Flex align="center" mb={1}><Icon as={IoSwapHorizontalOutline} /><Text fontWeight="semibold" fontSize="sm" ml={1} color="blue.100">Break-even Point</Text></Flex>
-              <Heading as="h3" fontSize="xl" fontWeight="bold">{formatCurrency(breakEven)}</Heading>
-              <Text fontSize="xs" color="blue.200">BTC price where protection pays off</Text>
+
+            {/* Buyer Metric Box 3: Total Premium */}
+            <Box p={5} borderRadius="lg" bgGradient="linear(to-br, blue.400, cyan.500)" color="white" shadow="md">
+              <Flex align="center" mb={2}>
+                <Icon as={IoReceiptOutline} mr={2} boxSize={5}/>
+                <Text fontWeight="bold" fontSize="md">Total Premium Paid</Text>
+              </Flex>
+              {/* TODO: Calculate from context */}
+              <Text fontSize="3xl" fontWeight="bold">{formatCurrency((mockBuyerTriggerPrice - mockBuyerBreakEven) * mockBuyerBtcAmount)}</Text>
+              <Text fontSize="xs" opacity={0.8}>Cost for the selected protection.</Text>
             </Box>
           </>
         )}
