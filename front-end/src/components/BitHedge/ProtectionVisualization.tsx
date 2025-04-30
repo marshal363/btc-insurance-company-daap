@@ -170,8 +170,69 @@ export default function ProtectionVisualization() {
       <Box height="300px" mb={8} borderRadius="md" p={2} bg="rgba(255, 255, 255, 0.4)" boxShadow="inner">
         {/* Basic conditional rendering example */} 
         {isProvider ? (
-          <Text textAlign="center" p={10} color="gray.500">Provider chart rendering (DCU-207) needed here.</Text>
+          // --- Provider Chart ---
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart 
+              data={chartData}
+              margin={{ top: 5, right: 20, left: 30, bottom: 5 }} 
+            >
+              <CartesianGrid strokeDasharray="3 3" stroke={theme.colors.gray[300]} />
+              <XAxis 
+                dataKey="btcPrice" 
+                type="number"
+                domain={['dataMin', 'dataMax']}
+                tickFormatter={(value) => `$${Math.round(value / 1000)}k`}
+                stroke={theme.colors.gray[500]}
+                tick={{ fontSize: '11px', fill: theme.colors.gray[700] }}
+                label={{ value: 'BTC Price at Expiry', position: 'insideBottom', offset: -5, dy: 10, fontSize: '12px', fill: theme.colors.gray[700] }}
+              />
+              <YAxis 
+                tickFormatter={(value) => `$${Math.round(value)}`} // Show smaller increments for PnL
+                stroke={theme.colors.gray[500]}
+                tick={{ fontSize: '11px', fill: theme.colors.gray[700] }}
+                label={{ 
+                  value: 'Provider Profit/Loss', // Updated label
+                  angle: -90, 
+                  position: 'insideLeft', 
+                  offset: -20, 
+                  dx: -10, 
+                  fontSize: '12px', 
+                  fill: theme.colors.gray[700] 
+                }}
+                width={80}
+                domain={['auto', 'auto']} // Allow negative domain for PnL
+              />
+              <Tooltip content={<CustomTooltip />} />
+              <Legend verticalAlign="top" height={36} wrapperStyle={{ fontSize: '12px', color: theme.colors.gray[700] }} /> 
+              <Line 
+                type="monotone" 
+                dataKey="providerPnl" // Use provider PnL data
+                name="Provider Profit/Loss" 
+                stroke={theme.colors.green[600]} // Green for profit/loss line
+                strokeWidth={2}
+                dot={false} 
+              />
+               {/* Provider-specific reference lines */}
+              {providerBreakEven !== null && (
+                <ReferenceLine 
+                  x={providerBreakEven} 
+                  stroke={theme.colors.orange[600]} // Use orange for provider break-even
+                  strokeDasharray="3 3" 
+                  label={{ value: 'Break-even', position: 'insideTopRight', fill: theme.colors.orange[700], fontSize: '10px', dy: -5 }} 
+                />
+              )}
+              <ReferenceLine 
+                x={mockProviderStrikePrice} 
+                stroke={theme.colors.purple[500]} // Use purple for strike price
+                strokeDasharray="3 3" 
+                label={{ value: 'Strike Price', position: 'insideTopLeft', fill: theme.colors.purple[600], fontSize: '10px', dy: -5 }} 
+              />
+              {/* Horizontal line at PnL = 0 */}
+              <ReferenceLine y={0} stroke={theme.colors.gray[500]} strokeWidth={1} /> 
+            </LineChart>
+          </ResponsiveContainer>
         ) : (
+          // --- Buyer Chart ---
           <ResponsiveContainer width="100%" height="100%">
             <LineChart 
               data={chartData}
@@ -192,7 +253,7 @@ export default function ProtectionVisualization() {
                 stroke={theme.colors.gray[500]}
                 tick={{ fontSize: '11px', fill: theme.colors.gray[700] }}
                 label={{ 
-                  value: isProvider ? 'Provider Profit/Loss' : 'Portfolio Value', 
+                  value: 'Portfolio Value', 
                   angle: -90, 
                   position: 'insideLeft', 
                   offset: -20, 
@@ -201,7 +262,7 @@ export default function ProtectionVisualization() {
                   fill: theme.colors.gray[700] 
                 }}
                 width={80}
-                domain={isProvider ? ['auto', 'auto'] : [0, 'auto']} 
+                domain={['auto', 'auto']} 
               />
               <Tooltip content={<CustomTooltip />} />
               <Legend verticalAlign="top" height={36} wrapperStyle={{ fontSize: '12px', color: theme.colors.gray[700] }} /> 

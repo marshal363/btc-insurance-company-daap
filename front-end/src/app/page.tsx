@@ -1,14 +1,14 @@
 "use client";
 
 import { useState } from 'react';
-import { Box, Container } from "@chakra-ui/react";
+import { Box, Container, GridItem, VStack } from "@chakra-ui/react";
 import BitHedgeHeader from "@/components/BitHedge/BitHedgeHeader";
 import BitcoinPriceCard from "@/components/BitHedge/BitcoinPriceCard";
 import PremiumCalculatorTabs from "@/components/BitHedge/PremiumCalculatorTabs";
 import ProtectionParameters from "@/components/BitHedge/ProtectionParameters";
-import AdvancedParameters from "@/components/BitHedge/AdvancedParameters";
 import ProtectionVisualization from "@/components/BitHedge/ProtectionVisualization";
-import ProtectionCost from "@/components/BitHedge/ProtectionCost";
+import PolicySummary from "@/components/BitHedge/PolicySummary";
+import AdvancedParameters from "@/components/BitHedge/AdvancedParameters";
 import CalculationMethod from "@/components/BitHedge/CalculationMethod";
 import BitHedgeFooter from "@/components/BitHedge/BitHedgeFooter";
 import type { UserRole } from '@/types';
@@ -49,17 +49,17 @@ export default function Home() {
           </Box>
           
           <Box mt={8}>
-            <ProtectionVisualization currentUserRole={currentUserRole} />
+            <ProtectionVisualization />
           </Box>
           
           <Box mt={8}>
-            <ProtectionCost currentUserRole={currentUserRole} />
+            <PolicySummary />
+          </Box>
+          
+          <Box mt={8}>
+            <CalculationMethod />
           </Box>
         </PremiumDataProvider>
-        
-        <Box mt={8}>
-          <CalculationMethod />
-        </Box>
         
         <BitHedgeFooter />
       </Container>

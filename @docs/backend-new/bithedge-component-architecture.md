@@ -50,6 +50,7 @@ The BitHedge system consists of three distinct layers, each with specific respon
 **Responsibility**: Guides users through the process of configuring and purchasing protection policies.
 
 **Key Interactions**:
+
 - Calls Premium Calculator to get real-time premium quotes
 - Uses Translation Layer to display insurance-friendly terminology
 - Calls Oracle & Price Feed for current Bitcoin price
@@ -79,6 +80,7 @@ The BitHedge system consists of three distinct layers, each with specific respon
 **Responsibility**: Enables users to provide protection and earn yield by configuring income strategies.
 
 **Key Interactions**:
+
 - Calls Premium Calculator to calculate potential yield
 - Uses Translation Layer for income-focused terminology
 - Uses Blockchain Integration to prepare and submit transactions
@@ -107,6 +109,7 @@ The BitHedge system consists of three distinct layers, each with specific respon
 **Responsibility**: Simulates protection outcomes under different market scenarios.
 
 **Key Interactions**:
+
 - Calls Premium Calculator for scenario analysis
 - Uses Oracle & Price Feed for historical price data
 - Uses Translation Layer for insurance-friendly explanations
@@ -128,6 +131,7 @@ The BitHedge system consists of three distinct layers, each with specific respon
 **Responsibility**: Displays user's active policies, portfolio, and account information.
 
 **Key Interactions**:
+
 - Uses Policy Lifecycle to track policy status
 - Calls Oracle & Price Feed for current prices
 - Uses Analytics Service for portfolio insights
@@ -152,6 +156,7 @@ The BitHedge system consists of three distinct layers, each with specific respon
 **Responsibility**: Performs complex options pricing calculations and simulations.
 
 **Key Interactions**:
+
 - Receives parameters from frontend components
 - Calls Oracle & Price Feed for price and volatility data
 - Uses Parameter Contract for premium calculation parameters
@@ -175,6 +180,7 @@ The BitHedge system consists of three distinct layers, each with specific respon
 **Responsibility**: Aggregates, validates, and provides price data from multiple sources.
 
 **Key Interactions**:
+
 - Fetches data from external price APIs
 - Stores historical price data in Data Store
 - Provides price data to Premium Calculator and frontend components
@@ -198,6 +204,7 @@ The BitHedge system consists of three distinct layers, each with specific respon
 **Responsibility**: Manages the complete lifecycle of protection policies.
 
 **Key Interactions**:
+
 - Monitors Policy Registry for policy events
 - Tracks policy status and expirations
 - Notifies frontend of status changes
@@ -221,6 +228,7 @@ The BitHedge system consists of three distinct layers, each with specific respon
 **Responsibility**: Transforms technical options terminology into Bitcoin-native insurance concepts.
 
 **Key Interactions**:
+
 - Provides terminology mapping to frontend components
 - Stores user terminology preferences in Data Store
 - Generates explanations of technical concepts
@@ -243,6 +251,7 @@ The BitHedge system consists of three distinct layers, each with specific respon
 **Responsibility**: Bridges between the off-chain services and on-chain smart contracts.
 
 **Key Interactions**:
+
 - Prepares transactions for frontend components
 - Monitors blockchain for events and transactions
 - Updates Data Store with blockchain state
@@ -275,6 +284,7 @@ The BitHedge system consists of three distinct layers, each with specific respon
 **Responsibility**: Manages wallet connections and user authentication.
 
 **Key Interactions**:
+
 - Authenticates users via wallet connection
 - Maintains user sessions in Convex
 - Provides authenticated context to other components
@@ -297,6 +307,7 @@ The BitHedge system consists of three distinct layers, each with specific respon
 **Responsibility**: Stores and manages application data and provides caching mechanisms.
 
 **Key Interactions**:
+
 - Stores policy data, user preferences, and transaction history
 - Caches price data and premium calculations
 - Provides data to all other components
@@ -319,6 +330,7 @@ The BitHedge system consists of three distinct layers, each with specific respon
 **Responsibility**: Analyzes user data, policy performance, and market trends.
 
 **Key Interactions**:
+
 - Processes data from Data Store
 - Provides insights to frontend dashboard
 - Analyzes protection and income strategies
@@ -343,6 +355,7 @@ The BitHedge system consists of three distinct layers, each with specific respon
 **Responsibility**: Maintains the authoritative record of all protection policies.
 
 **Key Interactions**:
+
 - Receives policy creation transactions from users
 - Calls Liquidity Pool for collateral checks
 - Uses Oracle Contract for price data
@@ -366,6 +379,7 @@ The BitHedge system consists of three distinct layers, each with specific respon
 **Responsibility**: Manages collateral for protection policies in the assisted counterparty model.
 
 **Key Interactions**:
+
 - Receives deposits and withdrawal transactions
 - Provides collateral for Policy Registry
 - Calls Oracle Contract for price data
@@ -389,6 +403,7 @@ The BitHedge system consists of three distinct layers, each with specific respon
 **Responsibility**: Provides trusted price data to other contracts.
 
 **Key Interactions**:
+
 - Receives price updates from authorized sources
 - Provides price data to Policy Registry and Liquidity Pool
 - Maintains limited price history
@@ -411,6 +426,7 @@ The BitHedge system consists of three distinct layers, each with specific respon
 **Responsibility**: Manages system-wide parameters and configuration settings.
 
 **Key Interactions**:
+
 - Provides parameters to all other contracts
 - Receives updates from authorized administrators
 - Emits events on parameter changes
@@ -590,6 +606,100 @@ This sequence shows how a policy gets activated when Bitcoin price falls below t
       │                │                │                 │                 │                 │
 ```
 
+### 3.3 Bitcoin Price Card Data Fetch Flow
+
+This sequence shows how the `BitcoinPriceCard` component fetches updated price information:
+
+```mermaid
+sequenceDiagram
+    participant F as BitcoinPriceCard (Frontend)
+    participant O as Oracle & Price Feed (Convex)
+    participant D as Data Store & Cache (Convex)
+    participant BC as Blockchain Integration (Convex)
+    participant OC as Oracle Contract (On-Chain)
+    participant EXT as External Price APIs
+
+    F->>O: 1. User Clicks Refresh / Initial Load Request
+    O->>EXT: 2. Fetch Latest Price Data (from multiple sources)
+    EXT-->>O: 3. Return Raw Price Data
+    O->>O: 4. Validate & Aggregate Price Data
+    O->>D: 5. Cache Aggregated Price & Volatility
+    D-->>O: 6. Confirm Cache Update
+    O->>BC: 7. Request Prepare Oracle Update Tx
+    BC->>OC: 8. Check If Update Needed & Submit Tx (If Authorized & Necessary)
+    OC-->>BC: 9. Transaction Result / Event
+    BC-->>O: 10. Confirm Oracle Update Status
+    O-->>F: 11. Return Updated Price, Range, Volatility, Sources, Last Updated Time
+    F->>F: 12. Update UI with New Data
+```
+
+**Bitcoin Price Card Data Fetch Flow (Text Version):**
+
+1.  **Frontend (BitcoinPriceCard) -> Convex (Oracle & Price Feed):** User clicks "Refresh" or the component performs its initial data load, triggering a request for updated price feed data.
+2.  **Convex (Oracle & Price Feed) -> External Price APIs:** The Oracle service queries multiple external APIs to get the latest raw Bitcoin price data.
+3.  **External Price APIs -> Convex (Oracle & Price Feed):** External APIs return the raw price data.
+4.  **Convex (Oracle & Price Feed):** Internally validates the received data (checking for outliers, freshness) and aggregates it into a single reliable price point and calculates derived metrics like volatility.
+5.  **Convex (Oracle & Price Feed) -> Convex (Data Store & Cache):** Stores the validated, aggregated price, volatility, and source information in the cache for faster subsequent reads.
+6.  **Convex (Data Store & Cache) -> Convex (Oracle & Price Feed):** Confirms the data has been successfully cached.
+7.  **Convex (Oracle & Price Feed) -> Convex (Blockchain Integration):** Requests the Blockchain Integration service to prepare a transaction to potentially update the on-chain Oracle contract (if the price deviation exceeds a threshold and the service is authorized).
+8.  **Convex (Blockchain Integration) -> On-Chain (Oracle Contract):** Checks if an update is necessary based on configured rules and submits the update transaction if required and authorized.
+9.  **On-Chain (Oracle Contract) -> Convex (Blockchain Integration):** The contract emits an event or the transaction result indicates success/failure of the update.
+10. **Convex (Blockchain Integration) -> Convex (Oracle & Price Feed):** Confirms the status of the on-chain Oracle update attempt.
+11. **Convex (Oracle & Price Feed) -> Frontend (BitcoinPriceCard):** Returns the latest aggregated data (current price, 24h range, volatility, active source count, last update timestamp) to the frontend component.
+12. **Frontend (BitcoinPriceCard):** Updates its state and re-renders the UI to display the newly fetched data.
+
+```
+┌───────────────┐    ┌─────────────────┐    ┌────────────┐    ┌────────────┐    ┌────────────┐    ┌─────────────────┐
+│BitcoinPriceCard│   │Oracle & Price   │   │External    │   │Data Store  │   │Blockchain  │   │Oracle Contract  │
+│(Frontend)     │   │Feed (Convex)    │   │Price APIs  │   │& Cache     │   │Integration │   │(On-Chain)     │
+└───────┬───────┘   └────────┬────────┘   └─────┬──────┘   └─────┬──────┘   └─────┬──────┘   └────────┬────────┘
+        │                    │                  │                │                │                   │
+        │ 1. Request Data    │                  │                │                │                   │
+        │ (Load/Refresh)     │                  │                │                │                   │
+        │───────────────────>│                  │                │                │                   │
+        │                    │ 2. Fetch Latest  │                │                │                   │
+        │                    │ Price Data       │                │                │                   │
+        │                    │─────────────────>│                │                │                   │
+        │                    │                  │ 3. Return Raw  │                │                   │
+        │                    │                  │ Price Data     │                │                   │
+        │                    │<─────────────────│                │                │                   │
+        │                    │                  │                │                │                   │
+        │                    │ 4. Validate &    │                │                │                   │
+        │                    │ Aggregate        │                │                │                   │
+        │                    │                  │                │                │                   │
+        │                    │ 5. Cache         │                │                │                   │
+        │                    │ Aggregated Data  │                │                │                   │
+        │                    │──────────────────────────────────>│                │                   │
+        │                    │                  │                │ 6. Confirm     │                   │
+        │                    │                  │                │ Cache Update   │                   │
+        │                    │<──────────────────────────────────│                │                   │
+        │                    │                  │                │                │                   │
+        │                    │ 7. Request Oracle│                │                │                   │
+        │                    │ Update Tx Prep   │                │                │                   │
+        │                    │──────────────────────────────────────────────────>│                   │
+        │                    │                  │                │                │ 8. Prepare &      │
+        │                    │                  │                │                │ Submit Tx (If Nec.)│
+        │                    │                  │                │                │──────────────────>│
+        │                    │                  │                │                │                   │ 9. Tx Result /
+        │                    │                  │                │                │                   │ Event
+        │                    │                  │                │                │<──────────────────│
+        │                    │                  │                │                │ 10. Confirm       │
+        │                    │                  │                │                │ Oracle Update     │
+        │                    │                  │                │                │ Status            │
+        │                    │<──────────────────────────────────────────────────│                   │
+        │                    │                  │                │                │                   │
+        │ 11. Return Updated │                  │                │                │                   │
+        │ Data to UI         │                  │                │                │                   │
+        │<───────────────────│                  │                │                │                   │
+        │                    │                  │                │                │                   │
+        │ 12. Update UI      │                  │                │                │                   │
+        │                    │                  │                │                │                   │
+```
+
+### 3.4 Income Provision Flow (Placeholder)
+
+_(Diagram and description for the Income Center flow, where users provide liquidity, will be added here.)_
+
 ## 4. Component-Specific Data Models
 
 ### 4.1 Policy Registry Contract Data Model
@@ -643,11 +753,13 @@ export default defineSchema({
     // Additional fields for UX enhancement
     displayName: v.optional(v.string()), // User-friendly policy name
     notes: v.optional(v.string()), // User notes
-    notificationPreferences: v.optional(v.object({ 
-      priceAlerts: v.boolean(),
-      expirationReminders: v.boolean(),
-      activationOpportunities: v.boolean()
-    }))
+    notificationPreferences: v.optional(
+      v.object({
+        priceAlerts: v.boolean(),
+        expirationReminders: v.boolean(),
+        activationOpportunities: v.boolean(),
+      })
+    ),
   })
     .index("by_owner", ["owner"])
     .index("by_status", ["status"])
@@ -675,12 +787,14 @@ interface PremiumCalculationResult {
   annualizedPremium: number; // Annualized percentage
   breakEvenPrice: number; // Price at which protection has zero net value
   maxBenefit: number; // Maximum potential value of protection
-  scenarios: { // Price scenarios
+  scenarios: {
+    // Price scenarios
     price: number;
     protectionValue: number;
     netValue: number;
   }[];
-  factorsBreakdown: { // Component factors
+  factorsBreakdown: {
+    // Component factors
     intrinsicValue: number;
     timeValue: number;
     volatilityImpact: number;
@@ -695,28 +809,28 @@ interface PremiumCalculationResult {
 ```typescript
 // Simplified Black-Scholes implementation for Convex
 export const query.calculatePremium = query(
-  async ({ 
-    db 
+  async ({
+    db
   }, {
     protectedValue,
     protectedAmount,
     expirationDays,
     policyType
   }: PremiumCalculationParams): Promise<PremiumCalculationResult> => {
-    
+
     // Get current BTC price
     const currentPrice = await getCurrentBtcPrice(db);
-    
+
     // Calculate time factor (in years)
     const timeYears = expirationDays / 365;
-    
+
     // Get historical volatility
     const volatility = await getHistoricalVolatility(db, 30); // 30-day historical vol
-    
+
     // Calculate premium using Black-Scholes algorithm
     // This is a simplified version - full implementation would use complete B-S formula
     let premium;
-    
+
     if (policyType === "PUT") {
       // For PUT options (downside protection)
       const intrinsicValue = Math.max(0, protectedValue - currentPrice);
@@ -728,35 +842,35 @@ export const query.calculatePremium = query(
       const timeValue = calculateTimeValue(currentPrice, protectedValue, timeYears, volatility);
       premium = (intrinsicValue + timeValue) * protectedAmount;
     }
-    
+
     // Calculate premium as percentage of protected value
     const premiumPercentage = (premium / (protectedValue * protectedAmount)) * 100;
-    
+
     // Calculate annualized premium
     const annualizedPremium = premiumPercentage * (365 / expirationDays);
-    
+
     // Calculate break-even price
     const breakEvenPrice = policyType === "PUT"
       ? protectedValue - (premium / protectedAmount)
       : protectedValue + (premium / protectedAmount);
-    
+
     // Calculate maximum benefit
     const maxBenefit = policyType === "PUT"
       ? protectedAmount * protectedValue // Assuming price drops to zero
       : Number.POSITIVE_INFINITY; // Unlimited upside for CALL
-    
+
     // Generate price scenarios
     const scenarios = generatePriceScenarios(currentPrice, protectedValue, protectedAmount, premium, policyType);
-    
+
     // Prepare factors breakdown
     const factorsBreakdown = {
-      intrinsicValue: policyType === "PUT" 
+      intrinsicValue: policyType === "PUT"
         ? Math.max(0, protectedValue - currentPrice) * protectedAmount
         : Math.max(0, currentPrice - protectedValue) * protectedAmount,
       timeValue: premium - (factorsBreakdown.intrinsicValue || 0),
       volatilityImpact: calculateVolatilityImpact(volatility, timeYears, currentPrice, protectedValue, protectedAmount)
     };
-    
+
     return {
       premium,
       premiumPercentage,
@@ -810,8 +924,8 @@ This comprehensive diagram shows how all components interact across the three la
 │                                                FRONTEND LAYER                                                    │
 │                                                                                                                  │
 │  ┌─────────────────┐             ┌─────────────────┐             ┌─────────────────┐       ┌─────────────────┐  │
-│  │   Protection    │             │     Income      │             │   Protection    │       │     Account      │  │
-│  │     Center      ├─────┬───────┤     Center      ├─────┬───────┤    Simulator    ├───────┤    Dashboard     │  │
+│  │   Protection    │             │     Income      │             │   Protection    │       │     Account     │  │
+│  │     Center      ├─────┬───────┤     Center      ├─────┬───────┤    Simulator    ├───────┤    Dashboard    │  │
 │  └─────────────────┘     │       └─────────────────┘     │       └─────────────────┘       └─────────────────┘  │
 │                          │                               │                                                       │
 └──────────────────────────┼───────────────────────────────┼───────────────────────────────────────────────────────┘
@@ -850,27 +964,27 @@ This comprehensive diagram shows how all components interact across the three la
 
 ### 7.1 On-Chain vs. Off-Chain Processing Division
 
-| Functionality | On-Chain Implementation | Off-Chain Implementation | Rationale |
-|---------------|------------------------|--------------------------|-----------|
-| Premium Calculation | Simplified formula with limited factors | Full Black-Scholes with complete volatility surface | Complex calculations are expensive on-chain |
-| Price Oracle | Simple price storage with basic validation | Multi-source aggregation with advanced filtering | On-chain storage should be minimal and verified |
-| Policy Lifecycle | Core state transitions only | Enhanced monitoring and notification | State must be authoritative on-chain, UX enhancements off-chain |
-| Parameter Management | Critical protocol parameters | User preferences and UI settings | Protocol parameters need consensus, preferences don't |
-| Transaction Processing | Final settlement and state changes | Preparation and monitoring | Blockchain handles settlement, off-chain handles UX |
-| Collateral Management | Lock and release operations | Monitoring and recommendations | On-chain guarantees are essential for trust |
-| Data Analytics | None | Comprehensive analytics | Analytics are computationally intensive |
+| Functionality          | On-Chain Implementation                    | Off-Chain Implementation                            | Rationale                                                       |
+| ---------------------- | ------------------------------------------ | --------------------------------------------------- | --------------------------------------------------------------- |
+| Premium Calculation    | Simplified formula with limited factors    | Full Black-Scholes with complete volatility surface | Complex calculations are expensive on-chain                     |
+| Price Oracle           | Simple price storage with basic validation | Multi-source aggregation with advanced filtering    | On-chain storage should be minimal and verified                 |
+| Policy Lifecycle       | Core state transitions only                | Enhanced monitoring and notification                | State must be authoritative on-chain, UX enhancements off-chain |
+| Parameter Management   | Critical protocol parameters               | User preferences and UI settings                    | Protocol parameters need consensus, preferences don't           |
+| Transaction Processing | Final settlement and state changes         | Preparation and monitoring                          | Blockchain handles settlement, off-chain handles UX             |
+| Collateral Management  | Lock and release operations                | Monitoring and recommendations                      | On-chain guarantees are essential for trust                     |
+| Data Analytics         | None                                       | Comprehensive analytics                             | Analytics are computationally intensive                         |
 
 ### 7.2 Critical Integration Points
 
-| Integration Point | Connected Components | Primary Data Flow | Implementation Consideration |
-|------------------|---------------------|------------------|----------------------------|
-| Frontend → Convex | React components to Convex functions | User inputs, UI updates | Use Convex React hooks for real-time updates |
-| Convex → Blockchain | Blockchain Integration to Smart Contracts | Transaction submission, event monitoring | Implement robust event listeners with retry logic |
-| Smart Contract → Smart Contract | Policy Registry to Liquidity Pool | Policy creation, collateral checks | Use clear contract interfaces with proper error handling |
-| Oracle Updates | Oracle & Price Feed to Oracle Contract | Verified price data | Implement threshold signing for security |
-| User Authentication | Wallet & Auth Service to Frontend | User identity, session management | Use wallet-based authentication with proper session handling |
-| Policy Status Updates | Policy Registry to Policy Lifecycle | Events, state changes | Ensure event capture reliability |
-| Premium Calculations | Premium Calculator to Policy Registry | Verified premium amounts | Ensure calculation consistency between layers |
+| Integration Point               | Connected Components                      | Primary Data Flow                        | Implementation Consideration                                 |
+| ------------------------------- | ----------------------------------------- | ---------------------------------------- | ------------------------------------------------------------ |
+| Frontend → Convex               | React components to Convex functions      | User inputs, UI updates                  | Use Convex React hooks for real-time updates                 |
+| Convex → Blockchain             | Blockchain Integration to Smart Contracts | Transaction submission, event monitoring | Implement robust event listeners with retry logic            |
+| Smart Contract → Smart Contract | Policy Registry to Liquidity Pool         | Policy creation, collateral checks       | Use clear contract interfaces with proper error handling     |
+| Oracle Updates                  | Oracle & Price Feed to Oracle Contract    | Verified price data                      | Implement threshold signing for security                     |
+| User Authentication             | Wallet & Auth Service to Frontend         | User identity, session management        | Use wallet-based authentication with proper session handling |
+| Policy Status Updates           | Policy Registry to Policy Lifecycle       | Events, state changes                    | Ensure event capture reliability                             |
+| Premium Calculations            | Premium Calculator to Policy Registry     | Verified premium amounts                 | Ensure calculation consistency between layers                |
 
 ## 8. Implementation Strategy
 
@@ -879,6 +993,7 @@ Based on the component architecture and interactions, the recommended implementa
 1. **Begin with Core Smart Contracts**: Implement simplified but functional versions of the Policy Registry and Liquidity Pool contracts
 
 2. **Set Up Convex Backend**: Initialize the Convex project with basic schema and functionality, focusing on:
+
    - Premium Calculator implementation
    - Blockchain Integration for contract interaction
    - Basic Data Store structure
@@ -908,6 +1023,7 @@ To ensure reliable integration between components:
 5. **Failure Mode Tests**: Verify graceful handling of component failures
 
 The most critical integration points to test are:
+
 - Premium calculation consistency between off-chain and on-chain implementations
 - Transaction submission and monitoring
 - Event propagation from smart contracts to Convex to frontend
