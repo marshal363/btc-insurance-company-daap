@@ -15,50 +15,50 @@ path = 'contracts/fundraising.clar'
 clarity_version = 3
 epoch = 3.0
 
-[contracts.governance]
-path = 'contracts/governance.clar'
-clarity_version = 3
-epoch = 3.0
+#[contracts.governance]
+#path = 'contracts/governance.clar'
+#clarity_version = 3
+#epoch = 3.0
 
-[contracts.treasury]
-path = 'contracts/treasury.clar'
-clarity_version = 3
-epoch = 3.0
+#[contracts.treasury]
+#path = 'contracts/treasury.clar'
+#clarity_version = 3
+#epoch = 3.0
 
-[contracts.policy-registry]
-path = 'contracts/policy-registry.clar'
-clarity_version = 3
-epoch = 3.0
+#[contracts.policy-registry]
+#path = 'contracts/policy-registry.clar'
+#clarity_version = 3
+#epoch = 3.0
 
-[contracts.parameter]
-path = 'contracts/parameter.clar'
-clarity_version = 3
-epoch = 3.0
+#[contracts.parameter]
+#path = 'contracts/parameter.clar'
+#clarity_version = 3
+#epoch = 3.0
 
 [contracts.oracle]
 path = 'contracts/oracle.clar'
 clarity_version = 3
 epoch = 3.0
 
-[contracts.liquidity-pool]
-path = 'contracts/liquidity-pool.clar'
-clarity_version = 3
-epoch = 3.0
+#[contracts.liquidity-pool]
+#path = 'contracts/liquidity-pool.clar'
+#clarity_version = 3
+#epoch = 3.0
 
-[contracts.liquidation-engine]
-path = 'contracts/liquidation-engine.clar'
-clarity_version = 3
-epoch = 3.0
+#[contracts.liquidation-engine]
+#path = 'contracts/liquidation-engine.clar'
+#clarity_version = 3
+#epoch = 3.0
 
-[contracts.insurance-fund]
-path = 'contracts/insurance-fund.clar'
-clarity_version = 3
-epoch = 3.0
+#[contracts.insurance-fund]
+#path = 'contracts/insurance-fund.clar'
+#clarity_version = 3
+#epoch = 3.0
 
-[contracts.incentives]
-path = 'contracts/incentives.clar'
-clarity_version = 3
-epoch = 3.0
+#[contracts.incentives]
+#path = 'contracts/incentives.clar'
+#clarity_version = 3
+#epoch = 3.0
 
 [repl.analysis]
 passes = ['check_checker']

@@ -39,41 +39,41 @@ plan:
             path: contracts/fundraising.clar
             anchor-block-only: true
             clarity-version: 3
-        - contract-publish:
-            contract-name: governance
-            expected-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-            cost: 256800
-            path: contracts/governance.clar
-            anchor-block-only: true
-            clarity-version: 3
-        - contract-publish:
-            contract-name: incentives
-            expected-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-            cost: 297970
-            path: contracts/incentives.clar
-            anchor-block-only: true
-            clarity-version: 3
-        - contract-publish:
-            contract-name: insurance-fund
-            expected-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-            cost: 275610
-            path: contracts/insurance-fund.clar
-            anchor-block-only: true
-            clarity-version: 3
-        - contract-publish:
-            contract-name: liquidation-engine
-            expected-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-            cost: 314480
-            path: contracts/liquidation-engine.clar
-            anchor-block-only: true
-            clarity-version: 3
-        - contract-publish:
-            contract-name: liquidity-pool
-            expected-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-            cost: 278230
-            path: contracts/liquidity-pool.clar
-            anchor-block-only: true
-            clarity-version: 3
+        # - contract-publish:
+        #     contract-name: governance
+        #     expected-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+        #     cost: 256800
+        #     path: contracts/governance.clar
+        #     anchor-block-only: true
+        #     clarity-version: 3
+        # - contract-publish:
+        #     contract-name: incentives
+        #     expected-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+        #     cost: 297970
+        #     path: contracts/incentives.clar
+        #     anchor-block-only: true
+        #     clarity-version: 3
+        # - contract-publish:
+        #     contract-name: insurance-fund
+        #     expected-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+        #     cost: 275610
+        #     path: contracts/insurance-fund.clar
+        #     anchor-block-only: true
+        #     clarity-version: 3
+        # - contract-publish:
+        #     contract-name: liquidation-engine
+        #     expected-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+        #     cost: 314480
+        #     path: contracts/liquidation-engine.clar
+        #     anchor-block-only: true
+        #     clarity-version: 3
+        # - contract-publish:
+        #     contract-name: liquidity-pool
+        #     expected-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+        #     cost: 278230
+        #     path: contracts/liquidity-pool.clar
+        #     anchor-block-only: true
+        #     clarity-version: 3
         - contract-publish:
             contract-name: oracle
             expected-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
@@ -81,25 +81,25 @@ plan:
             path: contracts/oracle.clar
             anchor-block-only: true
             clarity-version: 3
-        - contract-publish:
-            contract-name: parameter
-            expected-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-            cost: 243810
-            path: contracts/parameter.clar
-            anchor-block-only: true
-            clarity-version: 3
-        - contract-publish:
-            contract-name: policy-registry
-            expected-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-            cost: 145050
-            path: contracts/policy-registry.clar
-            anchor-block-only: true
-            clarity-version: 3
-        - contract-publish:
-            contract-name: treasury
-            expected-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-            cost: 213960
-            path: contracts/treasury.clar
-            anchor-block-only: true
-            clarity-version: 3
+        # - contract-publish:
+        #     contract-name: parameter
+        #     expected-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+        #     cost: 243810
+        #     path: contracts/parameter.clar
+        #     anchor-block-only: true
+        #     clarity-version: 3
+        # - contract-publish:
+        #     contract-name: policy-registry
+        #     expected-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+        #     cost: 145050
+        #     path: contracts/policy-registry.clar
+        #     anchor-block-only: true
+        #     clarity-version: 3
+        # - contract-publish:
+        #     contract-name: treasury
+        #     expected-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+        #     cost: 213960
+        #     path: contracts/treasury.clar
+        #     anchor-block-only: true
+        #     clarity-version: 3
       epoch: "3.0"
