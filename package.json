@@ -6,6 +6,7 @@
     "front-end"
   ],
   "dependencies": {
+    "@stacks/blockchain-api-client": "^8.10.0",
     "@types/recharts": "^1.8.29",
     "axios": "^1.9.0",
     "convex": "^1.23.0",

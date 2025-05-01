@@ -34,25 +34,31 @@ This plan outlines the tasks required to implement the integrated BitHedge Oracl
 **Goal:** Establish the simplified on-chain contract and basic communication primitives.
 
 | Task ID      | Description                                                                           | Est. Hours | Status | Dependencies   | Assignee |
-| :----------- | :------------------------------------------------------------------------------------ | :--------- | :----- | :------------- | :------- |
-| **OC-101**   | Refactor `oracle.clar`: Remove Volatility, TWAP, Price Change%, History logic/storage | 8          | ⬜     | Spec Guide     |          |
-| **OC-102**   | Refactor `oracle.clar`: Implement `set-aggregated-price` function with auth check     | 4          | ⬜     | OC-101         |          |
-| **OC-103**   | Refactor `oracle.clar`: Implement `get-latest-price` read-only function               | 2          | ⬜     | OC-101         |          |
-| **OC-104**   | Refactor `oracle.clar`: Implement `set-authorized-submitter` function                 | 1          | ⬜     | OC-101         |          |
-| **OC-105**   | Refactor `oracle.clar`: Update constants, error codes, and events                     | 2          | ⬜     | OC-101         |          |
-| **PC-101**   | Define Parameter Contract Trait (`parameter-trait.clar`) interface needed by Oracle   | 2          | ⬜     | Spec Guide     |          |
-| **OC-106**   | Integrate `oracle.clar`: Add trait import and `contract-call?` for validation params  | 4          | ⬜     | OC-102, PC-101 |          |
-| **BI-101**   | Implement Blockchain Integration (Convex): Basic `readLatestOraclePrice` function     | 3          | ⬜     | OC-103         |          |
-| **OC-107**   | Deploy refactored `oracle.clar` to Devnet                                             | 2          | ⬜     | OC-106         |          |
-| **TEST-101** | Basic unit tests for refactored `oracle.clar` functions                               | 4          | ⬜     | OC-107         |          |
+| :----------- | :------------------------------------------------------------------------------------ | :--------- | :----- | :------------- | :------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| **OC-101**   | Refactor `oracle.clar`: Remove Volatility, TWAP, Price Change%, History logic/storage | 8          | 🟢     | Spec Guide     |          |
+| **OC-102**   | Refactor `oracle.clar`: Implement `set-aggregated-price` function with auth check     | 4          | 🟢     | OC-101         |          | _Note: Timestamp handling fixed during testing._                                                                                  |
+| **OC-103**   | Refactor `oracle.clar`: Implement `get-latest-price` read-only function               | 2          | 🟢     | OC-101         |          |
+| **OC-104**   | Refactor `oracle.clar`: Implement `set-authorized-submitter` function                 | 1          | 🟢     | OC-101         |          |
+| **OC-105**   | Refactor `oracle.clar`: Update constants, error codes, and events                     | 2          | 🟢     | OC-101         |          |
+| **PC-101**   | Define Parameter Contract Trait (`parameter-trait.clar`) interface needed by Oracle   | 2          | ⚪     | Spec Guide     |          |
+| **OC-106**   | Integrate `oracle.clar`: Add trait import and `contract-call?` for validation params  | 4          | ⚪     | OC-102, PC-101 |          |
+| **BI-101**   | Implement Blockchain Integration (Convex): Basic `readLatestOraclePrice` function     | 3          | 🟢     | OC-103         |          |
+| **OC-107**   | Deploy refactored `oracle.clar` to Devnet                                             | 2          | 🟢     | OC-105         |          | _Note: Deployed and tested successfully after fixes._                                                                             |
+| **TEST-101** | Basic unit tests for refactored `oracle.clar` functions                               | 4          | 🟣     | OC-105         |          | _Note: Core functionality tested functionally via UI on Devnet, leading to timestamp fixes. Simnet unit test limitations remain._ |
+
+**Phase 1 Notes & Commentary:**
+
+- Tasks `OC-101` through `OC-105` were completed as planned, resulting in a simplified `oracle.clar` contract.
+- **Trait Implementation (`PC-101`, `OC-106`) Aborted:** Significant challenges were encountered attempting to implement and integrate the `parameter-trait`. Persistent `unresolved contract` and `failed to parse type` errors arose within the Clarinet testing environment and linter, despite adhering to standard trait syntax. Extensive debugging (moving files, cache clearing, syntax checks, using `burn-block-height` vs `block-height`) did not resolve the root cause, potentially indicating a tooling issue. To avoid blocking progress, the decision was made to **hardcode validation parameters** directly into `oracle.clar`. The trait (`parameter-trait.clar`) and implementation (`parameter-oracle-impl.clar`) files were moved to `pending-contracts` for potential future revisiting. Tasks `PC-101` and `OC-106` are marked as Deferred (`⚪`).
+- **Functional Testing & Fixes**: Debugging during Devnet deployment and UI testing revealed issues with timestamp handling (`ERR-INVALID-PARAMETERS` on submission) and timestamp interpretation in the frontend (`useLatestOraclePrice` hook). These were resolved by modifying `set-aggregated-price` to use `burn-block-height` internally and updating the frontend hook to correctly format the block height for display.
 
 **Phase 1 Deliverables:**
 
-- Refactored `oracle.clar` contract aligned with the simplified specification.
-- Defined Parameter Contract trait.
-- Basic integration for reading parameters in `oracle.clar`.
-- Basic Convex function to read the latest price from the deployed contract.
-- Initial unit tests for `oracle.clar`.
+- Refactored `oracle.clar` contract aligned with the simplified specification (with hardcoded parameters).
+- ~~Defined Parameter Contract trait.~~ (Moved to `pending-contracts`)
+- ~~Basic integration for reading parameters in `oracle.clar`.~~ (Removed due to hardcoding)
+- Basic Convex function to read the latest price from the deployed contract. (BI-101 - Completed)
+- Initial unit tests for `oracle.clar` (Passing with one known limitation).
 
 ### Phase 2: Convex Backend Implementation (Duration: Est. 5 days)
 
@@ -108,9 +114,9 @@ This plan outlines the tasks required to implement the integrated BitHedge Oracl
 **Goal:** Connect the UI to the backend and perform end-to-end testing.
 
 | Task ID      | Description                                                                             | Est. Hours | Status | Dependencies    | Assignee |
-| :----------- | :-------------------------------------------------------------------------------------- | :--------- | :----- | :-------------- | :------- |
-| **FE-401**   | Implement Frontend: `hooks/oracleQueries.ts` with `useOracleData` hook                  | 4          | ⬜     | CVX-207         |          |
-| **FE-402**   | Integrate Frontend: Connect `BitcoinPriceCard.tsx` to `useOracleData`                   | 5          | ⬜     | FE-401          |          |
+| :----------- | :-------------------------------------------------------------------------------------- | :--------- | :----- | :-------------- | :------- | --------------------------------------------------------------------------------------------------------- |
+| **FE-401**   | Implement Frontend: `hooks/oracleQueries.ts` with `useOracleData` hook                  | 4          | 🟢     | CVX-207         |          | _Note: Implemented direct blockchain call via `useLatestOraclePrice` and fixed timestamp interpretation._ |
+| **FE-402**   | Integrate Frontend: Connect `BitcoinPriceCard.tsx` to `useOracleData`                   | 5          | 🟢     | FE-401          |          | _Note: Integration successful using `useLatestOraclePrice`. Displaying price and block height._           |
 | **FE-403**   | Integrate Frontend: Implement "Refresh" button functionality                            | 2          | ⬜     | FE-402          |          |
 | **FE-404**   | Implement Frontend (Optional): Direct read-only call for on-chain price display         | 4          | ⚪     | FE-402          |          |
 | **TEST-401** | End-to-End Testing: Verify data flow from external APIs -> Convex -> UI                 | 6          | ⬜     | FE-402          |          |
@@ -119,7 +125,7 @@ This plan outlines the tasks required to implement the integrated BitHedge Oracl
 
 **Phase 4 Deliverables:**
 
-- `BitcoinPriceCard.tsx` displaying live data from the Convex backend.
+- `BitcoinPriceCard.tsx` displaying live data from the ~~Convex backend~~ **blockchain via hook**.
 - Completed end-to-end testing of the Oracle system.
 - Updated project documentation.
 
@@ -127,11 +133,11 @@ This plan outlines the tasks required to implement the integrated BitHedge Oracl
 
 | Phase                                     | Total Tasks | Not Started | In Progress | Completed | Completion % |
 | :---------------------------------------- | :---------- | :---------- | :---------- | :-------- | :----------- |
-| Phase 1: Foundation & On-Chain Refactor   | 10          | 10          | 0           | 0         | 0%           |
+| Phase 1: Foundation & On-Chain Refactor   | 10          | 3           | 0           | 7         | 70%          |
 | Phase 2: Convex Backend Implementation    | 11          | 11          | 0           | 0         | 0%           |
 | Phase 3: Blockchain Integration & Connect | 8           | 8           | 0           | 0         | 0%           |
 | Phase 4: Frontend Integration & Testing   | 7           | 6           | 0           | 1         | 14%          |
-| **Overall Project**                       | **36**      | **35**      | **0**       | **1**     | **3%**       |
+| **Overall Project**                       | **36**      | **28**      | **0**       | **8**     | **22%**      |
 
 _(Note: Status markers and percentages need to be updated as tasks progress.)_
 
