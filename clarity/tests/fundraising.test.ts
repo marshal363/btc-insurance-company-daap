@@ -29,7 +29,7 @@ describe("fundraising campaign", () => {
 
   it("initializes with a goal", async () => {
     const { response } = await initCampaign(100000);
-    expect(response.result).toBeOk(Cl.uint(1));
+    expect(response.result).toBeOk(Cl.bool(true));
   });
 
   it("accepts STX donations during campaign", async () => {
@@ -40,7 +40,7 @@ describe("fundraising campaign", () => {
       [Cl.uint(5000)],
       donor1
     );
-    expect(response.result).toBeOk(Cl.uint(1));
+    expect(response.result).toBeOk(Cl.bool(true));
 
     // verify donation was recorded
     const getDonationResponse = await simnet.callReadOnlyFn(
@@ -182,7 +182,7 @@ describe("fundraising campaign", () => {
       deployer
     );
 
-    expect(response.result).toBeOk(Cl.uint(1));
+    expect(response.result).toBeOk(Cl.bool(true));
 
     expect(getCurrentStxBalance(deployer)).toEqual(
       originalDeployerBalance + donationAmount
@@ -209,7 +209,7 @@ describe("fundraising campaign", () => {
       [],
       deployer
     );
-    expect(cancelResponse.result).toBeOk(Cl.uint(1));
+    expect(cancelResponse.result).toBeOk(Cl.bool(true));
 
     const response = await simnet.callPublicFn(
       "fundraising",
@@ -246,7 +246,7 @@ describe("fundraising campaign", () => {
       [],
       deployer
     );
-    expect(cancelResponse.result).toBeOk(Cl.uint(1));
+    expect(cancelResponse.result).toBeOk(Cl.bool(true));
 
     // Request refund
     const response = await simnet.callPublicFn(
@@ -255,7 +255,7 @@ describe("fundraising campaign", () => {
       [],
       donor1
     );
-    expect(response.result).toBeOk(Cl.uint(1));
+    expect(response.result).toBeOk(Cl.bool(true));
 
     // verify funds were restored
     expect(getCurrentStxBalance(donor1)).toEqual(originalDonorBalance);

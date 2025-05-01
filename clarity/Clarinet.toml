@@ -40,10 +40,20 @@ path = 'contracts/oracle.clar'
 clarity_version = 3
 epoch = 3.0
 
+# REMOVED Parameter contract entries
+#[contracts.parameter-oracle-impl]
+#path = 'contracts/parameter-oracle-impl.clar'
+#clarity_version = 3
+#epoch = 3.0
+#
+#[contracts.parameter-trait]
+#path = 'contracts/parameter-trait.clar'
+#clarity_version = 3
+#epoch = 3.0
+
 #[contracts.liquidity-pool]
 #path = 'contracts/liquidity-pool.clar'
 #clarity_version = 3
-#epoch = 3.0
 
 #[contracts.liquidation-engine]
 #path = 'contracts/liquidation-engine.clar'
