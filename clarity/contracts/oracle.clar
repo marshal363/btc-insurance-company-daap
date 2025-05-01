@@ -57,59 +57,62 @@
 
 ;; public functions
 
-;; @desc Sets the latest aggregated price and timestamp. Only callable by the authorized submitter.
-;; Uses hardcoded validation parameters.
+;; @desc Sets the latest aggregated price. Only callable by the authorized submitter.
+;; Uses hardcoded validation parameters. The timestamp is automatically set to the current burn-block-height.
 ;; @param price The aggregated price (uint, with PRICE_DECIMALS)
-;; @param timestamp The timestamp associated with the price (uint, Stacks block timestamp)
 ;; @returns (ok bool) or (err uint)
-(define-public (set-aggregated-price (price uint) (timestamp uint))
+(define-public (set-aggregated-price (price uint))
   (begin
     ;; --- Authorization ---
     (asserts! (is-eq tx-sender (var-get authorized-submitter)) ERR-NOT-AUTHORIZED)
 
-    ;; --- Validation ---
-    (let
-      (
-        (current-block-time burn-block-height)
-        (last-price-val (var-get latest-price))
-        (max-deviation-percentage ORACLE_MAX_DEVIATION_PCT)
-        (max-age-seconds ORACLE_MAX_AGE_SECONDS)
-        (max-age-blocks (/ max-age-seconds u10))
-      )
-      
-      ;; 1. Timestamp validation (Explicit checks)
-      ;; Check A: Is timestamp too old?
-      (if (< current-block-time max-age-blocks)
-          true ;; Allow if chain is too young for check
-          (asserts! (>= timestamp (- current-block-time max-age-blocks)) ERR-TIMESTAMP-TOO-OLD) ;; Else, enforce check
-      )
-      ;; Check B: Is timestamp too far in the future? (Allow 1 block buffer)
-      (asserts! (<= timestamp (+ current-block-time u1)) ERR-INVALID-PARAMETERS)
+    ;; --- Get Current Time ---
+    (let ((current-timestamp burn-block-height))
 
-      ;; 2. Deviation validation
-      (if (> last-price-val u0)
-        (let
-          (
-            (price-diff (if (> price last-price-val) (- price last-price-val) (- last-price-val price)))
-            ;; Adjust scale based on param contract (assuming 6 decimals like original param contract)
-            ;; e.g., if param is 50000 (5%), divide by 1,000,000
-            (max-allowed-diff (/ (* last-price-val max-deviation-percentage) u1000000))
-          )
-          (asserts! (<= price-diff max-allowed-diff) ERR-PRICE-OUT-OF-BOUNDS)
+      ;; --- Validation ---
+      (let
+        (
+          (last-price-val (var-get latest-price))
+          (last-timestamp-val (var-get latest-timestamp)) ;; Get last timestamp for deviation check context if needed
+          (max-deviation-percentage ORACLE_MAX_DEVIATION_PCT)
+          (max-age-seconds ORACLE_MAX_AGE_SECONDS)
+          (max-age-blocks (/ max-age-seconds u10)) ;; Recalculate max age in blocks
         )
-        true ;; Skip deviation check if no previous price
+        
+        ;; REMOVED Timestamp validation checks - using burn-block-height directly
+
+        ;; 1. Deviation validation (Checks if price changed too much since last update)
+        (if (> last-price-val u0)
+          (let
+            (
+              (price-diff (if (> price last-price-val) (- price last-price-val) (- last-price-val price)))
+              ;; Calculate max allowed difference based on the last price
+              (max-allowed-diff (/ (* last-price-val max-deviation-percentage) u1000000))
+              ;; Also check if the last price is too old according to max_age_seconds
+              (is-last-price-stale 
+                (if (< current-timestamp max-age-blocks) ;; Handle chain genesis case
+                    false
+                    (< last-timestamp-val (- current-timestamp max-age-blocks))
+                )
+              )
+            )
+            ;; Allow update if last price was stale OR if deviation is within bounds
+            (asserts! (or is-last-price-stale (<= price-diff max-allowed-diff)) ERR-PRICE-OUT-OF-BOUNDS)
+          )
+          true ;; Skip deviation check if no previous price exists
+        )
       )
-    )
 
-    ;; --- State Update ---
-    (var-set latest-price price)
-    (var-set latest-timestamp timestamp)
+      ;; --- State Update ---
+      (var-set latest-price price)
+      (var-set latest-timestamp current-timestamp) ;; Use the current block height
 
-    ;; --- Event Emission ---
-    (print { event: "price-updated", price: price, timestamp: timestamp, submitter: tx-sender })
+      ;; --- Event Emission ---
+      (print { event: "price-updated", price: price, timestamp: current-timestamp, submitter: tx-sender }) ;; Use current block height
 
-    (ok true)
-  )
+      (ok true)
+    ) ;; End inner let for validation
+  ) ;; End outer let for current-timestamp
 )
 
 ;; @desc Updates the authorized submitter principal. Only callable by the current contract owner.
