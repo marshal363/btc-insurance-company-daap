@@ -42,29 +42,8 @@ plan:
         - contract-publish:
             contract-name: oracle
             expected-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-            cost: 573370
+            cost: 91670
             path: contracts/oracle.clar
             anchor-block-only: true
             clarity-version: 3
-<<<<<<< HEAD
-        # INSERT_YOUR_REWRITE_HERE
-        # - contract-publish:
-        #     contract-name: parameter
-        #     expected-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-        # - contract-publish:
-        #     contract-name: policy-registry
-        #     expected-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-        #     cost: 145050
-        #     path: contracts/policy-registry.clar
-        #     anchor-block-only: true
-        #     clarity-version: 3
-        # - contract-publish:
-        #     contract-name: treasury
-        #     expected-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-        #     cost: 213960
-        #     path: contracts/treasury.clar
-        #     anchor-block-only: true
-        #     clarity-version: 3
-=======
->>>>>>> 809c1510f94db17f3d5b8550948b61ba0e792722
       epoch: "3.0"
