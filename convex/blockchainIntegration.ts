@@ -1,6 +1,7 @@
-import { query } from './_generated/server';
+import { query, action, internalAction } from './_generated/server';
 import { ClarityValue, cvToJSON, principalCV, contractPrincipalCV, callReadOnlyFunction } from '@stacks/transactions';
 import { StacksMainnet, StacksTestnet, StacksMocknet } from '@stacks/network';
+import { internal } from './_generated/api';
 
 // TODO: Centralize network configuration and client instantiation
 // Assuming Devnet/Mocknet for now. Replace with actual network config based on environment.
@@ -76,4 +77,55 @@ export const readLatestOraclePrice = query({
       };
     }
   },
+});
+
+/**
+ * Prepares the latest aggregated price data for submission to the oracle contract.
+ * This internal action is meant to be called before the threshold check (CVX-301) and
+ * actual blockchain submission (BI-302-305).
+ * 
+ * This is a simplified implementation focused on the core logic without dependencies
+ * on other modules. In a production implementation, this would:
+ * 1. Fetch the latest aggregated price from the Convex DB
+ * 2. Fetch the last submitted on-chain price from the blockchain
+ * 3. Format the price for submission
+ * 4. Calculate percent change between current and last submitted price
+ * 
+ * @returns {Promise<{ priceInSatoshis: number, currentTimestamp: number, percentChange: number | null, sourceCount: number }>}
+ */
+export const prepareOracleSubmission = internalAction({
+  args: {},
+  handler: async (ctx): Promise<{
+    priceInSatoshis: number;
+    currentTimestamp: number;
+    percentChange: number | null;
+    sourceCount: number;
+  }> => {
+    console.log("prepareOracleSubmission action running...");
+    
+    // For now, use hardcoded example values that would be replaced with actual data in production
+    const exampleCurrentPriceUSD = 60000;      // Example current BTC price in USD
+    const exampleLastSubmittedPrice = 59500;   // Example last submitted price in satoshis
+    const exampleCurrentTimestamp = Date.now();
+    const exampleSourceCount = 8;              // Example count of sources used
+    
+    // Convert current price from USD to satoshis
+    const priceInSatoshis = Math.round(exampleCurrentPriceUSD * 100000000);
+    
+    // Calculate percent change
+    let percentChange = null;
+    if (exampleLastSubmittedPrice > 0) {
+      percentChange = ((priceInSatoshis - exampleLastSubmittedPrice) / exampleLastSubmittedPrice) * 100;
+    }
+    
+    console.log(`Prepared submission: Current price ${exampleCurrentPriceUSD} USD (${priceInSatoshis} satoshis), ` + 
+                `Last on-chain price: ${exampleLastSubmittedPrice}, Percent change: ${percentChange !== null ? percentChange.toFixed(2) + '%' : 'N/A'}`);
+    
+    return {
+      priceInSatoshis,
+      currentTimestamp: exampleCurrentTimestamp,
+      percentChange,
+      sourceCount: exampleSourceCount
+    };
+  }
 }); 

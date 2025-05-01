@@ -126,12 +126,10 @@ export const fetchPrices = internalAction({
     ];
 
     const timestamp = Date.now();
-    let totalWeight = 0;
-    let weightedSum = 0;
+    const fetchedPrices: { source: string; price: number; weight: number }[] = [];
     let fetchedCount = 0;
-    let validCount = 0;
 
-    // console.log(`Fetching from ${sources.length} current price sources...`);
+    console.log(`Fetching from ${sources.length} current price sources...`);
     for (const source of sources) {
       try {
         // console.log(`Attempting fetch from ${source.name}...`);
@@ -139,9 +137,9 @@ export const fetchPrices = internalAction({
         fetchedCount++; // Count attempt even if parsing fails
         const price = source.parse(response.data);
         // console.log(`Fetched from ${source.name}. Raw parsed value: ${price}`);
-        
+
         // Validate price before storing and using in aggregation
-        if (typeof price === 'number' && !isNaN(price)) { 
+        if (typeof price === 'number' && !isNaN(price)) {
            // Store individual price feed entry
           await ctx.runMutation(internal.prices.storePriceFeed, {
             source: source.name,
@@ -149,13 +147,11 @@ export const fetchPrices = internalAction({
             weight: source.weight,
             timestamp
           });
-          // Add to weighted sum
-          weightedSum += price * source.weight;
-          totalWeight += source.weight;
-          validCount++;
-          // console.log(`Valid price from ${source.name}: ${price}. Stored and added to weighted sum.`);
+          // Collect valid prices for aggregation and outlier detection
+          fetchedPrices.push({ source: source.name, price, weight: source.weight });
+          // console.log(`Valid price from ${source.name}: ${price}. Stored and collected.`);
         } else {
-           console.warn(`Parsed invalid price (Value: ${price}, Type: ${typeof price}) from ${source.name}. Skipping storage and aggregation for this source.`);
+           console.warn(`Parsed invalid price (Value: ${price}, Type: ${typeof price}) from ${source.name}. Skipping storage and collection for this source.`);
            // Do not store invalid entry
         }
 
@@ -164,28 +160,75 @@ export const fetchPrices = internalAction({
         // Do not store error entry
       }
     }
-    console.log(`Finished fetching current prices. Attempted: ${fetchedCount}, Valid & Stored: ${validCount}`);
+    console.log(`Finished fetching current prices. Attempted: ${fetchedCount}, Valid & Stored: ${fetchedPrices.length}`);
 
-    if (totalWeight > 0 && validCount > 0) {
+    // --- Outlier Filtering using IQR ---
+    let pricesToAggregate = [...fetchedPrices]; // Start with all valid fetched prices
+    if (pricesToAggregate.length >= 4) { // Need at least 4 data points for meaningful IQR
+        // Sort prices to find quartiles
+        pricesToAggregate.sort((a, b) => a.price - b.price);
+
+        // Calculate Q1 and Q3
+        const q1Index = Math.floor(pricesToAggregate.length / 4);
+        const q3Index = Math.floor(pricesToAggregate.length * 3 / 4);
+        const q1 = pricesToAggregate[q1Index].price;
+        const q3 = pricesToAggregate[q3Index].price;
+        const iqr = q3 - q1;
+
+        // Define bounds
+        const lowerBound = q1 - 1.5 * iqr;
+        const upperBound = q3 + 1.5 * iqr;
+
+        console.log(`IQR Outlier Detection: Count=${pricesToAggregate.length}, Q1=${q1}, Q3=${q3}, IQR=${iqr}, LowerBound=${lowerBound}, UpperBound=${upperBound}`);
+
+        // Filter prices outside the bounds
+        const originalCount = pricesToAggregate.length;
+        pricesToAggregate = pricesToAggregate.filter(p => p.price >= lowerBound && p.price <= upperBound);
+        const removedCount = originalCount - pricesToAggregate.length;
+        if (removedCount > 0) {
+            console.warn(`Removed ${removedCount} outliers based on IQR.`);
+            // Log which ones were removed (optional, could be verbose)
+            // const removedSources = fetchedPrices.filter(p => !pricesToAggregate.some(pa => pa.source === p.source)).map(p => p.source);
+            // console.log(`Outlier sources removed: ${removedSources.join(', ')}`);
+        }
+    } else {
+        console.log(`Skipping IQR outlier detection: Not enough valid prices (${pricesToAggregate.length} < 4).`);
+    }
+    // --- End Outlier Filtering ---
+
+
+    // Calculate weighted average using filtered prices
+    let weightedSum = 0;
+    let totalWeight = 0;
+    for (const item of pricesToAggregate) {
+        weightedSum += item.price * item.weight;
+        totalWeight += item.weight;
+    }
+
+
+    if (totalWeight > 0 && pricesToAggregate.length > 0) {
       const aggregatedPrice = weightedSum / totalWeight;
-      // console.log(`Calculated aggregated price: ${aggregatedPrice} (Sum: ${weightedSum}, Weight: ${totalWeight})`);
-      
+      console.log(`Calculated aggregated price: ${aggregatedPrice} (Sum: ${weightedSum}, Weight: ${totalWeight}, Sources: ${pricesToAggregate.length}) after outlier filtering.`);
+
       // Calculate volatility from historical data
-      // console.log(`Fetching latest 30-day volatility for aggregation...`);
       const fetchedVolatility: number | null = await ctx.runQuery(internal.prices.calculateVolatility, {});
-      // console.log(`Latest 30-day volatility result: ${fetchedVolatility}`);
-      const volatilityToStore: number = fetchedVolatility ?? 0; // Ensure it's a number (default to 0 if null)
+      const volatilityToStore: number = fetchedVolatility ?? 0; // Ensure it's a number
+
+      // Calculate 24h range
+      const rangeData = await ctx.runQuery(internal.prices.calculate24hRange, {});
+      const range24hToStore = rangeData ? rangeData.range : undefined; // Pass range or undefined
 
       // Store aggregated price
-      // console.log(`Storing aggregated price...`);
       await ctx.runMutation(internal.prices.storeAggregatedPrice, {
         price: aggregatedPrice,
         timestamp,
-        volatility: volatilityToStore // Use the guaranteed number
+        volatility: volatilityToStore,
+        sourceCount: pricesToAggregate.length,
+        range24h: range24hToStore 
       });
       // console.log(`Aggregated price stored.`);
     } else {
-      console.warn(`No sources returned valid, weighted data (Valid count: ${validCount}, Total weight: ${totalWeight}). Could not aggregate price.`);
+      console.warn(`No sources returned valid, weighted data after potential outlier filtering (Valid count: ${pricesToAggregate.length}, Total weight: ${totalWeight}). Could not aggregate price.`);
     }
     console.log("fetchPrices action finished.");
   }
@@ -400,10 +443,12 @@ export const storeAggregatedPrice = internalMutation({
   args: {
     price: v.number(),
     timestamp: v.number(),
-    volatility: v.number()
+    volatility: v.number(),
+    sourceCount: v.optional(v.number()),
+    range24h: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    // console.log(`Storing aggregated price: ${args.price}, Volatility: ${args.volatility}, Timestamp: ${new Date(args.timestamp).toISOString()}`);
+    // console.log(`Storing aggregated price: ${args.price}, Volatility: ${args.volatility}, Timestamp: ${new Date(args.timestamp).toISOString()}, SourceCount: ${args.sourceCount}, Range24h: ${args.range24h}`);
     await ctx.db.insert("aggregatedPrices", args);
     // console.log(`Aggregated price stored successfully.`);
   }
@@ -670,4 +715,109 @@ export const getVolatilityForDuration = internalQuery({
     // TODO (VCE-214 Error Handling): Ensure the consuming function handles this null return gracefully.
     return null;
   }
+});
+
+// NEW FUNCTION: Calculate 24h High/Low/Range from historical data
+export const calculate24hRange = internalQuery({
+  args: {},
+  handler: async (ctx): Promise<{ high: number; low: number; range: number } | null> => {
+    console.log("calculate24hRange query running...");
+    const twentyFourHoursAgo = Date.now() - 24 * 60 * 60 * 1000;
+
+    // Fetch records from the last 24 hours that potentially have high/low data
+    const recentPrices = await ctx.db
+      .query("historicalPrices")
+      .withIndex("by_timestamp", (q) => q.gt("timestamp", twentyFourHoursAgo))
+      // .filter((q) => q.neq(q.field("high"), null).neq(q.field("low"), null)) // Optimization: Filter for non-null high/low if needed, but might exclude valid points if source mix changes
+      .collect();
+
+    console.log(`Found ${recentPrices.length} records in the last 24 hours for range calculation.`);
+
+    if (recentPrices.length === 0) {
+      console.warn("No historical price data found in the last 24 hours to calculate range.");
+      return null;
+    }
+
+    let maxHigh = -Infinity;
+    let minLow = Infinity;
+    let validPoints = 0;
+
+    for (const price of recentPrices) {
+      // Use high/low if available and valid numbers, otherwise fallback to price if needed (though less accurate for true range)
+      const highValue = typeof price.high === 'number' ? price.high : price.price; 
+      const lowValue = typeof price.low === 'number' ? price.low : price.price;
+
+      if (typeof highValue === 'number' && typeof lowValue === 'number') {
+        if (highValue > maxHigh) {
+          maxHigh = highValue;
+        }
+        if (lowValue < minLow) {
+          minLow = lowValue;
+        }
+        validPoints++;
+      }
+    }
+
+    if (validPoints === 0 || maxHigh === -Infinity || minLow === Infinity) {
+      console.warn("Could not determine valid high/low points from recent data to calculate range.");
+      return null;
+    }
+
+    const range = maxHigh - minLow;
+    console.log(`Calculated 24h Range: High=${maxHigh}, Low=${minLow}, Range=${range}`);
+    return { high: maxHigh, low: minLow, range };
+  }
+});
+
+// NEW QUERY: Get the latest price reported by each individual source
+export const getLatestSourcePrices = query({
+  args: {},
+  handler: async (ctx) => {
+    console.log("getLatestSourcePrices query running...");
+    
+    // Reuse the source definitions from fetchPrices for consistency
+    // In a real app, this might come from a shared config
+    const sources = [
+      { name: "coingecko", weight: 0.2 },
+      { name: "binance", weight: 0.15 },
+      { name: "kraken", weight: 0.15 },
+      { name: "coinbase", weight: 0.15 },
+      { name: "bitstamp", weight: 0.1 },
+      { name: "gemini", weight: 0.05 },
+      { name: "huobi", weight: 0.05 },
+      { name: "bitfinex", weight: 0.1 },
+    ];
+
+    const latestSourceData: { 
+      name: string;
+      price: number;
+      timestamp: number;
+      weight: number;
+    }[] = [];
+
+    for (const source of sources) {
+      // Find the most recent entry for this specific source
+      const latestEntry = await ctx.db
+        .query("priceFeed")
+        .withIndex("by_timestamp") // Use index for efficiency if source-specific index isn't available
+        .filter((q) => q.eq(q.field("source"), source.name))
+        .order("desc")
+        .first();
+
+      if (latestEntry) {
+        console.log(`Found latest for ${source.name}: Price=${latestEntry.price}, TS=${latestEntry.timestamp}`);
+        latestSourceData.push({
+          name: latestEntry.source,
+          price: latestEntry.price,
+          timestamp: latestEntry.timestamp,
+          weight: source.weight // Use the predefined weight
+        });
+      } else {
+         console.log(`No recent data found for source: ${source.name}`);
+      }
+    }
+
+    console.log(`Returning latest data for ${latestSourceData.length} sources.`);
+    return latestSourceData;
+  },
 });

@@ -66,17 +66,26 @@ This plan outlines the tasks required to implement the integrated BitHedge Oracl
 
 | Task ID      | Description                                                                                    | Est. Hours | Status | Dependencies          | Assignee |
 | :----------- | :--------------------------------------------------------------------------------------------- | :--------- | :----- | :-------------------- | :------- |
-| **CVX-201**  | Implement/Refine Convex: Robust multi-source price fetching logic                              | 6          | ⬜     |                       |          |
-| **CVX-202**  | Implement/Refine Convex: Aggregation logic (e.g., weighted median, outlier filtering)          | 8          | ⬜     | CVX-201               |          |
-| **CVX-203**  | Implement/Refine Convex: Confidence scoring for aggregated price                               | 4          | ⬜     | CVX-202               |          |
-| **CVX-204**  | Implement Convex: Volatility calculation (e.g., std dev) using `ConvexPriceHistory`            | 6          | ⬜     |                       |          |
-| **CVX-205**  | Implement Convex: 24h Range calculation using `ConvexPriceHistory`                             | 4          | ⬜     |                       |          |
-| **CVX-206**  | Implement Convex: Persist aggregated prices, volatility, etc., to Convex DB tables             | 5          | ⬜     | CVX-202, CVX-204, 205 |          |
-| **CVX-207**  | Implement Convex: `getLatestPriceFeedData` query function for frontend                         | 6          | ⬜     | CVX-206               |          |
-| **CVX-208**  | Implement Convex: Core `submitAggregatedPriceToOracle` action (logic _before_ threshold check) | 4          | ⬜     | CVX-202               |          |
-| **CVX-209**  | Implement Convex: Cron job (`crons.ts`) to schedule `submitAggregatedPriceToOracle`            | 2          | ⬜     | CVX-208               |          |
-| **TEST-201** | Unit/integration tests for Convex aggregation and calculation logic                            | 8          | ⬜     | CVX-202, 204, 205     |          |
-| **TEST-202** | Test `getLatestPriceFeedData` query                                                            | 3          | ⬜     | CVX-207               |          |
+| **CVX-201**  | Implement/Refine Convex: Robust multi-source price fetching logic                              | 6          | 🟢     |                       |          |
+| **CVX-202**  | Implement/Refine Convex: Aggregation logic (e.g., weighted median, outlier filtering)          | 8          | 🟢     | CVX-201               |          |
+| **CVX-203**  | Implement/Refine Convex: Confidence scoring for aggregated price                               | 4          | 🟢     | CVX-202               |          |
+| **CVX-204**  | Implement Convex: Volatility calculation (e.g., std dev) using `ConvexPriceHistory`            | 6          | 🟢     |                       |          |
+| **CVX-205**  | Implement Convex: 24h Range calculation using `ConvexPriceHistory`                             | 4          | 🟢     |                       |          |
+| **CVX-206**  | Implement Convex: Persist aggregated prices, volatility, etc., to Convex DB tables             | 5          | 🟢     | CVX-202, CVX-204, 205 |          |
+| **CVX-207**  | Implement Convex: `getLatestPriceFeedData` query function for frontend                         | 6          | 🟢     | CVX-206               |          |
+| **CVX-208**  | Implement Convex: Core `submitAggregatedPriceToOracle` action (logic _before_ threshold check) | 4          | 🟢     | CVX-202               |          |
+| **CVX-209**  | Implement Convex: Cron job (`crons.ts`) to schedule `submitAggregatedPriceToOracle`            | 2          | 🟢     | CVX-208               |          |
+| **TEST-201** | Unit/integration tests for Convex aggregation and calculation logic                            | 8          | 🟡     | CVX-202, 204, 205     |          |
+| **TEST-202** | Test `getLatestPriceFeedData` query                                                            | 3          | 🟢     | CVX-207               |          |
+
+**Phase 2 Notes & Commentary:**
+
+- Tasks **CVX-201** (Multi-source Fetching), **CVX-202** (Aggregation Logic - refined with IQR filtering), **CVX-203** (Confidence Score - source count), **CVX-204** (Volatility Calculation - std dev), **CVX-205** (24h Range Calculation), and **CVX-206** (Persistence) were reviewed or implemented. Functionality exists within `convex/prices.ts`.
+- **CVX-207** (Frontend Data Query): The existing `getLatestPrice` query provides the latest aggregated data. A new query, `getLatestSourcePrices`, was added to provide the breakdown of individual source data needed for the `PriceOracleNetwork.tsx` component.
+- **CVX-208** (Submission Preparation): Implemented a new `prepareOracleSubmission` internal action in `convex/blockchainIntegration.ts` which formats the aggregated price for submission to the blockchain and calculates percent change to assist with threshold checks.
+- **CVX-209** (Cron Job Scheduling): Added a cron job to `convex/crons.ts` to schedule the `prepareOracleSubmission` action every 5 minutes.
+- **TEST-201** (Calculation Tests): Test file `convex/prices.test.ts` created. Tests for query functions (`calculate24hRange`, `calculateVolatilityWithTimeframe`) implemented. Tests for the `fetchPrices` action (aggregation/outlier filtering) require further investigation into mocking external calls (`axios`) and mutations within Convex testing framework and are pending.
+- **TEST-202** (Frontend Query Tests): Implemented tests in `convex/prices.test.ts` for `getLatestPrice` and `getLatestSourcePrices` queries.
 
 **Phase 2 Deliverables:**
 

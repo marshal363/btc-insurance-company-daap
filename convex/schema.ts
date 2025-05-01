@@ -42,6 +42,8 @@ export default defineSchema({
     price: v.number(),
     timestamp: v.number(),
     volatility: v.number(),
+    sourceCount: v.optional(v.number()),
+    range24h: v.optional(v.number()),
   }).index("by_timestamp", ["timestamp"]),
   
   // Options tables

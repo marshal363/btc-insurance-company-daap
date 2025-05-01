@@ -7,6 +7,14 @@ const crons = cronJobs();
 // Fetch prices every 5 minutes
 crons.interval("fetch-prices", { minutes: 5 }, internal.prices.fetchPrices, {});
 
+// Prepare Oracle Submission Data every 5 minutes (will eventually trigger threshold check + submission)
+crons.interval(
+  "prepare-oracle-submission", 
+  { minutes: 5 }, 
+  internal.blockchainIntegration.prepareOracleSubmission, // Call the preparation step
+  {} // No arguments needed for prepareOracleSubmission
+);
+
 // Fetch historical data every hour (full refresh)
 crons.interval("fetch-historical", { hours: 1 }, internal.prices.fetchHistoricalPrices, {});
 
