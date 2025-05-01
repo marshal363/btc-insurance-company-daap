@@ -42,7 +42,7 @@ plan:
         - contract-publish:
             contract-name: oracle
             expected-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-            cost: 91670
+            cost: 95330
             path: contracts/oracle.clar
             anchor-block-only: true
             clarity-version: 3
