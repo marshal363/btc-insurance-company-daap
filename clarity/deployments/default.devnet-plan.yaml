@@ -39,55 +39,15 @@ plan:
             path: contracts/fundraising.clar
             anchor-block-only: true
             clarity-version: 3
-        # - contract-publish:
-        #     contract-name: governance
-        #     expected-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-        #     cost: 256800
-        #     path: contracts/governance.clar
-        #     anchor-block-only: true
-        #     clarity-version: 3
-        # - contract-publish:
-        #     contract-name: incentives
-        #     expected-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-        #     cost: 297970
-        #     path: contracts/incentives.clar
-        #     anchor-block-only: true
-        #     clarity-version: 3
-        # - contract-publish:
-        #     contract-name: insurance-fund
-        #     expected-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-        #     cost: 275610
-        #     path: contracts/insurance-fund.clar
-        #     anchor-block-only: true
-        #     clarity-version: 3
-        # - contract-publish:
-        #     contract-name: liquidation-engine
-        #     expected-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-        #     cost: 314480
-        #     path: contracts/liquidation-engine.clar
-        #     anchor-block-only: true
-        #     clarity-version: 3
-        # - contract-publish:
-        #     contract-name: liquidity-pool
-        #     expected-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-        #     cost: 278230
-        #     path: contracts/liquidity-pool.clar
-        #     anchor-block-only: true
-        #     clarity-version: 3
         - contract-publish:
             contract-name: oracle
             expected-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-            cost: 287040
+            cost: 573370
             path: contracts/oracle.clar
             anchor-block-only: true
             clarity-version: 3
-        - contract-publish:
-            contract-name: parameter-oracle-impl
-            expected-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-            cost: 30000 # Estimate - adjust after testing
-            path: contracts/parameter-oracle-impl.clar
-            anchor-block-only: true
-            clarity-version: 3
+<<<<<<< HEAD
+        # INSERT_YOUR_REWRITE_HERE
         # - contract-publish:
         #     contract-name: parameter
         #     expected-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
@@ -105,4 +65,6 @@ plan:
         #     path: contracts/treasury.clar
         #     anchor-block-only: true
         #     clarity-version: 3
+=======
+>>>>>>> 809c1510f94db17f3d5b8550948b61ba0e792722
       epoch: "3.0"
