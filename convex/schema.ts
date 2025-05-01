@@ -67,5 +67,19 @@ export default defineSchema({
     name: v.optional(v.string()),
     email: v.optional(v.string()),
     lastLogin: v.optional(v.number())
+  }),
+
+  // Table to record Oracle submission attempts
+  oracleSubmissions: defineTable({
+    txid: v.string(), // The transaction ID returned by the broadcast
+    submittedPriceSatoshis: v.number(), // The price (in satoshis) that was submitted
+    submissionTimestamp: v.number(), // Convex server timestamp when the submission was initiated
+    status: v.string(), // e.g., "submitted", "confirmed", "failed"
+    confirmationTimestamp: v.optional(v.number()), // Timestamp when confirmed on-chain (if tracked)
+    blockHeight: v.optional(v.number()), // Block height of confirmation (if tracked)
   })
+    .index("by_txid", ["txid"])
+    .index("by_status", ["status"])
+    .index("by_submission_timestamp", ["submissionTimestamp"]),
+
 });

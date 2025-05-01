@@ -101,14 +101,14 @@ This plan outlines the tasks required to implement the integrated BitHedge Oracl
 
 | Task ID      | Description                                                                                       | Est. Hours | Status | Dependencies    | Assignee |
 | :----------- | :------------------------------------------------------------------------------------------------ | :--------- | :----- | :-------------- | :------- |
-| **BI-301**   | Implement Blockchain Integration (Convex): Secure backend wallet/key loading from env variables   | 3          | ⬜     |                 |          |
-| **BI-302**   | Implement Blockchain Integration (Convex): Transaction building for `set-aggregated-price`        | 4          | ⬜     | OC-102          |          |
-| **BI-303**   | Implement Blockchain Integration (Convex): Transaction signing using backend identity             | 4          | ⬜     | BI-301, BI-302  |          |
-| **BI-304**   | Implement Blockchain Integration (Convex): Transaction broadcasting & basic confirmation handling | 5          | ⬜     | BI-303          |          |
-| **BI-305**   | Implement Blockchain Integration (Convex): `submitAggregatedPrice` action wrapper                 | 3          | ⬜     | BI-304          |          |
-| **CVX-301**  | Implement Convex: Threshold check logic in `submitAggregatedPriceToOracle` (using BI-101)         | 5          | ⬜     | CVX-208, BI-101 |          |
-| **CVX-302**  | Integrate Convex: Connect `submitAggregatedPriceToOracle` action to BI-305 for submission         | 3          | ⬜     | CVX-301, BI-305 |          |
-| **CVX-303**  | Update Convex: Store on-chain submission status/timestamp in `ConvexOracleState`                  | 2          | ⬜     | CVX-302         |          |
+| **BI-301**   | Implement Blockchain Integration (Convex): Secure backend wallet/key loading from env variables   | 3          | 🟢     |                 |          |
+| **BI-302**   | Implement Blockchain Integration (Convex): Transaction building for `set-aggregated-price`        | 4          | 🟢     | OC-102          |          |
+| **BI-303**   | Implement Blockchain Integration (Convex): Transaction signing using backend identity             | 4          | 🟢     | BI-301, BI-302  |          |
+| **BI-304**   | Implement Blockchain Integration (Convex): Transaction broadcasting & basic confirmation handling | 5          | 🟢     | BI-303          |          |
+| **BI-305**   | Implement Blockchain Integration (Convex): `submitAggregatedPrice` action wrapper                 | 3          | 🟢     | BI-304          |          |
+| **CVX-301**  | Implement Convex: Threshold check logic in `submitAggregatedPriceToOracle` (using BI-101)         | 5          | 🟢     | CVX-208, BI-101 |          |
+| **CVX-302**  | Integrate Convex: Connect `submitAggregatedPriceToOracle` action to BI-305 for submission         | 3          | 🟢     | CVX-301, BI-305 |          |
+| **CVX-303**  | Update Convex: Store on-chain submission status/timestamp in `ConvexOracleState`                  | 2          | 🟢     | CVX-302         |          |
 | **TEST-301** | Integration tests for Convex -> Blockchain submission flow (Devnet)                               | 8          | ⬜     | OC-107, CVX-302 |          |
 
 **Phase 3 Deliverables:**
@@ -117,6 +117,74 @@ This plan outlines the tasks required to implement the integrated BitHedge Oracl
 - Functional Blockchain Integration layer for submitting prices to `oracle.clar`.
 - Completed `submitAggregatedPriceToOracle` action with threshold checks and on-chain submission.
 - Integration tests validating the backend-to-blockchain flow.
+
+**Phase 3 Progress Notes (Updated: August 2024):**
+
+The first three tasks of Phase 3 have been successfully completed:
+
+1. **BI-301 (Environment Variable Setup):** Implemented the `getBackendSignerKey` function in `convex/blockchainIntegration.ts` to securely retrieve the Stacks private key from environment variables. This function includes error handling for missing configuration.
+
+2. **BI-302 (Transaction Building):** Added two key configuration helpers:
+
+   - `getStacksNetwork`: Dynamically determines the appropriate Stacks network (Mainnet, Testnet, Devnet) based on the `STACKS_NETWORK` environment variable.
+   - `getOracleContractInfo`: Retrieves contract details from `ORACLE_CONTRACT_ADDRESS` and `ORACLE_CONTRACT_NAME` environment variables.
+
+   Also implemented the `buildSetPriceTransactionOptions` function which constructs the transaction options for `set-aggregated-price`, converting the price parameter to the expected Clarity Value format.
+
+3. **BI-303 (Transaction Signing):** Created the `signSetPriceTransaction` internal action that:
+
+   - Builds the transaction options using the previously implemented function
+   - Retrieves the private key and derives the sender address
+   - Fetches the current nonce from the Stacks API (with error handling for new accounts)
+   - Assembles and signs the transaction using `makeContractCall` from the Stacks.js library
+
+4. **CVX-301 (Threshold Check Logic - Implemented):** The `prepareOracleSubmission` action was refactored to implement multi-factor threshold checking. It now:
+
+   - Fetches the latest aggregated price from the Convex DB (`api.prices.getLatestPrice` - Linter fix applied).
+   - Fetches the last on-chain price using `api.blockchainIntegration.readLatestOraclePrice` - Linter fix applied).
+   - Applies thresholds based on price change percentage, max/min time since last update, and minimum source count (using hardcoded values for MVP, defined in `ORACLE_UPDATE_THRESHOLDS`).
+   - Returns a `shouldUpdate` flag and a reason.
+   - ~~**Note:** There are remaining linter errors related to resolving `internal.prices.getLatestPrice` and `internal.blockchainIntegration.readLatestOraclePrice` within the `ctx.runQuery` calls. These appear to be type/reference resolution issues within the generated Convex API code and do not necessarily block functionality but should be investigated further for long-term stability.~~ (Linter errors resolved by using `api` reference).
+
+5. **BI-304 (Transaction Broadcasting - Implemented):** Added the `broadcastSignedTransaction` internal action to `convex/blockchainIntegration.ts`. This action takes a signed transaction object and broadcasts it to the configured Stacks network using `broadcastTransaction` from `@stacks/transactions`. It includes basic error handling for broadcast failures and returns the `txid` on success. (Linter fix applied for function call).
+
+6. **BI-305 (Submission Wrapper - Implemented):** Added the `submitAggregatedPrice` public action to `convex/blockchainIntegration.ts`. This action orchestrates the submission process by calling the internal `signSetPriceTransaction` and `broadcastSignedTransaction` actions. (Linter fixes applied for internal action calls).
+
+7. **CVX-302 (Cron Job Integration - Implemented):** Created a new internal action `checkAndSubmitOraclePrice` in `convex/blockchainIntegration.ts`. This action calls `prepareOracleSubmission` to check thresholds and, if needed, calls `submitAggregatedPrice`. Updated `convex/crons.ts` to schedule `checkAndSubmitOraclePrice` every 5 minutes instead of directly scheduling `prepareOracleSubmission`.
+
+8. **CVX-303 (Submission Recording - Implemented):** Defined a new table `oracleSubmissions` in `convex/schema.ts` to store details of submission attempts. Created the `recordOracleSubmission` internal mutation in `convex/blockchainIntegration.ts` to insert records into this table. Integrated the call to this mutation into `checkAndSubmitOraclePrice` to record successful submission attempts.
+
+The remaining tasks for Phase 3 involve:
+
+- ~~Implementing transaction broadcasting and confirmation handling (BI-304)~~ (Completed)
+- ~~Creating a wrapper action for easier submission (BI-305)~~ (Completed)
+- ~~Integrating these components (CVX-302)~~ (Completed)
+- ~~Storing submission state (CVX-303)~~ (Completed)
+- **Testing the complete flow (TEST-301)**
+
+**Architectural Considerations & Future Improvements:**
+
+During development review, several architectural concerns were identified that should be addressed in future iterations beyond the MVP:
+
+1. **Error Resilience & Recovery:** Enhance error handling with retry mechanisms and exponential backoff for transient failures in API calls or network connectivity.
+
+2. **Transaction Fee Management:** Implement dynamic fee calculation based on network conditions instead of relying on default fee estimation.
+
+3. **Nonce Management:** Develop local nonce tracking for rapid consecutive transactions rather than fetching nonce for each transaction independently.
+
+4. **Submission Threshold Logic (Priority):** We will implement a multi-factor threshold approach for CVX-301 that considers:
+
+   - Percentage price change since last on-chain update
+   - Time elapsed since last update (maximum update interval)
+     For future versions, consider enhancing with:
+   - Absolute price change relative to current price
+   - Current market volatility
+   - Gas costs relative to the importance of the update
+
+5. **Transaction Monitoring:** Implement a tiered confirmation system for different confidence levels in transaction finality.
+
+**Next Implementation Focus:**
+Before proceeding with BI-304, we will prioritize implementing the multi-factor threshold logic (CVX-301) since this is critical for determining when price updates should occur.
 
 ### Phase 4: Frontend Integration & Testing (Duration: Est. 3 days)
 

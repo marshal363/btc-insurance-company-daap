@@ -9,10 +9,10 @@ crons.interval("fetch-prices", { minutes: 5 }, internal.prices.fetchPrices, {});
 
 // Prepare Oracle Submission Data every 5 minutes (will eventually trigger threshold check + submission)
 crons.interval(
-  "prepare-oracle-submission", 
+  "check-and-submit-oracle-price",
   { minutes: 5 }, 
-  internal.blockchainIntegration.prepareOracleSubmission, // Call the preparation step
-  {} // No arguments needed for prepareOracleSubmission
+  internal.blockchainIntegration.checkAndSubmitOraclePrice,
+  {}
 );
 
 // Fetch historical data every hour (full refresh)
