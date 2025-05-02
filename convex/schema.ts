@@ -77,6 +77,9 @@ export default defineSchema({
     status: v.string(), // e.g., "submitted", "confirmed", "failed"
     confirmationTimestamp: v.optional(v.number()), // Timestamp when confirmed on-chain (if tracked)
     blockHeight: v.optional(v.number()), // Block height of confirmation (if tracked)
+    reason: v.string(), // Reason for the submission (e.g., "Price threshold exceeded", "Max time elapsed")
+    percentChange: v.optional(v.float64()), // Percent change triggering the update (if applicable)
+    sourceCount: v.number(), // Number of sources used for the submitted price
   })
     .index("by_txid", ["txid"])
     .index("by_status", ["status"])

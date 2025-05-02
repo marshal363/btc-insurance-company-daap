@@ -120,7 +120,7 @@ This plan outlines the tasks required to implement the integrated BitHedge Oracl
 
 **Phase 3 Progress Notes (Updated: August 2024):**
 
-The first three tasks of Phase 3 have been successfully completed:
+All core implementation tasks for Phase 3 are now complete.
 
 1. **BI-301 (Environment Variable Setup):** Implemented the `getBackendSignerKey` function in `convex/blockchainIntegration.ts` to securely retrieve the Stacks private key from environment variables. This function includes error handling for missing configuration.
 
@@ -154,12 +154,15 @@ The first three tasks of Phase 3 have been successfully completed:
 
 8. **CVX-303 (Submission Recording - Implemented):** Defined a new table `oracleSubmissions` in `convex/schema.ts` to store details of submission attempts. Created the `recordOracleSubmission` internal mutation in `convex/blockchainIntegration.ts` to insert records into this table. Integrated the call to this mutation into `checkAndSubmitOraclePrice` to record successful submission attempts.
 
-The remaining tasks for Phase 3 involve:
+9. **Debugging & Refinements (August 2024):**
+   - **`Buffer` & Runtime Issues:** Encountered `Buffer is not defined` errors due to the Convex V8 runtime. Resolved by adding the `"use node";` directive to `convex/blockchainIntegration.ts`.
+   - **Mutation in Node Module:** The `"use node";` directive prevents mutations in the same file. Refactored by moving `recordOracleSubmission` into a new, separate file (`convex/oracleSubmissions.ts`) without the Node directive.
+   - **Schema & Type Mismatches:** Fixed type errors related to the `oracleSubmissions` schema (added missing fields like `reason`, `percentChange`, `sourceCount`) and ensured consistency between schema (`v.optional`) and mutation args/callsites (`?? undefined`).
+   - **`BadNonce` Errors:** Diagnosed persistent `BadNonce` errors during transaction broadcasting. The root cause was identified as using `last_executed_tx_nonce` from the `/nonces` API endpoint instead of the predictive `possible_next_nonce`. Modified `fetchAccountNonce` to use `possible_next_nonce`, resolving the issue.
+   - **Improved Error Logging:** Enhanced error logging in `broadcastSignedTransaction` to provide more detailed information (reason, reason_data, txid) when broadcasts fail.
 
-- ~~Implementing transaction broadcasting and confirmation handling (BI-304)~~ (Completed)
-- ~~Creating a wrapper action for easier submission (BI-305)~~ (Completed)
-- ~~Integrating these components (CVX-302)~~ (Completed)
-- ~~Storing submission state (CVX-303)~~ (Completed)
+The remaining task for Phase 3 is:
+
 - **Testing the complete flow (TEST-301)**
 
 **Architectural Considerations & Future Improvements:**

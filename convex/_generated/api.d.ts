@@ -17,6 +17,7 @@ import type * as blockchainIntegration from "../blockchainIntegration.js";
 import type * as crons from "../crons.js";
 import type * as http from "../http.js";
 import type * as options from "../options.js";
+import type * as oracleSubmissions from "../oracleSubmissions.js";
 import type * as prices from "../prices.js";
 import type * as router from "../router.js";
 import type * as users from "../users.js";
@@ -34,6 +35,7 @@ declare const fullApi: ApiFromModules<{
   crons: typeof crons;
   http: typeof http;
   options: typeof options;
+  oracleSubmissions: typeof oracleSubmissions;
   prices: typeof prices;
   router: typeof router;
   users: typeof users;

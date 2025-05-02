@@ -1,3 +1,5 @@
+"use node";
+
 import { query, action, internalAction, internalMutation } from './_generated/server';
 import {
   ClarityValue,
@@ -12,6 +14,7 @@ import {
   TransactionSigner,
   PostConditionMode,
   broadcastTransaction,
+  deserializeTransaction,
 } from '@stacks/transactions';
 import { StacksMainnet, StacksTestnet, StacksMocknet, StacksNetwork } from '@stacks/network';
 import { api, internal } from './_generated/api';
@@ -40,6 +43,7 @@ const getBackendSignerKey = (): string => {
 /**
  * Retrieves the Stacks network configuration based on environment variables.
  * IMPORTANT: Set STACKS_NETWORK in the Convex dashboard environment variables (e.g., "devnet", "testnet", "mainnet").
+ * IMPORTANT: If using "devnet" with a cloud provider (like Hiro), set STACKS_DEVNET_API_URL.
  * @throws {Error} If STACKS_NETWORK environment variable is not set or invalid.
  * @returns {StacksNetwork} The configured Stacks network object.
  */
@@ -52,12 +56,23 @@ const getStacksNetwork = (): StacksNetwork => {
 
   switch (networkEnv) {
     case "mainnet":
-      return new StacksMainnet();
+      // Consider adding STACKS_MAINNET_API_URL override if needed
+      return new StacksMainnet(); 
     case "testnet":
-      return new StacksTestnet();
+      // Consider adding STACKS_TESTNET_API_URL override if needed
+      return new StacksTestnet(); 
     case "devnet":
     case "mocknet": // Treat mocknet as devnet for configuration purposes
-      return new StacksMocknet();
+      const devnetApiUrl = process.env.STACKS_DEVNET_API_URL;
+      if (!devnetApiUrl) {
+        // Default to localhost:3999 if STACKS_DEVNET_API_URL is not set, with a warning.
+        console.warn("STACKS_DEVNET_API_URL environment variable is not set. Defaulting to local DevNet API at http://localhost:3999. If using Hiro Platform or other cloud DevNet, ensure STACKS_DEVNET_API_URL is set correctly in Convex dashboard.");
+        return new StacksMocknet(); // Default to localhost
+      } else {
+        // Use the custom URL if STACKS_DEVNET_API_URL is set.
+        console.log(`Using custom Devnet API URL from STACKS_DEVNET_API_URL: ${devnetApiUrl}`);
+        return new StacksMocknet({ url: devnetApiUrl }); 
+      }
     default:
       console.error(`CRITICAL: Invalid STACKS_NETWORK environment variable value: "${networkEnv}".`);
       throw new Error(`Invalid STACKS_NETWORK. Use 'devnet', 'testnet', or 'mainnet'. Found: ${networkEnv}`);
@@ -127,13 +142,13 @@ const stacksApiUrl = network.coreApiUrl;
 
 /**
  * Reads the latest price data from the on-chain oracle contract.
- * This can be called directly from the frontend using the Convex client.
+ * IMPORTANT: Changed from query to internalAction to allow fetch calls.
  *
- * @returns {Promise<{ price: string | null, timestamp: string | null, error?: string }>} // Return strings for Convex compatibility
+ * @returns {Promise<{ price: string | null, timestamp: string | null, error?: string }>} 
  *          An object containing the price and timestamp as strings if successful,
  *          or null values and an error message if the read fails or returns no data.
  */
-export const readLatestOraclePrice = query({
+export const readLatestOraclePrice = internalAction({
   handler: async (ctx): Promise<{ price: string | null, timestamp: string | null, error?: string }> => {
     console.log(`Reading latest price from ${ORACLE_CONTRACT_ADDRESS}.${ORACLE_CONTRACT_NAME}`);
 
@@ -248,7 +263,7 @@ export const prepareOracleSubmission = internalAction({
     console.log(`Latest aggregated price data: ${currentPriceUSD} USD (${priceInSatoshis} satoshis), Timestamp: ${new Date(currentTimestamp).toISOString()}, Sources: ${latestAggregatedPriceData.sourceCount}`);
     
     // Step 2: Fetch the last submitted on-chain price from the blockchain
-    const onChainPriceData = await ctx.runQuery(api.blockchainIntegration.readLatestOraclePrice, {});
+    const onChainPriceData = await ctx.runAction(internal.blockchainIntegration.readLatestOraclePrice, {});
     
     // Case: No on-chain price exists yet (first submission) - always submit
     if (!onChainPriceData.price || onChainPriceData.error === 'ERR_NO_PRICE_DATA') {
@@ -380,7 +395,7 @@ const buildSetPriceTransactionOptions = async ({ price }: { price: number }): Pr
   }
 
   const functionArgs = [
-    uintCV(price), // price: uint
+    uintCV(BigInt(price)), // price: uint
     // The contract now uses burn-block-height internally for the timestamp
   ];
 
@@ -398,7 +413,8 @@ const buildSetPriceTransactionOptions = async ({ price }: { price: number }): Pr
     // senderKey, postConditionMode, postConditions, nonce will be added during signing/broadcasting
   };
 
-  console.log("Transaction options built (unsigned):", JSON.stringify(txOptions, null, 2));
+  // FIX: Remove problematic JSON.stringify causing BigInt serialization error
+  // console.log("Transaction options built (unsigned):", JSON.stringify(txOptions, null, 2));
   return txOptions;
 };
 
@@ -409,12 +425,12 @@ const buildSetPriceTransactionOptions = async ({ price }: { price: number }): Pr
  *
  * @param {object} args - The arguments object.
  * @param {number} args.price - The aggregated price in the smallest unit (e.g., satoshis).
- * @returns {Promise<object>} The signed Stacks transaction object (not serialized yet).
+ * @returns {Promise<string>} The signed Stacks transaction object serialized to a hex string.
  * @throws {Error} If nonce fetching or signing fails.
  */
 export const signSetPriceTransaction = internalAction({
   args: { price: v.number() }, // Use Convex validation
-  handler: async (ctx, { price }): Promise<object> => {
+  handler: async (ctx, { price }): Promise<string> => {
     console.log(`Signing transaction for set-aggregated-price with price: ${price}`);
 
     // 1. Build base transaction options
@@ -425,7 +441,7 @@ export const signSetPriceTransaction = internalAction({
     const senderAddress = getAddressFromPrivateKey(privateKey, network.version);
     console.log(`Signer address derived from private key: ${senderAddress}`);
 
-    // 3. Fetch nonce
+    // 3. Fetch nonce -- Re-enabled dynamic fetching
     let nonce = 0; // Default to 0
     try {
       // Instead of accountsApi.getAccountInfo, use direct fetch
@@ -434,6 +450,8 @@ export const signSetPriceTransaction = internalAction({
       console.error(`Error fetching nonce for ${senderAddress}:`, error);
       throw new Error(`Failed to fetch nonce: ${error.message}`);
     }
+    // const nonce = 5; // <<< REMOVED HARDCODED NONCE >>>
+    // console.log(`<<< USING HARDCODED NONCE: ${nonce} >>>`);
 
     // 4. Assemble final options and sign
     const txOptions = {
@@ -441,16 +459,22 @@ export const signSetPriceTransaction = internalAction({
       senderKey: privateKey,
       nonce: nonce,
       postConditionMode: PostConditionMode.Allow, // Allow any post conditions for simplicity
-      // fee: calculateFee(), // Optional: Add fee calculation if needed
+      // FIX: Explicitly set a fee to bypass estimation failure on Hiro Devnet API
+      fee: 1000, 
     };
 
     try {
-      console.log("Calling makeContractCall with options:", JSON.stringify({ ...txOptions, senderKey: '[REDACTED]' }, null, 2));
-      const signedTransaction = await makeContractCall(txOptions as any); // Type assertion might be needed depending on exact Stacks.js version
+      // console.log("Calling makeContractCall with options:", JSON.stringify({ ...txOptions, senderKey: '[REDACTED]' }, null, 2));
+      const signedTransaction = await makeContractCall(txOptions as any); 
 
-      console.log(`Transaction signed successfully. TxID (potential): ${signedTransaction.txid()}`);
-      // Note: The transaction object itself is needed for broadcasting, not just the ID yet.
-      return signedTransaction;
+      // FIX: Serialize the transaction to hex before returning
+      // Convert Buffer to hex string properly
+      const serializedTx = Buffer.from(signedTransaction.serialize()).toString('hex');
+      console.log(`Transaction signed successfully. Serialized Hex (first 64 chars): ${serializedTx.substring(0, 64)}...`);
+      
+      // Return the hex string, not the object
+      return serializedTx; 
+
     } catch (error: any) {
       console.error('Error signing transaction:', error);
       throw new Error(`Failed to sign transaction: ${error.message}`);
@@ -470,8 +494,19 @@ async function fetchAccountNonce(address: string): Promise<number> {
       throw new Error(`HTTP error ${response.status}: ${response.statusText}`);
     }
     const data = await response.json();
-    console.log(`Fetched nonce for ${address}: ${data.last_executed_tx_nonce}`);
-    return data.last_executed_tx_nonce;
+    // Use the possible_next_nonce for the upcoming transaction
+    const nextNonce = data.possible_next_nonce;
+    console.log(`Fetched nonces for ${address}: Last Executed: ${data.last_executed_tx_nonce}, Possible Next: ${nextNonce}`);
+    
+    if (typeof nextNonce !== 'number') {
+        console.error("Possible next nonce is not a number:", nextNonce);
+        // Fallback or throw error? Let's try falling back to last_executed + 1, but log clearly
+        const fallbackNonce = (data.last_executed_tx_nonce ?? -1) + 1;
+        console.warn(`Falling back to calculated nonce: ${fallbackNonce}`);
+        return fallbackNonce; 
+    }
+
+    return nextNonce; 
   } catch (error: any) {
     console.error(`Error fetching nonce for ${address}:`, error);
     if (error.message && error.message.includes('not found')) {
@@ -488,41 +523,43 @@ async function fetchAccountNonce(address: string): Promise<number> {
  * Internal action to broadcast a signed Stacks transaction.
  *
  * @param {object} args - The arguments object.
- * @param {object} args.signedTransaction - The signed transaction object from makeContractCall.
+ * @param {string} args.serializedTxHex - The signed transaction object serialized to a hex string.
  * @returns {Promise<{ txid: string }>} The transaction ID if broadcast is successful.
  * @throws {Error} If broadcasting fails or returns an error response.
  */
 export const broadcastSignedTransaction = internalAction({
   args: {
-    // We expect the signed transaction object, which might be complex.
-    // Using v.any() for flexibility, but validate structure internally if needed.
-    signedTransaction: v.any(),
+    serializedTxHex: v.string(),
   },
-  handler: async (_ctx, { signedTransaction }): Promise<{ txid: string }> => {
+  handler: async (_ctx, { serializedTxHex }): Promise<{ txid: string }> => {
     console.log("Broadcasting signed transaction...");
 
-    // The signedTransaction object should have methods like serialize()
-    // and properties required by broadcastTransaction.
-    if (!signedTransaction || typeof signedTransaction.serialize !== 'function') {
-        throw new Error("Invalid signed transaction object received for broadcasting.");
+    if (!serializedTxHex || serializedTxHex.length === 0) { 
+        throw new Error("Invalid or empty serialized transaction hex received for broadcasting.");
     }
 
     try {
-      // FIX: Pass transaction and network directly to broadcastTransaction
-      const result = await broadcastTransaction(signedTransaction, network);
+      // FIX: Deserialize the hex string back into a StacksTransaction object
+      // Convert hex string to Buffer before deserializing
+      const transaction = deserializeTransaction(Buffer.from(serializedTxHex, 'hex'));
+      
+      // Now broadcast the actual transaction object
+      const result = await broadcastTransaction(transaction, network); 
 
       console.log("Broadcast result:", result);
 
       // Check if the broadcast returned an error
-      if (result && typeof result === 'object' && 'error' in result) {
-        console.error("Transaction broadcast failed:", result.error);
-        // Include reason if available
-        const reason = 'reason' in result ? result.reason : 'No reason provided';
-        const reasonData = 'reason_data' in result ? JSON.stringify(result.reason_data) : '';
-        throw new Error(`Transaction broadcast failed: ${result.error}. Reason: ${reason}. ${reasonData}`);
+      if (result && typeof result === 'object' && 'error' in result && result.error) {
+        const errorDetails = result.error as any; // Type assertion for easier access
+        const reason = errorDetails.reason || 'Unknown reason';
+        const reasonData = errorDetails.reason_data ? JSON.stringify(errorDetails.reason_data) : 'No reason data';
+        const txid = errorDetails.txid || 'No txid in error';
+        
+        console.error(`Transaction broadcast failed: ${errorDetails.error || 'No error message'}. Reason: ${reason}. Data: ${reasonData}. TxID: ${txid}`);
+        throw new Error(`Transaction broadcast failed: ${reason}. TxID: ${txid}. Data: ${reasonData}`);
       }
 
-      // Check if txid is missing, which indicates an unexpected success response format
+      // Check if txid is missing in a success-like response
       if (!result || typeof result !== 'object' || !('txid' in result) || !result.txid) {
          console.error("Broadcast seemed successful but txid is missing:", result);
          throw new Error("Transaction broadcast status uncertain: txid missing from response.");
@@ -564,7 +601,7 @@ export const submitAggregatedPrice = action({
     try {
       // Step 1: Sign the transaction using the internal action
       console.log("Calling internal action to sign transaction...");
-      const signedTransaction = await ctx.runAction(internal.blockchainIntegration.signSetPriceTransaction, {
+      const serializedTxHex = await ctx.runAction(internal.blockchainIntegration.signSetPriceTransaction, {
         price: priceInSatoshis,
       });
       console.log("Transaction signed successfully.");
@@ -572,21 +609,9 @@ export const submitAggregatedPrice = action({
       // Step 2: Broadcast the signed transaction using the internal action
       console.log("Calling internal action to broadcast transaction...");
       const broadcastResult = await ctx.runAction(internal.blockchainIntegration.broadcastSignedTransaction, {
-        signedTransaction: signedTransaction,
+        serializedTxHex: serializedTxHex,
       });
       console.log(`Transaction broadcast initiated. TxID: ${broadcastResult.txid}`);
-
-      // CVX-303: Record the submission attempt
-      try {
-        await ctx.runMutation(internal.blockchainIntegration.recordOracleSubmission, {
-          txid: broadcastResult.txid,
-          submittedPriceSatoshis: priceInSatoshis,
-        });
-      } catch (recordError: any) {
-        console.error(`Error recording oracle submission to DB (TxID: ${broadcastResult.txid}): ${recordError.message}`, recordError);
-        // Log the error, but don't fail the whole action just because DB write failed.
-        // The transaction was still submitted.
-      }
 
       // Return the transaction ID
       return { txid: broadcastResult.txid };
@@ -626,11 +651,15 @@ export const checkAndSubmitOraclePrice = internalAction({
           });
           console.log(`Successfully submitted price update. TxID: ${submissionResult.txid}`);
           
-          // CVX-303: Record the submission attempt
+          // CVX-303: Record the submission attempt in the new location
           try {
-            await ctx.runMutation(internal.blockchainIntegration.recordOracleSubmission, {
+            await ctx.runMutation(internal.oracleSubmissions.recordOracleSubmission, {
               txid: submissionResult.txid,
               submittedPriceSatoshis: preparationResult.priceInSatoshis,
+              reason: preparationResult.reason,
+              percentChange: preparationResult.percentChange ?? undefined, // Pass undefined if null/undefined
+              sourceCount: preparationResult.sourceCount ?? 0, // Pass 0 if undefined (should have sourceCount if submitting)
+              status: "submitted", // Initial status
             });
           } catch (recordError: any) {
             console.error(`Error recording oracle submission to DB (TxID: ${submissionResult.txid}): ${recordError.message}`, recordError);
@@ -651,35 +680,5 @@ export const checkAndSubmitOraclePrice = internalAction({
       console.error(`Error during checkAndSubmitOraclePrice: ${error.message}`, error);
       // Log error, cron will run again later.
     }
-  },
-});
-
-// --- Oracle Submission Recording (CVX-303) ---
-
-/**
- * Internal mutation to record an oracle price submission attempt in the database.
- *
- * @param {object} args - The arguments object.
- * @param {string} args.txid - The transaction ID from the broadcast.
- * @param {number} args.submittedPriceSatoshis - The price that was submitted.
- */
-export const recordOracleSubmission = internalMutation({
-  args: {
-    txid: v.string(),
-    submittedPriceSatoshis: v.number(),
-  },
-  handler: async (ctx, { txid, submittedPriceSatoshis }) => {
-    const submissionTimestamp = Date.now();
-    console.log(`Recording oracle submission: TxID: ${txid}, Price: ${submittedPriceSatoshis}, Timestamp: ${submissionTimestamp}`);
-    
-    await ctx.db.insert("oracleSubmissions", {
-      txid: txid,
-      submittedPriceSatoshis: submittedPriceSatoshis,
-      submissionTimestamp: submissionTimestamp,
-      status: "submitted", // Initial status
-      // confirmationTimestamp and blockHeight will be null initially
-    });
-    
-    console.log("Oracle submission recorded successfully.");
   },
 }); 
