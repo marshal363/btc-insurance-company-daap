@@ -165,23 +165,26 @@ export const readLatestOraclePrice = internalAction({
       const resultCV: ClarityValue = await callReadOnlyFunction(options);
       const resultJson = cvToJSON(resultCV);
 
-      if (resultJson.type.startsWith('(ok')) {
-        const priceStr = resultJson.value?.value?.price?.value;
-        const timestampStr = resultJson.value?.value?.timestamp?.value;
+      // Adjusted check for OK response, considering potential Clarity response wrapper
+      if (resultJson.success === true && resultJson.type.includes('(tuple (price uint) (timestamp uint))')) {
+        // Safely access nested values
+        const priceValue = resultJson.value?.value?.price?.value;
+        const timestampValue = resultJson.value?.value?.timestamp?.value;
 
-        if (priceStr && timestampStr) {
-          console.log(`Successfully read price: ${priceStr}, timestamp: ${timestampStr} from oracle.`);
+        if (priceValue && timestampValue) {
+          console.log(`Successfully read price: ${priceValue}, timestamp: ${timestampValue} from oracle.`);
           return {
-            price: priceStr, // Return as string
-            timestamp: timestampStr, // Return as string
+            price: priceValue, // Return as string
+            timestamp: timestampValue, // Return as string
           };
         } else {
-           console.error('Error parsing successful response from get-latest-price:', JSON.stringify(resultJson, null, 2));
-           return { price: null, timestamp: null, error: 'Error parsing successful response structure.' };
+           console.error('Error parsing successful response fields from get-latest-price:', JSON.stringify(resultJson, null, 2));
+           return { price: null, timestamp: null, error: 'Error parsing successful response fields.' };
         }
-      } else if (resultJson.type.startsWith('(err')) {
+      } else if (resultJson.success === false && resultJson.type.includes('uint')) { // Check for Clarity error response (uint code)
          const errorCode = resultJson.value?.value; // e.g., '104' for ERR-NO-PRICE-DATA
-         console.warn(`Oracle contract returned error: ${errorCode}. Price data might not be available yet.`);
+
+         console.warn(`Oracle contract returned error code: ${errorCode}. Price data might not be available yet.`);
          if (errorCode === '104') {
             return { price: null, timestamp: null, error: 'ERR_NO_PRICE_DATA' };
          }
@@ -191,7 +194,8 @@ export const readLatestOraclePrice = internalAction({
          }
          return { price: null, timestamp: null, error: `Oracle contract error code: ${errorCode}` };
       } else {
-         console.error('Unexpected response structure from get-latest-price:', JSON.stringify(resultJson, null, 2));
+         // This case handles genuinely unexpected structures
+         console.error('Unexpected response structure from get-latest-price that is neither known OK nor known ERR:', JSON.stringify(resultJson, null, 2));
          return { price: null, timestamp: null, error: 'Unexpected response structure.' };
       }
 

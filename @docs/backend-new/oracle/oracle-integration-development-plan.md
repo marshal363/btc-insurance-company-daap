@@ -109,7 +109,7 @@ This plan outlines the tasks required to implement the integrated BitHedge Oracl
 | **CVX-301**  | Implement Convex: Threshold check logic in `submitAggregatedPriceToOracle` (using BI-101)         | 5          | 🟢     | CVX-208, BI-101 |          |
 | **CVX-302**  | Integrate Convex: Connect `submitAggregatedPriceToOracle` action to BI-305 for submission         | 3          | 🟢     | CVX-301, BI-305 |          |
 | **CVX-303**  | Update Convex: Store on-chain submission status/timestamp in `ConvexOracleState`                  | 2          | 🟢     | CVX-302         |          |
-| **TEST-301** | Integration tests for Convex -> Blockchain submission flow (Devnet)                               | 8          | ⬜     | OC-107, CVX-302 |          |
+| **TEST-301** | Integration tests for Convex -> Blockchain submission flow (Devnet)                               | 8          | 🟢     | OC-107, CVX-302 |          |
 
 **Phase 3 Deliverables:**
 
@@ -152,75 +152,23 @@ All core implementation tasks for Phase 3 are now complete.
 
 7. **CVX-302 (Cron Job Integration - Implemented):** Created a new internal action `checkAndSubmitOraclePrice` in `convex/blockchainIntegration.ts`. This action calls `prepareOracleSubmission` to check thresholds and, if needed, calls `submitAggregatedPrice`. Updated `convex/crons.ts` to schedule `checkAndSubmitOraclePrice` every 5 minutes instead of directly scheduling `prepareOracleSubmission`.
 
-8. **CVX-303 (Submission Recording - Implemented):** Defined a new table `oracleSubmissions` in `convex/schema.ts` to store details of submission attempts. Created the `recordOracleSubmission` internal mutation in `convex/blockchainIntegration.ts` to insert records into this table. Integrated the call to this mutation into `checkAndSubmitOraclePrice` to record successful submission attempts.
+8. **CVX-303 (Submission Recording - Implemented):** Defined a new table `oracleSubmissions` in `convex/schema.ts` to store details of submission attempts. Created the `recordOracleSubmission` internal mutation in `convex/blockchainIntegration.ts` to insert records into this table. Integrated the call to this mutation into `checkAndSubmitOraclePrice`
 
-9. **Debugging & Refinements (August 2024):**
-   - **`Buffer` & Runtime Issues:** Encountered `Buffer is not defined` errors due to the Convex V8 runtime. Resolved by adding the `"use node";` directive to `convex/blockchainIntegration.ts`.
-   - **Mutation in Node Module:** The `"use node";` directive prevents mutations in the same file. Refactored by moving `recordOracleSubmission` into a new, separate file (`convex/oracleSubmissions.ts`) without the Node directive.
-   - **Schema & Type Mismatches:** Fixed type errors related to the `oracleSubmissions` schema (added missing fields like `reason`, `percentChange`, `sourceCount`) and ensured consistency between schema (`v.optional`) and mutation args/callsites (`?? undefined`).
-   - **`BadNonce` Errors:** Diagnosed persistent `BadNonce` errors during transaction broadcasting. The root cause was identified as using `last_executed_tx_nonce` from the `/nonces` API endpoint instead of the predictive `possible_next_nonce`. Modified `fetchAccountNonce` to use `possible_next_nonce`, resolving the issue.
-   - **Improved Error Logging:** Enhanced error logging in `broadcastSignedTransaction` to provide more detailed information (reason, reason_data, txid) when broadcasts fail.
+### Phase 4: Frontend Implementation & Integration (Duration: Est. 5 days)
 
-The remaining task for Phase 3 is:
+**Goal:** Connect frontend components to the Convex backend, replace mock data with live data, and perform UI testing.
 
-- **Testing the complete flow (TEST-301)**
-
-**Architectural Considerations & Future Improvements:**
-
-During development review, several architectural concerns were identified that should be addressed in future iterations beyond the MVP:
-
-1. **Error Resilience & Recovery:** Enhance error handling with retry mechanisms and exponential backoff for transient failures in API calls or network connectivity.
-
-2. **Transaction Fee Management:** Implement dynamic fee calculation based on network conditions instead of relying on default fee estimation.
-
-3. **Nonce Management:** Develop local nonce tracking for rapid consecutive transactions rather than fetching nonce for each transaction independently.
-
-4. **Submission Threshold Logic (Priority):** We will implement a multi-factor threshold approach for CVX-301 that considers:
-
-   - Percentage price change since last on-chain update
-   - Time elapsed since last update (maximum update interval)
-     For future versions, consider enhancing with:
-   - Absolute price change relative to current price
-   - Current market volatility
-   - Gas costs relative to the importance of the update
-
-5. **Transaction Monitoring:** Implement a tiered confirmation system for different confidence levels in transaction finality.
-
-**Next Implementation Focus:**
-Before proceeding with BI-304, we will prioritize implementing the multi-factor threshold logic (CVX-301) since this is critical for determining when price updates should occur.
-
-### Phase 4: Frontend Integration & Testing (Duration: Est. 3 days)
-
-**Goal:** Connect the UI to the backend and perform end-to-end testing.
-
-| Task ID      | Description                                                                             | Est. Hours | Status | Dependencies    | Assignee |
-| :----------- | :-------------------------------------------------------------------------------------- | :--------- | :----- | :-------------- | :------- | --------------------------------------------------------------------------------------------------------- |
-| **FE-401**   | Implement Frontend: `hooks/oracleQueries.ts` with `useOracleData` hook                  | 4          | 🟢     | CVX-207         |          | _Note: Implemented direct blockchain call via `useLatestOraclePrice` and fixed timestamp interpretation._ |
-| **FE-402**   | Integrate Frontend: Connect `BitcoinPriceCard.tsx` to `useOracleData`                   | 5          | 🟢     | FE-401          |          | _Note: Integration successful using `useLatestOraclePrice`. Displaying price and block height._           |
-| **FE-403**   | Integrate Frontend: Implement "Refresh" button functionality                            | 2          | ⬜     | FE-402          |          |
-| **FE-404**   | Implement Frontend (Optional): Direct read-only call for on-chain price display         | 4          | ⚪     | FE-402          |          |
-| **TEST-401** | End-to-End Testing: Verify data flow from external APIs -> Convex -> UI                 | 6          | ⬜     | FE-402          |          |
-| **TEST-402** | End-to-End Testing: Verify data flow from Convex -> `oracle.clar` -> (Optional UI Read) | 6          | ⬜     | CVX-302, FE-404 |          |
-| **DOC-401**  | Update README and other relevant documentation with final architecture & usage          | 4          | ⬜     |                 |          |
-
-**Phase 4 Deliverables:**
-
-- `BitcoinPriceCard.tsx` displaying live data from the ~~Convex backend~~ **blockchain via hook**.
-- Completed end-to-end testing of the Oracle system.
-- Updated project documentation.
-
-## 4. Overall Progress Dashboard (Example)
-
-| Phase                                     | Total Tasks | Not Started | In Progress | Completed | Completion % |
-| :---------------------------------------- | :---------- | :---------- | :---------- | :-------- | :----------- |
-| Phase 1: Foundation & On-Chain Refactor   | 10          | 3           | 0           | 7         | 70%          |
-| Phase 2: Convex Backend Implementation    | 11          | 11          | 0           | 0         | 0%           |
-| Phase 3: Blockchain Integration & Connect | 8           | 8           | 0           | 0         | 0%           |
-| Phase 4: Frontend Integration & Testing   | 7           | 6           | 0           | 1         | 14%          |
-| **Overall Project**                       | **36**      | **28**      | **0**       | **8**     | **22%**      |
-
-_(Note: Status markers and percentages need to be updated as tasks progress.)_
-
-## 5. Conclusion
-
-This plan provides a structured approach to implementing the BitHedge Oracle system, focusing on the hybrid architecture defined in the specification guidelines. Successful completion will result in a functional, efficient, and maintainable oracle integration connecting the frontend UI, Convex backend, and the simplified `oracle.clar` smart contract.
+| Task ID      | Description                                                                                                                                                           | Est. Hours | Status | Dependencies       | Assignee | Notes                                                                                    |
+| :----------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :--------- | :----- | :----------------- | :------- | :--------------------------------------------------------------------------------------- |
+| **FE-401**   | Implement `BitcoinPriceCard.tsx`: Basic structure & layout (Already exists, review needed)                                                                            | 1          | 🟢     |                    |          | Structure confirmed, mock data identified.                                               |
+| **FE-402**   | Connect `BitcoinPriceCard.tsx` to `api.prices.getLatestPrice` Convex query using `convex/react` hook.                                                                 | 3          | ⬜     | CVX-207            |          |                                                                                          |
+| **FE-403**   | Update `BitcoinPriceCard.tsx`: Display **Price** and **Timestamp** from `getLatestPrice` query data.                                                                  | 2          | ⬜     | FE-402             |          | Requires formatting logic (USD, relative time).                                          |
+| **FE-404**   | Update `BitcoinPriceCard.tsx`: Display **Volatility** (`volatility`) from `getLatestPrice` query data, replacing `mockVolatility`.                                    | 1          | ⬜     | FE-402             |          | Value is % (e.g., 0.03 for 3%), may need formatting (`* 100`).                           |
+| **FE-405**   | Update `BitcoinPriceCard.tsx`: Display **Active Sources** (`sourceCount`) from `getLatestPrice` query data, replacing `mockActiveSources`.                            | 1          | ⬜     | FE-402             |          |                                                                                          |
+| **FE-406**   | Update `BitcoinPriceCard.tsx`: Display **24h Range High/Low**. Use `api.prices.calculate24hRange` query? Adapt display to use `high` and `low` from Convex data.      | 3          | ⬜     | FE-402, CVX-205    |          | Need hook for `calculate24hRange`. Display High/Low, calc progress bar.                  |
+| **FE-407**   | Implement Convex Query & Hook: Create `getHistoricalPrice(timestamp)` query and `useHistoricalPrice` hook to fetch price from `historicalPrices` for a specific time. | 4          | ⬜     |                    |          | Query should find closest historical price to target timestamp.                          |
+| **FE-408**   | Update `BitcoinPriceCard.tsx`: Use `useHistoricalPrice` to get price from ~24h ago, calculate **24h Price Change %**, and display it, replacing `priceChange`.        | 3          | ⬜     | FE-402, FE-407     |          | Requires calling hook with `Date.now() - 24*60*60*1000`. Handle cases with missing data. |
+| **FE-409**   | Implement `PriceOracleNetwork.tsx`: Basic structure for displaying individual source data.                                                                            | 2          | ⬜     |                    |          | Needs table/list layout for source name, price, timestamp, weight.                       |
+| **FE-410**   | Connect `PriceOracleNetwork.tsx` to `api.prices.getLatestSourcePrices` Convex query.                                                                                  | 3          | ⬜     | CVX-207 (Sub-task) |          | Loop through results, display each source.                                               |
+| **TEST-401** | UI Testing: Verify data display, loading states, error handling, and refresh functionality in `BitcoinPriceCard`.                                                     | 4          | ⬜     | FE-408, FE-410     |          | Test with empty data, errors, varying values.                                            |
+| **DOC-401**  | Update Frontend Documentation: Reflect changes in data sources and component interactions (`oracle-dataflow-explanation.md`).                                         | 2          | ⬜     | TEST-401           |          | Update diagrams and flow descriptions.                                                   |
