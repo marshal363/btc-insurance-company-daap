@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { internalAction, internalMutation, query, action, internalQuery } from "./_generated/server";
 import { internal } from "./_generated/api";
 import axios from "axios";
+import { api } from "./_generated/api";
 
 // Add a public function to trigger initial price feed and historical data load if needed
 export const initializePriceFeed = action({
@@ -215,7 +216,7 @@ export const fetchPrices = internalAction({
       const volatilityToStore: number = fetchedVolatility ?? 0; // Ensure it's a number
 
       // Calculate 24h range
-      const rangeData = await ctx.runQuery(internal.prices.calculate24hRange, {});
+      const rangeData = await ctx.runQuery(api.prices.calculate24hRange, {});
       const range24hToStore = rangeData ? rangeData.range : undefined; // Pass range or undefined
 
       // Store aggregated price
@@ -718,7 +719,8 @@ export const getVolatilityForDuration = internalQuery({
 });
 
 // NEW FUNCTION: Calculate 24h High/Low/Range from historical data
-export const calculate24hRange = internalQuery({
+// CHANGED: Made public query for frontend use
+export const calculate24hRange = query({
   args: {},
   handler: async (ctx): Promise<{ high: number; low: number; range: number } | null> => {
     console.log("calculate24hRange query running...");
@@ -819,5 +821,35 @@ export const getLatestSourcePrices = query({
 
     console.log(`Returning latest data for ${latestSourceData.length} sources.`);
     return latestSourceData;
+  },
+});
+
+// NEW QUERY: Get historical price closest to a target timestamp
+export const getHistoricalPrice = query({
+  args: { targetTimestamp: v.number() },
+  handler: async (ctx, args): Promise<{ price: number; timestamp: number } | null> => {
+    console.log(`getHistoricalPrice query running for target timestamp: ${new Date(args.targetTimestamp).toISOString()} (${args.targetTimestamp})`);
+    
+    // Find the first daily price point at or before the target timestamp
+    const historicalRecord = await ctx.db
+      .query("historicalPrices")
+      .withIndex("by_timestamp") // Use timestamp index
+      .filter((q) => q.lte(q.field("timestamp"), args.targetTimestamp)) // Filter for records <= target
+      .filter((q) => q.eq(q.field("isDaily"), true)) // Ensure we only consider daily records
+      .order("desc") // Order descending to get the closest one first
+      .first(); // Get the most recent record matching the criteria
+      
+    if (historicalRecord) {
+      console.log(`Found historical price: ${historicalRecord.price} at ${new Date(historicalRecord.timestamp).toISOString()}`);
+      return {
+        price: historicalRecord.price,
+        timestamp: historicalRecord.timestamp
+      };
+    } else {
+      console.warn(`No historical daily price found at or before ${new Date(args.targetTimestamp).toISOString()}`);
+      // Optional: Could add logic here to search forward if no prior record exists, 
+      // but for 24h change, finding the prior day is usually sufficient.
+      return null;
+    }
   },
 });

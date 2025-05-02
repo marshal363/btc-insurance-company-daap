@@ -19,14 +19,14 @@ This document outlines the enhancement plan for the BitHedge Oracle implementati
 
 | Enhancement Area                     | Total Tasks | Not Started | In Progress | Completed | Completion % |
 | ------------------------------------ | ----------- | ----------- | ----------- | --------- | ------------ |
-| Price Source Expansion & Aggregation | 10          | 6           | 2           | 2         | 20%          |
-| Volatility Calculation Enhancement   | 24          | 12          | 0           | 12        | 50%          |
-| Data Management & Performance Opt.   | 4           | 4           | 0           | 0         | 0%           |
-| Premium Calculation Advancement      | 6           | 4           | 0           | 2         | 33%          |
-| Resilience and Error Handling        | 5           | 5           | 0           | 0         | 0%           |
-| Monitoring and Alerting System       | 6           | 5           | 1           | 0         | 0%           |
+| Price Source Expansion & Aggregation | 10          | 3           | 0           | 7         | 70%          |
+| Volatility Calculation Enhancement   | 24          | 10          | 1           | 13        | 54%          |
+| Data Management & Performance Opt.   | 4           | 3           | 1           | 0         | 0%           |
+| Premium Calculation Advancement      | 6           | 2           | 0           | 4         | 67%          |
+| Resilience and Error Handling        | 5           | 4           | 1           | 0         | 0%           |
+| Monitoring and Alerting System       | 6           | 4           | 2           | 0         | 0%           |
 | Real-time Capabilities               | 4           | 4           | 0           | 0         | 0%           |
-| **Overall Project**                  | **59**      | **40**      | **3**       | **16**    | **27%**      |
+| **Overall Project**                  | **59**      | **30**      | **5**       | **24**    | **41%**      |
 
 _Note: Task counts and estimates are initial values and may be refined._
 
@@ -47,7 +47,7 @@ _Note: Task counts and estimates are initial values and may be refined._
 | PEA-105 | Implement Bitfinex price feed API client and parser                      | 3          | 🟢     | -            |          |
 | PEA-106 | Implement Gemini price feed API client and parser                        | 3          | 🟢     | -            |          |
 | PEA-107 | Implement Bitstamp price feed API client and parser                      | 3          | 🟢     | -            |          |
-| PEA-108 | Implement advanced statistical filtering and outlier detection mechanism | 6          | ⬜     | PEA-101..107 |          |
+| PEA-108 | Implement advanced statistical filtering and outlier detection mechanism | 6          | 🟢     | PEA-101..107 |          |
 | PEA-109 | Develop dynamic source reliability tracking and weight adjustment        | 5          | ⬜     | PEA-108      |          |
 | PEA-110 | Implement confidence scoring for aggregated prices                       | 5          | ⬜     | PEA-108      |          |
 
@@ -107,7 +107,7 @@ _Note: Task counts and estimates are initial values and may be refined._
   | Task ID | Description                                                                       | Est. Hours | Status | Dependencies      | Assignee |
   | ------- | --------------------------------------------------------------------------------- | ---------- | ------ | ----------------- | -------- |
   | VCE-230 | Implement Parkinson's volatility calculation method (using high/low if available) | 5          | ⬜     | VCE-201           |          |
-  | VCE-231 | Implement EWMA volatility calculation method                                      | 5          | ⬜     | VCE-201           |          |
+  | VCE-231 | Implement EWMA volatility calculation method                                      | 5          | 🟡     | VCE-201           |          |
   | VCE-232 | Design strategy for selecting/combining volatility methods based on context       | 3          | ⬜     | VCE-211, 230, 231 |          |
 
 - **Enhanced Historical Data Fetching (Example Snippets)**:
@@ -147,7 +147,7 @@ _Note: Task counts and estimates are initial values and may be refined._
 | Task ID | Description                                                       | Est. Hours | Status | Dependencies     | Assignee |
 | ------- | ----------------------------------------------------------------- | ---------- | ------ | ---------------- | -------- |
 | DMP-301 | Design and implement tiered data storage strategy (if applicable) | 5          | ⬜     | -                |          |
-| DMP-302 | Develop intelligent caching strategies for price/volatility data  | 6          | ⬜     | PEA-110, VCE-241 |          |
+| DMP-302 | Develop intelligent caching strategies for price/volatility data  | 6          | 🟡     | PEA-110, VCE-241 |          |
 | DMP-303 | Implement data pruning/archiving mechanisms for historical data   | 5          | ⬜     | VCE-201          |          |
 | DMP-304 | Add performance monitoring hooks and optimize critical queries    | 4          | ⬜     | -                |          |
 
@@ -163,8 +163,8 @@ _Note: Task counts and estimates are initial values and may be refined._
 | PCA-402 | Integrate dynamic volatility (based on option duration/VCE-214) into B-S call     | 4          | 🟢     | PCA-401, VCE-214 |          |
 | PCA-403 | Integrate other risk factors (Liquidity, Network Health, Macro - placeholders)    | 6          | ⬜     | PCA-401          |          |
 | PCA-404 | Design structure for scenario simulation engine (inputs, outputs)                 | 5          | ⬜     | PCA-401          |          |
-| PCA-405 | Implement basic scenario simulation capability                                    | 7          | ⬜     | PCA-404          |          |
-| PCA-406 | Create backtesting framework to validate premium calculations against historicals | 8          | ⬜     | VCE-201, PCA-401 |          |
+| PCA-405 | Implement basic scenario simulation capability                                    | 7          | 🟢     | PCA-404          |          |
+| PCA-406 | Create backtesting framework to validate premium calculations against historicals | 8          | 🟢     | VCE-201, PCA-401 |          |
 
 _Note: The Black-Scholes snippet illustrates the formula. Implementation needs to be within a Convex function._
 
@@ -185,7 +185,7 @@ _Note: The Black-Scholes snippet illustrates the formula. Implementation needs t
 | REH-501 | Implement circuit breakers for external price/data API calls            | 6          | ⬜     | PEA-101..107 |          |
 | REH-502 | Develop sophisticated fallback strategies (e.g., use last known, cache) | 5          | ⬜     | REH-501      |          |
 | REH-503 | Implement rate limit handling specific to each API source               | 4          | ⬜     | PEA-101..107 |          |
-| REH-504 | Create a health check system/function for external dependencies         | 4          | ⬜     | PEA-101..107 |          |
+| REH-504 | Create a health check system/function for external dependencies         | 4          | 🟡     | PEA-101..107 |          |
 | REH-505 | Implement automatic recovery procedures for common failures (optional)  | 5          | ⬜     | REH-501      |          |
 
 ### 6. Monitoring and Alerting System
@@ -197,7 +197,7 @@ _Note: The Black-Scholes snippet illustrates the formula. Implementation needs t
 | Task ID | Description                                                               | Est. Hours | Status | Dependencies | Assignee |
 | ------- | ------------------------------------------------------------------------- | ---------- | ------ | ------------ | -------- |
 | MAS-601 | Implement comprehensive logging across all critical functions/actions     | 4          | 🟡     | -            |          |
-| MAS-602 | Implement metrics collection (API performance, price variance, calc perf) | 6          | ⬜     | -            |          |
+| MAS-602 | Implement metrics collection (API performance, price variance, calc perf) | 6          | 🟡     | -            |          |
 | MAS-603 | Develop alerting system for price anomalies                               | 5          | ⬜     | PEA-108      |          |
 | MAS-604 | Develop alerting system for API failures / high error rates               | 4          | ⬜     | REH-504      |          |
 | MAS-605 | Develop alerting system for calculation errors/inconsistencies            | 4          | ⬜     | PCA-401      |          |

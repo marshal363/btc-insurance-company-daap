@@ -1,6 +1,6 @@
 "use client";
 
-import { useContext, useState } from "react";
+import { useContext, useState, useEffect } from "react";
 import {
   Box,
   Flex,
@@ -20,7 +20,6 @@ import {
   AlertDescription
 } from "@chakra-ui/react";
 import { 
-  IoRefresh, 
   IoTrendingUp, 
   IoSwapHorizontal, 
   IoFlash,
@@ -28,19 +27,46 @@ import {
   IoChevronUp,
 } from "react-icons/io5";
 import PriceOracleNetwork from "./PriceOracleNetwork";
-import { useLatestOraclePrice, useIsAuthorizedSubmitter } from "@/hooks/oracleQueries";
+import { useQuery } from "convex/react";
+import { api } from "../../../../convex/_generated/api";
+import { useIsAuthorizedSubmitter, useCalculate24hRange } from "@/hooks/oracleQueries";
 import OracleAdminControls from "./OracleAdminControls";
 import HiroWalletContext from "../HiroWalletProvider";
 import { useDevnetWallet } from "@/lib/devnet-wallet-context";
 import { isDevnetEnvironment, isTestnetEnvironment } from "@/lib/contract-utils";
 
+const formatRelativeTime = (timestamp: number): string => {
+  const now = Date.now();
+  const diffMs = now - timestamp;
+  const diffMins = Math.floor(diffMs / 60000);
+
+  if (diffMins < 1) {
+    return "Just now";
+  } else if (diffMins < 60) {
+    return `${diffMins} minute${diffMins > 1 ? 's' : ''} ago`;
+  } else {
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) {
+      return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+    } else {
+      const diffDays = Math.floor(diffHours / 24);
+      return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+    }
+  }
+};
+
 export default function BitcoinPriceCard() {
   const [showSources, setShowSources] = useState(false);
   
-  // Use our oracle hook to fetch real data from the blockchain
-  const { data: oracleData, isLoading, isError, error, refetch } = useLatestOraclePrice();
+  const aggregatedData = useQuery(api.prices.getLatestPrice);
+  const rangeData = useCalculate24hRange();
   
-  // Get wallet information
+  console.log("Range Data from hook:", rangeData);
+
+  const isLoadingAggregatedData = aggregatedData === undefined;
+  const isLoadingRangeData = rangeData === undefined;
+  const isLoading = isLoadingAggregatedData || isLoadingRangeData;
+
   const { mainnetAddress, testnetAddress } = useContext(HiroWalletContext);
   const { currentWallet: devnetWallet } = useDevnetWallet();
   const currentWalletAddress = isDevnetEnvironment()
@@ -49,43 +75,40 @@ export default function BitcoinPriceCard() {
     ? testnetAddress
     : mainnetAddress;
     
-  // Check if current wallet is authorized to submit prices
   const { data: isAuthorized } = useIsAuthorizedSubmitter(currentWalletAddress);
   
-  // Neumorphic styles
-  const neumorphicBg = "#E8EAE9"; // Use the color from the image
-  const neumorphicShadowLight = "-10px -10px 20px rgba(255, 255, 255, 0.8)"; // Adjusted light shadow
-  const neumorphicShadowDark = "10px 10px 20px rgba(163, 177, 198, 0.6)"; // Adjusted dark shadow based on common neumorphic examples for a similar bg
+  const neumorphicBg = "#E8EAE9";
+  const neumorphicShadowLight = "-10px -10px 20px rgba(255, 255, 255, 0.8)";
+  const neumorphicShadowDark = "10px 10px 20px rgba(163, 177, 198, 0.6)";
   const neumorphicBoxShadow = `${neumorphicShadowLight}, ${neumorphicShadowDark}`;
-  const neumorphicBorderRadius = "xl"; // Consistent rounded corners
+  const neumorphicBorderRadius = "xl";
 
-  // Mock data for stats that aren't part of our oracle yet
-  // In a future iteration, these would be calculated from historical data
-  const mockVolatility = 42.50;
-  const mockActiveSources = 7;
+  const btcPrice = aggregatedData?.price ?? 0;
+  const lastUpdatedTime = aggregatedData?.timestamp ? formatRelativeTime(aggregatedData.timestamp) : "Checking...";
   
-  // Calculate 24hr trading range based on current price (mock for now)
-  const btcPrice = oracleData?.formattedPrice ?? 0;
-  const priceChange = 0.24; // Mock data - will come from off-chain in Phase 2
-  const rangeLow = btcPrice > 0 ? Math.floor(btcPrice * 0.98) : 92846; // Mock 2% range for demo
-  const rangeHigh = btcPrice > 0 ? Math.ceil(btcPrice * 1.02) : 94566;  // Mock 2% range for demo
+  const displayVolatility = aggregatedData?.volatility ?? 0;
+  const displayActiveSources = aggregatedData?.sourceCount ?? 0;
+  const displayRangeLow = rangeData?.low ?? 0;
+  const displayRangeHigh = rangeData?.high ?? 0;
+  const displayPriceChange = 0;
+
+  // Add pulse animation for "Just now" indicator
+  const [isPulsing, setIsPulsing] = useState(false);
   
-  // Function to handle manual refresh
-  const handleRefresh = () => {
-    if (refetch) {
-      refetch();
+  useEffect(() => {
+    if (lastUpdatedTime === "Just now") {
+      setIsPulsing(true);
+      const timer = setTimeout(() => setIsPulsing(false), 2000);
+      return () => clearTimeout(timer);
     }
-  };
+  }, [lastUpdatedTime]);
 
   return (
-    <Box borderRadius="lg" bg={neumorphicBg} p={4}> {/* Set base background color and padding */}
-      {/* Admin Controls (conditionally rendered) */}
-      {isAuthorized && <OracleAdminControls isAuthorizedSubmitter={!!isAuthorized} onPriceUpdate={refetch} />}
+    <Box borderRadius="lg" bg={neumorphicBg} p={4}>
+      {isAuthorized && <OracleAdminControls isAuthorizedSubmitter={!!isAuthorized} onPriceUpdate={() => { /* TODO: How to trigger Convex refetch if needed? */ }} />}
       
-      {/* Main Card Container - remove default white bg and shadow, adjust padding */}
       <Box borderTopWidth="1px" borderTopColor="gray.300" p={0} bg="transparent" borderRadius="lg" boxShadow="none">
-        {/* Header Section */}
-        <Flex justifyContent="space-between" alignItems="center" mb={4} px={4} pt={4}> {/* Add padding back to header */}
+        <Flex justifyContent="space-between" alignItems="center" mb={4} px={4} pt={4}>
           <Flex alignItems="center" gap={3}>
             <Circle size="40px" bg="blue.500">
               <Icon as={IoTrendingUp} color="white" boxSize={5} />
@@ -95,9 +118,9 @@ export default function BitcoinPriceCard() {
                 BTC Price Feed
               </Heading>
               <Flex alignItems="center">
-                <Box w={2} h={2} borderRadius="full" bg="green.400" mr={1} />
+                <Box w={2} h={2} borderRadius="full" bg={displayActiveSources > 0 ? "green.400" : "gray.400"} mr={1} />
                 <Text color="gray.500" fontSize="sm">
-                  {mockActiveSources} Sources Active
+                  {isLoading ? '...' : `${displayActiveSources} Sources Active`}
                 </Text>
               </Flex>
             </Box>
@@ -108,70 +131,96 @@ export default function BitcoinPriceCard() {
               <Text fontSize="xs" color="gray.500" fontWeight="semibold">
                 LAST UPDATED
               </Text>
-              <Text fontWeight="bold" color="gray.600">
-                {oracleData?.lastUpdatedTime || "Checking..."}
+              <Text 
+                fontWeight="bold" 
+                color="gray.600" 
+                position="relative"
+                sx={lastUpdatedTime === "Just now" && isPulsing ? {
+                  "&::after": {
+                    content: '""',
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    borderRadius: "md",
+                    animation: "pulse 1.5s infinite",
+                    zIndex: -1,
+                  },
+                  "@keyframes pulse": {
+                    "0%": { boxShadow: "0 0 0 0 rgba(49, 130, 206, 0.2)" },
+                    "70%": { boxShadow: "0 0 0 10px rgba(49, 130, 206, 0)" },
+                    "100%": { boxShadow: "0 0 0 0 rgba(49, 130, 206, 0)" }
+                  }
+                } : {}}
+              >
+                {isLoading ? "Checking..." : lastUpdatedTime}
               </Text>
             </Box>
-            
-            <Button 
-              leftIcon={<IoRefresh />} 
-              size="sm" 
-              variant="outline" 
-              colorScheme="blue"
-              onClick={handleRefresh}
-              isLoading={isLoading}
-            >
-              Refresh
-            </Button>
           </Flex>
         </Flex>
         
-        {/* Error state */}
-        {isError && (
-          <Alert status="error" mb={4} mx={4} borderRadius="md">
+        {!isLoading && aggregatedData === null && (
+          <Alert status="warning" mb={4} mx={4} borderRadius="md">
             <AlertIcon />
-            <AlertTitle>Error loading price data:</AlertTitle>
-            <AlertDescription>{(error as Error)?.message || "Unknown error"}</AlertDescription>
+            <AlertTitle>No price data available</AlertTitle>
+            <AlertDescription>The oracle does not have any price data yet.</AlertDescription>
           </Alert>
         )}
-        
-        {/* Price Cards Grid */}
-        <Grid templateColumns="repeat(3, 1fr)" gap={6} p={4}> {/* Increased gap and added padding */}
-          {/* Current Price Card - Apply Neumorphic Style */}
+
+        <Grid templateColumns="repeat(3, 1fr)" gap={6} p={4}>
           <GridItem 
             bg={neumorphicBg} 
-            p={6} // Increased padding
+            p={6}
             borderRadius={neumorphicBorderRadius}
             boxShadow={neumorphicBoxShadow}
+            position="relative"
+            _after={{
+              content: '""',
+              position: 'absolute',
+              top: '-3px',
+              left: '-3px',
+              right: '-3px',
+              bottom: '-3px',
+              borderRadius: 'xl',
+              border: '3px solid',
+              borderColor: 'blue.100',
+              opacity: 0.5,
+              zIndex: 0,
+              pointerEvents: 'none'
+            }}
           >
             <Flex alignItems="center" gap={2} mb={2}>
               <Icon as={IoTrendingUp} color="blue.500" />
-              <Text fontWeight="medium" color="gray.700">Current Price</Text> {/* Adjusted text color */}
+              <Text fontWeight="medium" color="gray.700">Current Price</Text>
             </Flex>
             
             {isLoading ? (
               <Flex justify="center" align="center" h="100px">
                 <Spinner size="xl" color="blue.500" />
               </Flex>
-            ) : (
+            ) : aggregatedData ? (
               <>
-                <Heading as="h3" fontSize="3xl" fontWeight="bold" mb={1} color="gray.800"> {/* Adjusted text color */}
-                  ${btcPrice ? btcPrice.toLocaleString() : "No data"}
+                <Heading as="h3" fontSize="3xl" fontWeight="bold" mb={1} color="gray.800">
+                  ${btcPrice ? btcPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "N/A"}
                 </Heading>
                 
                 <Badge 
-                  colorScheme={priceChange >= 0 ? "green" : "red"} 
-                  variant="subtle" 
-                  px={2} 
-                  py={0.5} 
+                  colorScheme={displayPriceChange > 0 ? "green" : displayPriceChange < 0 ? "red" : "gray"} 
+                  variant="solid" 
+                  px={3} 
+                  py={1} 
                   borderRadius="full"
+                  fontSize="md"
                 >
-                  {priceChange >= 0 ? "↑" : "↓"} {Math.abs(priceChange)}%
+                  {displayPriceChange > 0 ? "↑" : displayPriceChange < 0 ? "↓" : "→"} {Math.abs(displayPriceChange).toFixed(2)}%
                 </Badge>
               </>
+            ) : (
+               <Text color="gray.500">No data</Text>
             )}
             
-            <Text fontSize="sm" mt={4} color="gray.600"> {/* Adjusted text color */}
+            <Text fontSize="sm" mt={4} color="gray.600">
               Change in the last 24 hours
             </Text>
             
@@ -179,81 +228,118 @@ export default function BitcoinPriceCard() {
               mt={4}
               size="sm"
               rightIcon={showSources ? <IoChevronUp /> : <IoChevronDown />}
-              variant="ghost" // Changed variant for better neumorphic fit
+              variant="ghost"
               colorScheme="blue" 
               onClick={() => setShowSources(!showSources)}
               w="full"
-              _hover={{ bg: "rgba(0, 0, 0, 0.05)" }} // Subtle hover
+              _hover={{ bg: "rgba(0, 0, 0, 0.05)" }}
             >
               {showSources ? "Hide Sources" : "View Sources"}
             </Button>
           </GridItem>
           
-          {/* 24h Trading Range Card - Apply Neumorphic Style */}
           <GridItem 
             bg={neumorphicBg} 
-            p={6} // Increased padding
+            p={6}
             borderRadius={neumorphicBorderRadius}
             boxShadow={neumorphicBoxShadow}
           >
-            <Flex alignItems="center" gap={2} mb={2}>
+            <Flex alignItems="center" gap={2} mb={3}>
               <Icon as={IoSwapHorizontal} color="blue.500" />
-              <Text fontWeight="medium" color="gray.700">24h Trading Range</Text> {/* Adjusted text color */}
+              <Text fontWeight="medium" color="gray.700">24h Trading Range</Text>
             </Flex>
             
             {isLoading ? (
               <Flex justify="center" align="center" h="100px">
                 <Spinner size="xl" color="blue.500" />
               </Flex>
-            ) : (
+            ) : aggregatedData ? (
               <>
+                {/* Min-max price display */}
                 <Flex justifyContent="space-between" mb={4}>
                   <Box>
-                    <Text fontSize="sm" color="gray.600">24h Low</Text> {/* Adjusted text color */}
-                    <Text fontWeight="bold" color="gray.800">${rangeLow.toLocaleString()}</Text> {/* Adjusted text color */}
+                    <Text fontSize="sm" color="gray.600">24h Low</Text>
+                    <Text fontWeight="bold" color="gray.800">${Math.round(displayRangeLow).toLocaleString()}</Text>
                   </Box>
-                  <Box textAlign="right"> {/* Ensure high value aligns right */}
-                    <Text fontSize="sm" color="gray.600">24h High</Text> {/* Adjusted text color */}
-                    <Text fontWeight="bold" color="gray.800">${rangeHigh.toLocaleString()}</Text> {/* Adjusted text color */}
+                  <Box textAlign="right">
+                    <Text fontSize="sm" color="gray.600">24h High</Text>
+                    <Text fontWeight="bold" color="gray.800">${Math.round(displayRangeHigh).toLocaleString()}</Text>
                   </Box>
                 </Flex>
                 
-                <Text fontSize="sm" color="gray.600" mb={1}> {/* Adjusted text color */}
-                  Current Price Position
-                </Text>
-                
-                <Box position="relative" h="24px" mt={2}> {/* Added margin top */}
-                  <Progress 
-                    value={((btcPrice - rangeLow) / (rangeHigh - rangeLow)) * 100} 
-                    borderRadius="full" 
-                    h="8px"
-                    colorScheme="blue"
-                    bg="gray.300" // Adjusted progress background
-                  />
-                </Box>
+                {/* Current price tag - positioned above the bar */}
                 <Flex 
-                  position="relative" // Changed from absolute for simplicity below progress
-                  justifyContent="space-between" 
-                  mt={1}
+                  position="relative" 
+                  justifyContent="center" 
+                  mb={1}
+                  mt={4}
                 >
-                  <Text fontSize="xs" color="gray.500">${rangeLow.toLocaleString()}</Text>
-                  {/* Removed middle price label */}
-                  <Text fontSize="xs" color="gray.500">${rangeHigh.toLocaleString()}</Text>
+                  <Badge 
+                    colorScheme="blue" 
+                    borderRadius="full" 
+                    px={2.5} 
+                    py={0.5}
+                    position="relative"
+                    zIndex={2}
+                    fontSize="sm"
+                    boxShadow="0 1px 2px rgba(0,0,0,0.1)"
+                  >
+                    ${Math.round(btcPrice).toLocaleString()}
+                  </Badge>
                 </Flex>
+                
+                {/* Progress bar with position label */}
+                <Box>
+                  <Text fontSize="xs" color="gray.500" mb={1} textAlign="center">
+                    Current Price Position
+                  </Text>
+                  
+                  <Box position="relative">
+                    {/* Range bar */}
+                    <Progress 
+                      value={displayRangeHigh > displayRangeLow ? ((btcPrice - displayRangeLow) / (displayRangeHigh - displayRangeLow)) * 100 : 0} 
+                      borderRadius="full" 
+                      h="10px"
+                      colorScheme="blue"
+                      bg="gray.200"
+                    />
+                    
+                    {/* Price indicator line */}
+                    {displayRangeHigh > displayRangeLow && (
+                      <Box 
+                        position="absolute"
+                        top="-4px"
+                        bottom="-4px"
+                        left={`${((btcPrice - displayRangeLow) / (displayRangeHigh - displayRangeLow)) * 100}%`}
+                        transform="translateX(-50%)"
+                        width="2px"
+                        bg="blue.500"
+                        zIndex={1}
+                      />
+                    )}
+                  </Box>
+                  
+                  {/* Tick marks with min-max labels */}
+                  <Flex justifyContent="space-between" mt={1}>
+                    <Text fontSize="xs" color="gray.500">${Math.round(displayRangeLow/1000)}K</Text>
+                    <Text fontSize="xs" color="gray.500">${Math.round(displayRangeHigh/1000)}K</Text>
+                  </Flex>
+                </Box>
               </>
+            ) : (
+              <Text color="gray.500">No data</Text>
             )}
           </GridItem>
           
-          {/* Volatility Index Card - Apply Neumorphic Style */}
-           <GridItem 
+          <GridItem 
             bg={neumorphicBg} 
-            p={6} // Increased padding
+            p={6}
             borderRadius={neumorphicBorderRadius}
             boxShadow={neumorphicBoxShadow}
           >
             <Flex alignItems="center" gap={2} mb={2}>
               <Icon as={IoFlash} color="blue.500" />
-              <Text fontWeight="medium" color="gray.700">Volatility Index</Text> {/* Adjusted text color */}
+              <Text fontWeight="medium" color="gray.700">Volatility Index</Text>
               <Badge 
                 size="sm" 
                 colorScheme="blue" 
@@ -261,7 +347,7 @@ export default function BitcoinPriceCard() {
                 ml="auto"
                 borderRadius="full"
                 px={2}
-                borderColor="blue.300" // Slightly adjust border
+                borderColor="blue.300"
               >
                 30 days
               </Badge>
@@ -271,39 +357,59 @@ export default function BitcoinPriceCard() {
               <Flex justify="center" align="center" h="100px">
                 <Spinner size="xl" color="blue.500" />
               </Flex>
-            ) : (
+            ) : aggregatedData ? (
               <>
-                <Heading as="h3" fontSize="3xl" fontWeight="bold" mb={3} color="gray.800"> {/* Adjusted text color */}
-                  {mockVolatility}%
+                <Heading as="h3" fontSize="3xl" fontWeight="bold" mb={3} color="gray.800">
+                  {(displayVolatility * 100).toFixed(2)}%
                 </Heading>
                 
-                <Box mb={1} position="relative"> {/* Added position relative */}
+                <Box mb={1} position="relative">
                   <Progress 
-                    value={mockVolatility} 
+                    value={displayVolatility * 100}
                     max={100} 
                     borderRadius="full" 
                     h="8px"
-                    colorScheme="blue"
-                    bg="gray.300" // Adjusted progress background
+                    colorScheme={displayVolatility < 0.3 ? "green" : displayVolatility < 0.7 ? "blue" : "red"}
+                    bg="gray.300"
                   />
+                  <Flex justifyContent="space-between" width="100%" position="absolute" top="-2px">
+                    <Box width="30%" borderRight="1px dashed" borderColor="green.300" height="12px" />
+                    <Box width="40%" borderRight="1px dashed" borderColor="blue.300" height="12px" />
+                  </Flex>
                 </Box>
                 
-                <Flex justifyContent="flex-end" mt={2} mb={3}> {/* Added margin top */}
+                <Flex justifyContent="space-between" mt={2} mb={3}>
+                  <Text color="green.500" fontWeight="medium" fontSize="xs">Low</Text>
                   <Text color="purple.500" fontWeight="medium" fontSize="sm">
-                    Medium {/* Consider how to visually represent this better */}
+                    Medium
                   </Text>
+                  <Text color="red.500" fontWeight="medium" fontSize="xs">High</Text>
                 </Flex>
                 
-                <Text fontSize="sm" color="gray.600"> {/* Adjusted text color */}
-                  Drives premium pricing
-                </Text>
+                <Flex alignItems="center" gap={2}>
+                  <Text fontSize="sm" color="gray.600">
+                    Drives premium pricing
+                  </Text>
+                  <Box 
+                    as="span" 
+                    color="blue.500" 
+                    fontSize="xs" 
+                    cursor="pointer"
+                    borderBottom="1px dotted"
+                    title="Higher volatility typically results in higher insurance premiums as it represents increased market risk"
+                    _hover={{ color: "blue.600" }}
+                  >
+                    i
+                  </Box>
+                </Flex>
               </>
+            ) : (
+              <Text color="gray.500">No data</Text>
             )}
           </GridItem>
         </Grid>
       </Box>
       
-      {/* Oracle Network (conditional rendering) */}
       {showSources && <PriceOracleNetwork />}
     </Box>
   );

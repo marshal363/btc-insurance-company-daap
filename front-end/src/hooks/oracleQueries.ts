@@ -144,4 +144,23 @@ export const useIsAuthorizedSubmitter = (
     retry: false,
     enabled: !!address, // Only run query if address is provided
   });
+};
+
+// ADD Convex Imports for new hooks
+import { useQuery as useConvexQuery } from "convex/react";
+import { api } from "../../../convex/_generated/api"; // Adjust path
+
+// Define type for the 24h range data
+interface RangeData {
+  high: number;
+  low: number;
+  range: number;
+}
+
+/**
+ * Hook to fetch the calculated 24h range data from the Convex backend.
+ */
+export const useCalculate24hRange = (): RangeData | null | undefined => {
+  // Returns the data directly, or null if no data, or undefined if loading
+  return useConvexQuery(api.prices.calculate24hRange);
 }; 
