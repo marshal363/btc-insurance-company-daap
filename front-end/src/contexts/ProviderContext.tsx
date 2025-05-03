@@ -1,124 +1,143 @@
 "use client";
 
-import React, { createContext, useState, useContext, ReactNode, useMemo, useCallback } from 'react';
-import { type ProviderTier } from '@/types'; // Assuming ProviderTier is defined in types
+import React, { createContext, useState, useContext, ReactNode, useCallback } from 'react';
+import type { ProviderTier } from '@/types'; // Assuming a local ProviderTier type exists
+import { ProviderYieldQuoteResult } from "@convex/types"; // Import the correct type from Convex
 
 // --- Define State Structure ---
 
 // Inputs for the Provider
 export interface ProviderInputs {
-  riskRewardTier: ProviderTier | null; // The selected tier (Conservative, Balanced, Aggressive)
-  capitalCommitment: number; // Amount in BTC
+  riskRewardTier: ProviderTier | null;
+  capitalCommitment: number; // In BTC
   incomePeriod: number; // In days
+  // Add other inputs if needed
 }
 
-// Client-side estimated results (for immediate feedback)
+export interface ProviderValidationErrors {
+  riskRewardTier?: string;
+  capitalCommitment?: string;
+  incomePeriod?: string;
+  // Add other fields
+}
+
+// Client-side estimated results
+// Ensure this matches the return type of utils/clientEstimation.ts -> estimateProviderYield
 export interface ProviderEstimatedResult {
-  estimatedYield: number; // Annual percentage yield
-  estimatedYieldAmount?: number; // Yield amount in USD
-  estimatedMaxLoss?: number; // Maximum potential loss
-}
-
-// Full quote results from Convex backend (accurate calculation)
-export interface ProviderQuoteResult {
-  annualYield: number; // Annual percentage yield 
-  totalYield: number; // Total yield for the commitment period
-  yieldAmountUSD: number; // Yield amount in USD
-  maxPotentialLoss: number; // Maximum potential loss in USD
-  inputs: ProviderInputs; // The inputs used for calculation
-  priceUsed: number; // BTC price used for calculation
-  volatilityUsed: number; // Volatility value used
-  quoteTimestamp: number;
-  factorsBreakdown?: {
-    riskPremium: number;
-    marketRate: number;
-    additionalFactors: Record<string, number>;
-  };
-  scenarios?: {
-    marketCondition: string;
-    expectedReturn: number;
-    probability: number;
-  }[];
+  estimatedYield: number;
+  estimatedAnnualizedYieldPercentage: number;
+  // Add other estimated fields if needed
 }
 
 // --- Define Context State & Type ---
 
-interface ProviderContextState {
+interface ProviderContextProps {
   inputs: ProviderInputs;
+  validationErrors: ProviderValidationErrors;
   estimatedResult: ProviderEstimatedResult | null;
-  accurateQuote: ProviderQuoteResult | null;
-  validationErrors: Record<string, string>; // Store validation errors by field
-  
-  // Setter functions
+  accurateQuote: ProviderYieldQuoteResult | null; // Use the imported Convex type
+  isEstimating: boolean; // Potentially track estimation status
+
+  // Methods to update state
   updateProviderInputs: (updates: Partial<ProviderInputs>) => void;
+  setValidationErrors: (errors: ProviderValidationErrors) => void;
   setEstimatedResult: (result: ProviderEstimatedResult | null) => void;
-  setAccurateQuote: (quote: ProviderQuoteResult | null) => void;
-  clearValidationErrors: () => void;
-  setValidationError: (field: string, error: string) => void;
+  setAccurateQuote: (quote: ProviderYieldQuoteResult | null) => void; // Use the imported Convex type
+  setIsEstimating: (isEstimating: boolean) => void;
+
+  // Utility methods
+  resetProviderInputs: () => void;
+  validateInputs: () => boolean;
 }
 
-// Create the context with undefined default (forces Provider usage)
-const ProviderContext = createContext<ProviderContextState | undefined>(undefined);
+// Default values for inputs
+const DEFAULT_INPUTS: ProviderInputs = {
+  riskRewardTier: 'balanced', // Default tier
+  capitalCommitment: 0.1, // Default commitment in BTC
+  incomePeriod: 90, // Default period
+};
+
+// Create the context
+const ProviderContext = createContext<ProviderContextProps | undefined>(undefined);
 
 // --- Define Provider Component ---
 
-interface ProviderContextProviderProps {
+interface ProviderProviderProps {
   children: ReactNode;
   initialInputs?: Partial<ProviderInputs>;
 }
 
-export const ProviderProvider: React.FC<ProviderContextProviderProps> = ({ 
+export const ProviderProvider: React.FC<ProviderProviderProps> = ({ 
   children, 
   initialInputs = {}
 }) => {
-  // Initialize state with defaults or provided values
+  // State for inputs and validation
   const [inputs, setInputs] = useState<ProviderInputs>({
-    riskRewardTier: 'balanced' as ProviderTier, // Default to balanced tier
-    capitalCommitment: 0.5, // Default to 0.5 BTC
-    incomePeriod: 90, // Default to 90 days
-    ...initialInputs
+    ...DEFAULT_INPUTS,
+    ...initialInputs,
   });
+  const [validationErrors, setValidationErrors] = useState<ProviderValidationErrors>({});
   
+  // State for yield calculations
   const [estimatedResult, setEstimatedResult] = useState<ProviderEstimatedResult | null>(null);
-  const [accurateQuote, setAccurateQuote] = useState<ProviderQuoteResult | null>(null);
-  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
+  const [accurateQuote, setAccurateQuote] = useState<ProviderYieldQuoteResult | null>(null); // Use correct type
+  const [isEstimating, setIsEstimating] = useState<boolean>(false);
 
   // Updater functions
   const updateProviderInputs = useCallback((updates: Partial<ProviderInputs>) => {
     setInputs(prev => ({ ...prev, ...updates }));
-    // When inputs change, clear the accurate quote as it's no longer valid
-    // But keep the estimated result as it will be recalculated immediately
+    // Clear validation errors for updated fields
+    if (Object.keys(updates).some(key => validationErrors[key as keyof ProviderValidationErrors])) {
+      setValidationErrors(prev => {
+        const newErrors = { ...prev };
+        (Object.keys(updates) as Array<keyof ProviderValidationErrors>).forEach(key => {
+          delete newErrors[key];
+        });
+        return newErrors;
+      });
+    }
+  }, [validationErrors]);
+
+  const resetProviderInputs = useCallback(() => {
+    setInputs(DEFAULT_INPUTS);
+    setValidationErrors({});
+    setEstimatedResult(null);
     setAccurateQuote(null);
   }, []);
 
-  const clearValidationErrors = useCallback(() => {
-    setValidationErrors({});
-  }, []);
+  // Basic validation logic (can be expanded)
+  const validateInputs = useCallback((): boolean => {
+    const errors: ProviderValidationErrors = {};
+    if (!inputs.riskRewardTier) {
+      errors.riskRewardTier = "Please select a risk tier.";
+    }
+    if (inputs.capitalCommitment <= 0) {
+      errors.capitalCommitment = "Commitment amount must be positive.";
+    } else if (inputs.capitalCommitment > 100) { // Example upper limit
+       errors.capitalCommitment = "Commitment amount seems too large.";
+    }
+    if (![30, 90, 180, 360].includes(inputs.incomePeriod)) {
+      errors.incomePeriod = "Please select a valid income period.";
+    }
+    setValidationErrors(errors);
+    return Object.keys(errors).length === 0;
+  }, [inputs]);
 
-  const setValidationError = useCallback((field: string, error: string) => {
-    setValidationErrors(prev => ({ ...prev, [field]: error }));
-  }, []);
-
-  // Memoize the context value to prevent unnecessary re-renders
-  const contextValue = useMemo(() => ({
+  // Context value
+  const contextValue: ProviderContextProps = {
     inputs,
+    validationErrors,
     estimatedResult,
     accurateQuote,
-    validationErrors,
+    isEstimating,
     updateProviderInputs,
+    setValidationErrors,
     setEstimatedResult,
     setAccurateQuote,
-    clearValidationErrors,
-    setValidationError,
-  }), [
-    inputs, 
-    estimatedResult, 
-    accurateQuote, 
-    validationErrors, 
-    updateProviderInputs, 
-    clearValidationErrors, 
-    setValidationError
-  ]);
+    setIsEstimating,
+    resetProviderInputs,
+    validateInputs,
+  };
 
   return (
     <ProviderContext.Provider value={contextValue}>
@@ -129,7 +148,7 @@ export const ProviderProvider: React.FC<ProviderContextProviderProps> = ({
 
 // --- Define Custom Hook for Consumption ---
 
-export const useProviderContext = (): ProviderContextState => {
+export const useProviderContext = (): ProviderContextProps => {
   const context = useContext(ProviderContext);
   if (context === undefined) {
     throw new Error('useProviderContext must be used within a ProviderProvider');

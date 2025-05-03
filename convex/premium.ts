@@ -366,6 +366,34 @@ function calculateBreakEvenPrice({
   return Number(math.round((strikePrice - (premium / amount)) * 100)) / 100;
 }
 
+/**
+ * Calculate the approximate BTC price below which the provider's position becomes unprofitable,
+ * considering the yield earned as a buffer against price drops.
+ * This is a simplified estimation.
+ */
+function calculateProviderBreakEvenPrice({
+  commitmentAmountUSD,
+  estimatedYieldUSD,
+  currentBtcPrice,
+}: {
+  commitmentAmountUSD: number;
+  estimatedYieldUSD: number;
+  currentBtcPrice: number;
+}): number | undefined {
+  if (currentBtcPrice <= 0 || commitmentAmountUSD <= 0) {
+    return undefined; // Cannot calculate if price or commitment is non-positive
+  }
+
+  // Calculate the maximum percentage drop the provider can withstand before loss
+  // This assumes the yield cushions the initial USD investment.
+  const bufferPercentage = estimatedYieldUSD / commitmentAmountUSD;
+  
+  // The break-even price is the current price reduced by this buffer percentage.
+  const breakEvenPrice = currentBtcPrice * (1 - bufferPercentage);
+
+  return Math.max(0, breakEvenPrice); // Price cannot be negative
+}
+
 // --- PUBLIC FACING QUERIES ---
 
 /**
@@ -464,60 +492,69 @@ export const getBuyerPremiumQuote = query({
 });
 
 /**
- * Get provider yield quote with all details
+ * Public query to get a yield quote for liquidity providers
  */
 export const getProviderYieldQuote = query({
   args: {
-    commitmentAmount: v.number(), // In STX or USD based on UI convention
-    commitmentAmountUSD: v.number(), // Ensure USD value is passed
+    commitmentAmountUSD: v.number(),
     selectedTier: v.string(),
-    selectedPeriod: v.number(),
+    selectedPeriodDays: v.number(),
   },
   handler: async (ctx, args): Promise<ProviderYieldQuoteResult> => {
-    // 1. Get current market data
-    const marketData: MarketData = await ctx.runQuery(
-      internal.premium.getCurrentMarketData,
-      { asset: "BTC" }
-    );
+    const quoteId = `prov-${new Date().toISOString()}-${Math.random().toString(16).slice(2)}`;
+    const timestamp = Date.now();
 
-    // 2. Get active risk parameters (assuming providers primarily underwrite PUTs)
-    const riskParams: RiskParameters = await ctx.runQuery(
-      internal.premium.getActiveRiskParameters,
-      {
-        assetType: "BTC",
-        policyType: "PUT",
-      }
-    );
+    // Fetch necessary data
+    const marketData = await ctx.runQuery(internal.premium.getCurrentMarketData, { asset: "BTC" });
+    const riskParams = await ctx.runQuery(internal.premium.getActiveRiskParameters, {
+      assetType: "BTC",
+      policyType: "ProviderYield", // Assuming a specific policy type for providers
+    });
 
-    // 3. Calculate estimated yield using the provider model
-    const result = calculateProviderYield({
+    // Calculate yield components
+    const yieldComponents = calculateProviderYield({
       commitmentAmountUSD: args.commitmentAmountUSD,
       selectedTier: args.selectedTier,
-      selectedPeriod: args.selectedPeriod,
+      selectedPeriod: args.selectedPeriodDays,
       volatility: marketData.volatility,
       riskParams: riskParams,
       marketConditions: {
         btcPrice: marketData.price,
-        volatility: marketData.volatility,
-        liquidity: 1.0, // Default value, could be derived from market data
+        volatility: marketData.volatility, // Pass fetched volatility
+        liquidity: riskParams.liquidityAdjustment, // Use risk param liquidity factor
       },
     });
 
-    // 4. Return the comprehensive quote result
+    // Calculate annualized percentage
+    const annualizedYieldPercentage = (yieldComponents.estimatedYield / args.commitmentAmountUSD) * (365 / args.selectedPeriodDays);
+
+    // Calculate provider break-even price
+    const breakEvenPrice = calculateProviderBreakEvenPrice({
+      commitmentAmountUSD: args.commitmentAmountUSD,
+      estimatedYieldUSD: yieldComponents.estimatedYield,
+      currentBtcPrice: marketData.price,
+    });
+
+    // Return the comprehensive quote result
     return {
-      inputs: {
-        commitmentAmount: args.commitmentAmount,
+      quoteId,
+      timestamp,
+      parameters: {
         commitmentAmountUSD: args.commitmentAmountUSD,
         selectedTier: args.selectedTier,
-        selectedPeriod: args.selectedPeriod,
+        selectedPeriodDays: args.selectedPeriodDays,
       },
-      ...result,
-      marketDataSnapshot: {
-        btcPrice: marketData.price,
-        volatility: marketData.volatility,
-        timestamp: new Date().toISOString(),
+      calculated: {
+        estimatedYieldPercentage: annualizedYieldPercentage,
+        estimatedYieldUSD: yieldComponents.estimatedYield,
+        yieldComponents: yieldComponents,
+        breakEvenPriceUSD: breakEvenPrice, // Include the calculated break-even price
       },
-      riskParamsSnapshot: riskParams,
+      marketData,
+      riskParametersUsed: riskParams,
+      visualizationData: {
+        // Placeholder for potential future provider-specific scenarios
+      },
     };
   },
 });

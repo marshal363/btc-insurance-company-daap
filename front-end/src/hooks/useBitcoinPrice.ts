@@ -1,94 +1,167 @@
 "use client";
 
+import { useState, useEffect, useCallback } from "react";
 import { useQuery } from "convex/react";
-import { api } from "../../../convex/_generated/api";
-import { useState, useEffect } from "react";
+import { api } from "@convex/_generated/api";
 
-// Enhanced local interface with additional UI-friendly fields
-interface BitcoinPrice {
-  currentPrice: number;
-  timestamp: number;
+// Constants for caching
+const CACHE_KEY = "bitcoin_price_data";
+const CACHE_EXPIRY_MS = 5 * 60 * 1000; // 5 minutes
+const STALE_THRESHOLD_MS = 2 * 60 * 1000; // 2 minutes
+
+// Type for the cached price data structure
+interface CachedPriceData {
+  price: number;
   volatility: number;
-  priceChangePercent24h: number;
-  sourceCount: number;
+  timestamp: number; // Unix timestamp in milliseconds
 }
 
-/**
- * Hook to fetch the latest Bitcoin price with caching and error handling
- */
-export const useBitcoinPrice = () => {
-  // Keep local cache of the latest price for better UX during loading/errors
-  const [cachedData, setCachedData] = useState<BitcoinPrice | null>(null);
+// Return type for the hook
+interface UseBitcoinPriceResult {
+  currentPrice: number;
+  volatility: number;
+  lastUpdated: number; // Unix timestamp in milliseconds
+  isLoading: boolean;
+  isStale: boolean; // Data is older than the stale threshold
+  hasError: boolean;
+  errorMessage: string | null;
+  refreshPrice: () => void; // Function to force a refresh
+}
+
+export const useBitcoinPrice = (): UseBitcoinPriceResult => {
+  // State for storing the current price data
+  const [priceData, setPriceData] = useState<CachedPriceData>({
+    price: 0,
+    volatility: 0,
+    timestamp: 0,
+  });
+  const [isStale, setIsStale] = useState<boolean>(false);
+  const [hasError, setHasError] = useState<boolean>(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Use Convex query to fetch the latest price
+  const latestPrice = useQuery(api.prices.getLatestPrice);
   
-  // Fetch the latest price data from the Convex backend
-  const priceFetchResult = useQuery(api.prices.getLatestPrice);
-  
-  // Maintain loading and error states
-  const isLoading = priceFetchResult === undefined;
-  const hasError = priceFetchResult === null;
-  
-  // Update cache when we get new data
-  useEffect(() => {
-    if (priceFetchResult && !hasError) {
-      // Transform the data to our local interface format
-      const transformedData: BitcoinPrice = {
-        currentPrice: priceFetchResult.price,
-        timestamp: priceFetchResult.timestamp,
-        volatility: priceFetchResult.volatility,
-        priceChangePercent24h: priceFetchResult.range24h || 0,
-        sourceCount: priceFetchResult.sourceCount || 0,
-      };
-      setCachedData(transformedData);
-    }
-  }, [priceFetchResult, hasError]);
-  
-  // Try to get data from localStorage on initial load
-  useEffect(() => {
-    if (!cachedData) {
+  // Add debug logging
+  console.log("useBitcoinPrice: Latest price data from Convex:", latestPrice);
+
+  // Function to check if cache is valid
+  const isCacheValid = (cachedData: CachedPriceData | null): boolean => {
+    if (!cachedData) return false;
+    const now = Date.now();
+    return now - cachedData.timestamp < CACHE_EXPIRY_MS;
+  };
+
+  // Function to check if data is stale
+  const isDataStale = (timestamp: number): boolean => {
+    const now = Date.now();
+    return now - timestamp > STALE_THRESHOLD_MS;
+  };
+
+  // Function to read from cache
+  const readFromCache = (): CachedPriceData | null => {
+    if (typeof window !== 'undefined') {
       try {
-        const storedData = localStorage.getItem('bitcoinPriceCache');
-        if (storedData) {
-          const parsedData = JSON.parse(storedData);
-          // Check if data is still fresh (less than 5 minutes old)
-          const isFresh = Date.now() - parsedData.timestamp < 5 * 60 * 1000;
-          if (isFresh) {
-            setCachedData(parsedData);
-          }
-        }
-      } catch (error) {
-        console.error("Error retrieving cached Bitcoin price:", error);
+        const cachedJson = localStorage.getItem(CACHE_KEY);
+        if (!cachedJson) return null;
+        return JSON.parse(cachedJson) as CachedPriceData;
+      } catch (err) {
+        console.error("Error reading price data from cache:", err);
+        return null;
+      }
+    } else {
+      return null; // Cannot access localStorage on server
+    }
+  };
+
+  // Function to write to cache
+  const writeToCache = (data: CachedPriceData): void => {
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem(CACHE_KEY, JSON.stringify(data));
+      } catch (err) {
+        console.error("Error writing price data to cache:", err);
       }
     }
-  }, [cachedData]);
-  
-  // Save to localStorage when we get new data
+  };
+
+  // Function to refresh price data
+  const refreshPrice = useCallback(() => {
+    // Convex queries automatically refresh when needed
+    // This is a no-op for now, but could be used to force a refresh
+    // if we add that functionality to the Convex query
+  }, []);
+
+  // Update price data when the Convex query returns
   useEffect(() => {
-    if (cachedData) {
-      try {
-        localStorage.setItem('bitcoinPriceCache', JSON.stringify(cachedData));
-      } catch (error) {
-        console.error("Error caching Bitcoin price:", error);
+    console.log("useBitcoinPrice: Effect running with latestPrice:", latestPrice);
+    
+    // Try to read from cache first
+    const cachedData = readFromCache();
+    console.log("useBitcoinPrice: Cache data:", cachedData);
+    
+    if (latestPrice === undefined) {
+      // Still loading from Convex, use cache if valid
+      if (isCacheValid(cachedData)) {
+        setPriceData(cachedData!);
+        setIsStale(isDataStale(cachedData!.timestamp));
+        setHasError(false);
+        setErrorMessage(null);
       }
+      // Otherwise, stay in loading state (priceData remains with default values)
+      return;
+    } 
+    
+    if (latestPrice === null) {
+      // Error fetching from Convex, use cache if available (even if expired)
+      if (cachedData) {
+        setPriceData(cachedData);
+        setIsStale(true); // Always stale if we failed to fetch new data
+        setHasError(true);
+        setErrorMessage("Failed to fetch latest price data. Using cached data.");
+      } else {
+        // No cache and Convex failed, complete error state
+        setHasError(true);
+        setErrorMessage("Failed to fetch Bitcoin price data.");
+      }
+      return;
     }
-  }, [cachedData]);
-  
-  // Return either the live data or cached data, with appropriate states
+    
+    // Happy path - we have price data from Convex
+    const newPriceData: CachedPriceData = {
+      price: latestPrice.price,
+      volatility: latestPrice.volatility || 0.01, // Default to 1% if not provided
+      timestamp: Date.now(),
+    };
+    
+    setPriceData(newPriceData);
+    setIsStale(false);
+    setHasError(false);
+    setErrorMessage(null);
+    
+    // Write the new data to cache
+    writeToCache(newPriceData);
+  }, [latestPrice]);
+
+  // Check for staleness periodically
+  useEffect(() => {
+    const checkStaleInterval = setInterval(() => {
+      if (priceData.timestamp > 0) {
+        setIsStale(isDataStale(priceData.timestamp));
+      }
+    }, 30000); // Check every 30 seconds
+    
+    return () => clearInterval(checkStaleInterval);
+  }, [priceData.timestamp]);
+
   return {
-    // Data values - prefer live data, fall back to cached
-    currentPrice: priceFetchResult?.price ?? cachedData?.currentPrice ?? 0,
-    priceChangePercent24h: priceFetchResult?.range24h ?? cachedData?.priceChangePercent24h ?? 0,
-    volatility: priceFetchResult?.volatility ?? cachedData?.volatility ?? 0,
-    timestamp: priceFetchResult?.timestamp ?? cachedData?.timestamp ?? 0,
-    sourceCount: priceFetchResult?.sourceCount ?? cachedData?.sourceCount ?? 0,
-    
-    // State indicators
-    isLoading,
-    isStale: isLoading && !!cachedData, // Using cached data while refreshing
+    currentPrice: priceData.price,
+    volatility: priceData.volatility,
+    lastUpdated: priceData.timestamp,
+    isLoading: latestPrice === undefined && !isCacheValid(readFromCache()),
+    isStale,
     hasError,
-    errorMessage: hasError ? "Failed to fetch Bitcoin price data" : null,
-    
-    // Cache status
-    isCached: !priceFetchResult && !!cachedData,
-    cacheAge: cachedData ? Date.now() - cachedData.timestamp : 0,
+    errorMessage,
+    refreshPrice,
   };
 }; 

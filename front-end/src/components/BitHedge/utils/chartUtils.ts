@@ -118,7 +118,8 @@ export const generateChartData = (params: GenerateChartDataParams): ChartDataPoi
 };
 
 // Helper function to calculate provider break-even price
-export const calculateProviderBreakEven = (strikePrice?: number, premiumReceivedPerBtc?: number): number | null => {
-  if (strikePrice === undefined || premiumReceivedPerBtc === undefined) return null;
+// Updated to return undefined instead of null for better prop handling
+export const calculateProviderBreakEven = (strikePrice?: number, premiumReceivedPerBtc?: number): number | undefined => {
+  if (strikePrice === undefined || premiumReceivedPerBtc === undefined) return undefined;
   return strikePrice - premiumReceivedPerBtc;
 } 

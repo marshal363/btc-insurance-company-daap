@@ -1,13 +1,11 @@
 "use client";
 
 import { useState } from 'react';
-import { Box, Container, GridItem, VStack } from "@chakra-ui/react";
+import { Box, Container } from "@chakra-ui/react";
 import BitHedgeHeader from "@/components/BitHedge/BitHedgeHeader";
 import BitcoinPriceCard from "@/components/BitHedge/BitcoinPriceCard";
 import PremiumCalculatorTabs from "@/components/BitHedge/PremiumCalculatorTabs";
 import ProtectionParameters from "@/components/BitHedge/ProtectionParameters";
-import ProtectionVisualization from "@/components/BitHedge/ProtectionVisualization";
-import PolicySummary from "@/components/BitHedge/PolicySummary";
 import AdvancedParameters from "@/components/BitHedge/AdvancedParameters";
 import CalculationMethod from "@/components/BitHedge/CalculationMethod";
 import BitHedgeFooter from "@/components/BitHedge/BitHedgeFooter";
@@ -46,14 +44,6 @@ export default function Home() {
           
           <Box mt={8}>
             <AdvancedParameters currentUserRole={currentUserRole} />
-          </Box>
-          
-          <Box mt={8}>
-            <ProtectionVisualization />
-          </Box>
-          
-          <Box mt={8}>
-            <PolicySummary />
           </Box>
           
           <Box mt={8}>

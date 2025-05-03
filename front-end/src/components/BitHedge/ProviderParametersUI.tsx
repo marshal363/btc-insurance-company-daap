@@ -1,6 +1,6 @@
 "use client"; // Assuming client component based on usage of hooks
 
-import React from "react"; // Import React
+import React, { useEffect } from "react"; // Import React and useEffect
 import {
   Box,
   Flex,
@@ -17,6 +17,7 @@ import {
   Grid,
   GridItem,
   Spinner,
+  Badge, // Import Badge
 } from "@chakra-ui/react";
 import {
   IoInformationCircle,
@@ -29,11 +30,22 @@ import { useProviderContext } from "@/contexts/ProviderContext";
 import type { ProviderTier } from '@/types';
 import { useBitcoinPrice } from "@/hooks/useBitcoinPrice";
 import { formatUSD, formatBTC, formatPercent } from "@/utils/formatters";
+import { estimateProviderYield } from "@/utils/clientEstimation"; // Import estimation util
+import { useProviderQuote } from "@/hooks/useProviderQuote"; // Import quote hook
+import { useDebounce } from "@/hooks/useDebounce"; // Import debounce hook
 
 // --- Provider Specific UI Component --- 
 const ProviderParametersUI = () => {
   // Use the ProviderContext
-  const { inputs, updateProviderInputs, validationErrors } = useProviderContext();
+  const { 
+    inputs, 
+    updateProviderInputs, 
+    validationErrors,
+    estimatedResult, // Add state for estimated result
+    setEstimatedResult, // Add setter
+    accurateQuote, // Add state for accurate quote
+    setAccurateQuote // Add setter
+  } = useProviderContext();
   
   // Extract values from inputs
   const { riskRewardTier, capitalCommitment, incomePeriod } = inputs;
@@ -48,7 +60,18 @@ const ProviderParametersUI = () => {
     isStale: isPriceStale 
   } = useBitcoinPrice();
   
-  // Mock wallet balance - this should be replaced with actual wallet balance later
+  // Use debounce hook for inputs
+  const debouncedInputs = useDebounce(inputs, 500);
+  
+  // Use the Convex quote hook for accurate yield calculation
+  const {
+    quote: accurateQuoteData,
+    isLoading: isQuoteLoading,
+    error: quoteError,
+    fetchQuote,
+  } = useProviderQuote();
+  
+  // Mock wallet balance - replace later
   const walletBalanceSTX = 1000;
   
   // Calculate USD values using real BTC price
@@ -57,6 +80,64 @@ const ProviderParametersUI = () => {
     : 0;
   
   const walletBalanceUSD = walletBalanceSTX * currentPrice;
+
+  // --- Client-side Estimation Effect ---
+  useEffect(() => {
+    if (
+      currentPrice > 0 && 
+      volatility > 0 && 
+      capitalCommitment > 0 && // Use capitalCommitment from context
+      incomePeriod > 0 &&
+      riskRewardTier &&
+      !isPriceLoading
+    ) {
+      const commitmentUSD = capitalCommitment * currentPrice; // Calculate USD value for estimation
+      if (commitmentUSD > 0) {
+        const estimationResult = estimateProviderYield({
+          commitmentAmountUSD: commitmentUSD,
+          selectedTier: riskRewardTier,
+          selectedPeriodDays: incomePeriod,
+          volatility,
+          currentPrice,
+        });
+        
+        if (estimationResult) {
+          setEstimatedResult(estimationResult);
+        }
+      }
+    }
+  }, [currentPrice, volatility, capitalCommitment, incomePeriod, riskRewardTier, isPriceLoading, setEstimatedResult]);
+
+  // --- Debounced Convex Quote Effect ---
+  useEffect(() => {
+    const debouncedCommitment = debouncedInputs.capitalCommitment;
+    const debouncedTier = debouncedInputs.riskRewardTier;
+    const debouncedPeriod = debouncedInputs.incomePeriod;
+    
+    if (
+      currentPrice > 0 && 
+      !isPriceLoading && 
+      debouncedCommitment > 0 &&
+      debouncedTier &&
+      debouncedPeriod > 0
+    ) {
+      const commitmentUSD = debouncedCommitment * currentPrice; // Calculate USD value for quote fetch
+      if (commitmentUSD > 0) {
+        fetchQuote({
+          commitmentAmountUSD: commitmentUSD,
+          selectedTier: debouncedTier,
+          selectedPeriodDays: debouncedPeriod,
+        });
+      }
+    }
+  }, [debouncedInputs, currentPrice, isPriceLoading, fetchQuote]);
+
+  // Update context with accurate quote when it arrives
+  useEffect(() => {
+    if (accurateQuoteData) {
+      setAccurateQuote(accurateQuoteData);
+    }
+  }, [accurateQuoteData, setAccurateQuote]);
 
   // Neumorphic styles
   const neumorphicBg = "#E8EAE9"; 
@@ -128,6 +209,12 @@ const ProviderParametersUI = () => {
     updateProviderInputs({ incomePeriod: period });
   };
 
+  // Determine which yield to display
+  const displayYield = accurateQuote?.calculated?.estimatedYieldUSD ?? estimatedResult?.estimatedYield ?? 0;
+  const displayAPY = accurateQuote?.calculated?.estimatedYieldPercentage ?? estimatedResult?.estimatedAnnualizedYieldPercentage ?? 0;
+  const isEstimatedDisplay = !accurateQuote && estimatedResult !== null && estimatedResult.estimatedYield > 0;
+  const isCalculating = isPriceLoading || isQuoteLoading;
+
   return (
     <Box>
       {/* Price Loading Indicator */}
@@ -154,6 +241,14 @@ const ProviderParametersUI = () => {
         </Flex>
       )}
       
+      {/* Quote Error Message */} 
+      {quoteError && (
+        <Flex justify="center" mb={4} p={2} bg="red.50" borderRadius="md">
+          <Icon as={IoInformationCircle} color="red.500" mr={2} />
+          <Text fontSize="sm" color="red.700">{quoteError}</Text>
+        </Flex>
+      )}
+      
       {/* Current Price Display */}
       <Flex justify="center" mb={4} p={2} bg="gray.50" borderRadius="md">
         <Text fontWeight="medium" fontSize="sm" color="gray.700">
@@ -161,6 +256,25 @@ const ProviderParametersUI = () => {
           {volatility > 0 && ` | Volatility: ${formatPercent(volatility * 100)}`}
         </Text>
       </Flex>
+      
+      {/* NEW: Estimated Yield Display Panel */} 
+      <Box mb={6} p={4} bg="green.50" borderRadius="md" boxShadow="md">
+        <Flex direction="column" align="center">
+          <HStack mb={1}>
+            <Text fontWeight="medium" color="green.800">Estimated Annualized Yield (APY):</Text>
+            {isCalculating && <Spinner size="xs" color="green.500" />}
+          </HStack>
+          <Heading color="green.700" size="lg">{formatPercent(displayAPY || 0)}</Heading>
+          {isEstimatedDisplay && (
+            <Badge colorScheme="yellow" mt={1}>Estimated</Badge>
+          )}
+          {accurateQuote && (
+             <Text fontSize="sm" color="green.600" mt={1}>
+              Yield: ~{formatUSD(displayYield || 0)} over {incomePeriod} days
+            </Text>
+          )}
+        </Flex>
+      </Box>
       
       {/* Risk-Reward Tier Section */}
       <Box mb={8}>

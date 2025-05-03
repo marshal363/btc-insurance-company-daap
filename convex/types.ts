@@ -94,11 +94,29 @@ export interface ProviderYieldComponents {
   capitalEfficiency?: number;
 }
 
-export interface ProviderYieldQuoteResult extends ProviderYieldComponents {
-  inputs: ProviderCalculationInputs;
-  marketDataSnapshot: MarketDataSnapshot;
-  riskParamsSnapshot: RiskParameters;
-}
+/**
+ * Represents the full result of a provider yield quote calculation.
+ */
+export type ProviderYieldQuoteResult = {
+  quoteId: string;
+  timestamp: number;
+  parameters: {
+    commitmentAmountUSD: number;
+    selectedTier: string; 
+    selectedPeriodDays: number;
+  };
+  calculated: {
+    estimatedYieldPercentage: number; // Annualized
+    estimatedYieldUSD: number; // For the period
+    yieldComponents: ProviderYieldComponents;
+    breakEvenPriceUSD?: number; // Provider's break-even BTC price (optional if calculation fails)
+  };
+  marketData: MarketData;
+  riskParametersUsed: RiskParameters;
+  visualizationData: {
+    yieldScenarios?: any[]; // Placeholder for future use
+  };
+};
 
 // Blockchain Types
 export interface BuyerBlockchainParams {

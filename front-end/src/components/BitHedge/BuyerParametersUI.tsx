@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useEffect } from "react";
 import {
   Box,
   Flex,
@@ -19,17 +19,34 @@ import {
   Input,
   VStack,
   Spinner,
+  Badge,
 } from "@chakra-ui/react";
 import { IoInformationCircle } from "react-icons/io5";
 import { useBuyerContext } from "@/contexts/BuyerContext";
 import { useBitcoinPrice } from "@/hooks/useBitcoinPrice";
 import { formatUSD, formatBTC, formatPercent } from "@/utils/formatters";
+import { estimateBuyerPremium } from "@/utils/clientEstimation";
+import { useBuyerQuote } from "@/hooks/useBuyerQuote";
+import { useDebounce } from "@/hooks/useDebounce";
 
 // --- Buyer Specific UI Component --- 
 const BuyerParametersUI = () => {
   // Use BuyerContext
-  const { inputs, updateBuyerInputs, validationErrors } = useBuyerContext();
+  const { 
+    inputs, 
+    updateBuyerInputs, 
+    validationErrors,
+    estimatedResult,
+    setEstimatedResult,
+    accurateQuote,
+    setAccurateQuote
+  } = useBuyerContext();
   const { protectedValuePercentage, protectionAmount, protectionPeriod } = inputs;
+  
+  // Add debugging logs
+  console.log("BuyerParametersUI: Current inputs:", inputs);
+  console.log("BuyerParametersUI: Estimated result:", estimatedResult);
+  console.log("BuyerParametersUI: Accurate quote:", accurateQuote);
   
   // Use Bitcoin price hook
   const { 
@@ -41,12 +58,92 @@ const BuyerParametersUI = () => {
     isStale: isPriceStale 
   } = useBitcoinPrice();
   
+  console.log("BuyerParametersUI: Bitcoin price data:", { 
+    currentPrice, 
+    volatility, 
+    isPriceLoading,
+    hasPriceError 
+  });
+  
+  // Use the debounce hook for inputs
+  const debouncedInputs = useDebounce(inputs, 500);
+  
+  // Use the Convex quote hook for accurate premium calculation
+  const {
+    quote: accurateQuoteData,
+    isLoading: isQuoteLoading,
+    error: quoteError,
+    fetchQuote,
+  } = useBuyerQuote();
+  
   const protectedValueRef = useRef<HTMLDivElement>(null);
   const protectionAmountRef = useRef<HTMLDivElement>(null);
   
   // Calculate USD values using current BTC price
   const protectedValueUSD = (currentPrice * protectedValuePercentage) / 100;
   const protectionAmountUSD = protectionAmount * currentPrice;
+
+  // --- Client-side Estimation Effect ---
+  useEffect(() => {
+    console.log("BuyerParametersUI: Estimation effect running with:", {
+      currentPrice,
+      volatility,
+      protectionAmount,
+      protectionPeriod,
+      isPriceLoading
+    });
+    
+    // Only perform estimation if we have valid inputs and price data
+    if (
+      currentPrice > 0 && 
+      volatility > 0 && 
+      protectionAmount > 0 && 
+      protectionPeriod > 0 &&
+      !isPriceLoading
+    ) {
+      const estimationResult = estimateBuyerPremium({
+        currentPrice,
+        volatility,
+        protectedValuePercentage,
+        protectionAmount,
+        protectionPeriod
+      });
+      
+      // Update estimated premium in context
+      if (estimationResult) {
+        setEstimatedResult(estimationResult);
+      }
+    }
+  }, [currentPrice, volatility, protectedValuePercentage, protectionAmount, protectionPeriod, isPriceLoading, setEstimatedResult]);
+  
+  // --- Debounced Convex Quote Effect ---
+  useEffect(() => {
+    console.log("BuyerParametersUI: Debounced effect running with:", debouncedInputs);
+    
+    // Call Convex only when debounced inputs have settled and we have valid price data
+    if (
+      currentPrice > 0 && 
+      !isPriceLoading && 
+      debouncedInputs.protectionAmount > 0 &&
+      debouncedInputs.protectionPeriod > 0
+    ) {
+      fetchQuote({
+        protectedValuePercentage: debouncedInputs.protectedValuePercentage,
+        protectionAmount: debouncedInputs.protectionAmount,
+        expirationDays: debouncedInputs.protectionPeriod,
+        policyType: "PUT", // Assuming PUT is the default type
+        includeScenarios: true // Optional: Include scenarios for visualization
+      });
+    }
+  }, [debouncedInputs, currentPrice, isPriceLoading, fetchQuote]);
+  
+  // Update context with accurate quote when it arrives
+  useEffect(() => {
+    if (accurateQuoteData) {
+      console.log("BuyerParametersUI: Received accurate quote data:", accurateQuoteData);
+      setAccurateQuote(accurateQuoteData);
+    }
+  }, [accurateQuoteData, setAccurateQuote]);
 
   // Neumorphic styles
   const neumorphicBg = "#E8EAE9"; 
@@ -90,6 +187,11 @@ const BuyerParametersUI = () => {
       default: return "";
     }
   };
+  
+  // Determine which premium to display (accurate or estimated)
+  const displayPremium = accurateQuote?.premium ?? estimatedResult?.estimatedPremium ?? 0;
+  const isEstimatedDisplay = !accurateQuote?.premium && estimatedResult !== null && estimatedResult.estimatedPremium > 0;
+  const isCalculating = isPriceLoading || isQuoteLoading;
 
   return (
     <Box p={0} borderRadius={neumorphicBorderRadius} > 
@@ -109,6 +211,14 @@ const BuyerParametersUI = () => {
         </Flex>
       )}
       
+      {/* Quote Error Message */}
+      {quoteError && (
+        <Flex justify="center" mb={4} p={2} bg="red.50" borderRadius="md">
+          <Icon as={IoInformationCircle} color="red.500" mr={2} />
+          <Text fontSize="sm" color="red.700">{quoteError}</Text>
+        </Flex>
+      )}
+      
       {/* Stale Data Indicator */}
       {isPriceStale && (
         <Flex justify="center" mb={4} p={2} bg="yellow.50" borderRadius="md">
@@ -124,6 +234,25 @@ const BuyerParametersUI = () => {
           {volatility > 0 && ` | Volatility: ${formatPercent(volatility * 100)}`}
         </Text>
       </Flex>
+      
+      {/* Premium Display Panel */}
+      <Box mb={6} p={4} bg="blue.50" borderRadius="md" boxShadow="md">
+        <Flex direction="column" align="center">
+          <HStack mb={1}>
+            <Text fontWeight="medium" color="blue.800">Estimated Premium:</Text>
+            {isCalculating && <Spinner size="xs" color="blue.500" />}
+          </HStack>
+          <Heading color="blue.700" size="lg">{formatUSD(displayPremium || 0)}</Heading>
+          {isEstimatedDisplay && (
+            <Badge colorScheme="yellow" mt={1}>Estimated</Badge>
+          )}
+          {accurateQuote?.premium && (
+            <Text fontSize="sm" color="blue.600" mt={1}>
+              {`${formatPercent(accurateQuote.premiumPercentage || 0)} of protection value`}
+            </Text>
+          )}
+        </Flex>
+      </Box>
 
       {/* Existing Flex container for Protected Value and Protection Amount */}
       <Flex 
@@ -376,6 +505,19 @@ const BuyerParametersUI = () => {
             <Text color="red.500" fontSize="sm" mt={1}>{validationErrors.protectionPeriod}</Text>
           )}
       </Box>
+      
+      {/* Break-even Price (display if available from accurate quote) */}
+      {accurateQuote?.breakEvenPrice && (
+        <Box mt={6} p={4} bg="green.50" borderRadius="md" boxShadow="sm">
+          <Flex direction="column" align="center">
+            <Text fontWeight="medium" color="green.800">Break-even Price:</Text>
+            <Heading color="green.700" size="md">{formatUSD(accurateQuote.breakEvenPrice)}</Heading>
+            <Text fontSize="xs" color="green.600" mt={1}>
+              Price at which your protection has zero net value
+            </Text>
+          </Flex>
+        </Box>
+      )}
     </Box>
   );
 };
