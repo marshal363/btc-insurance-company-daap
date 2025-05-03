@@ -34,19 +34,19 @@ This plan outlines the tasks required to implement the complete premium calculat
 
 **Goal:** Establish domain-specific contexts, essential utilities, and initial data flow between components.
 
-| Task ID      | Description                                                                                               | Est. Hours | Status | Dependencies   | Assignee | Notes                                                    |
-| :----------- | :-------------------------------------------------------------------------------------------------------- | :--------- | :----- | :------------- | :------- | :------------------------------------------------------- |
-| **UI-101**   | Design and implement domain-specific contexts (`BuyerContext`, `ProviderContext`)                         | 6          | ⬜     |                |          | Replaces single `PremiumDataContext`.                    |
-| **UI-102**   | Update `ProtectionParameters` to manage context switching based on `currentUserRole`                      | 3          | ⬜     | UI-101         |          |                                                          |
-| **UI-103**   | Update `BuyerParametersUI` to consume `BuyerContext`                                                      | 5          | ⬜     | UI-101         |          | Migrate parameter state management.                      |
-| **UI-104**   | Update `ProviderParametersUI` to consume `ProviderContext` (already mostly done via props, review needed) | 3          | ⬜     | UI-101         |          | Review prop drilling vs direct context usage.            |
-| **UI-105**   | Create `useBitcoinPrice` hook with robust loading/error handling & caching strategy note                  | 4          | ⬜     |                |          | Ensure consistent price source.                          |
-| **UI-106**   | Implement dynamic USD value calculation in relevant UI components using `useBitcoinPrice`                 | 3          | ⬜     | UI-103, UI-105 |          | E.g., in `BuyerParametersUI`.                            |
-| **UI-107**   | Implement validation logic for parameter inputs (can leverage `zod` or similar)                           | 4          | ⬜     | UI-103, UI-104 |          | Separate validation schemas for buyer/provider.          |
-| **UI-108**   | Create reusable `ValidationError` display component                                                       | 2          | ⬜     | UI-107         |          | Integrate with input validation.                         |
-| **UI-109**   | Create utility functions for formatting monetary values consistently                                      | 2          | ⬜     |                |          |                                                          |
-| **TEST-101** | Create unit tests for validation schemas and formatting utilities                                         | 4          | ⬜     | UI-107, UI-109 |          | Focus on edge cases and different locales if applicable. |
-| **TEST-102** | Basic component tests verifying context consumption and updates                                           | 4          | ⬜     | UI-103, UI-104 |          | Use testing-library and mock providers.                  |
+| Task ID      | Description                                                                                               | Est. Hours | Status | Dependencies   | Assignee | Notes                                                               |
+| :----------- | :-------------------------------------------------------------------------------------------------------- | :--------- | :----- | :------------- | :------- | :------------------------------------------------------------------ |
+| **UI-101**   | Design and implement domain-specific contexts (`BuyerContext`, `ProviderContext`)                         | 6          | 🟢     |                |          | Implemented both contexts with complete state management.           |
+| **UI-102**   | Update `ProtectionParameters` to manage context switching based on `currentUserRole`                      | 3          | 🟢     | UI-101         |          | Updated component to conditionally render the appropriate provider. |
+| **UI-103**   | Update `BuyerParametersUI` to consume `BuyerContext`                                                      | 5          | 🟢     | UI-101         |          | Integrated with context, migrated state management.                 |
+| **UI-104**   | Update `ProviderParametersUI` to consume `ProviderContext` (already mostly done via props, review needed) | 3          | 🟢     | UI-101         |          | Successfully migrated from props to context.                        |
+| **UI-105**   | Create `useBitcoinPrice` hook with robust loading/error handling & caching strategy note                  | 4          | 🟢     |                |          | Implemented hook with localStorage caching and error handling.      |
+| **UI-106**   | Implement dynamic USD value calculation in relevant UI components using `useBitcoinPrice`                 | 3          | 🟢     | UI-103, UI-105 |          | Created useUsdValueCalculation hook that leverages useBitcoinPrice. |
+| **UI-107**   | Implement validation logic for parameter inputs (can leverage `zod` or similar)                           | 4          | 🟢     | UI-103, UI-104 |          | Created Zod schemas for buyer and provider parameters.              |
+| **UI-108**   | Create reusable `ValidationError` display component                                                       | 2          | 🟢     | UI-107         |          | Built flexible component that handles field and form-level errors.  |
+| **UI-109**   | Create utility functions for formatting monetary values consistently                                      | 2          | 🟢     |                |          | Implemented formatters for BTC, USD, percentages, and durations.    |
+| **TEST-101** | Create unit tests for validation schemas and formatting utilities                                         | 4          | 🟢     | UI-107, UI-109 |          | Created comprehensive test suites for formatters and schemas.       |
+| **TEST-102** | Basic component tests verifying context consumption and updates                                           | 4          | ⬜     | UI-103, UI-104 |          | Use testing-library and mock providers.                             |
 
 **Phase 1 Deliverables:**
 
@@ -60,22 +60,29 @@ This plan outlines the tasks required to implement the complete premium calculat
 
 **Goal:** Implement the Convex backend services for premium/yield calculation, defining clear domain services.
 
-| Task ID      | Description                                                                                | Est. Hours | Status | Dependencies     | Assignee | Notes                                                           |
-| :----------- | :----------------------------------------------------------------------------------------- | :--------- | :----- | :--------------- | :------- | :-------------------------------------------------------------- |
-| **CVX-201**  | Define Convex schema: `premiumCalculations`, `yieldCalculations`, `riskParameters`         | 4          | ⬜     |                  |          | As per `convex-schema-design.md`.                               |
-| **CVX-202**  | Define `PremiumCalculationService` (Conceptual TS interface/class structure)               | 2          | ⬜     |                  |          | Encapsulate calculation logic.                                  |
-| **CVX-203**  | Implement Black-Scholes model within `PremiumCalculationService`                           | 8          | ⬜     | CVX-202          |          |                                                                 |
-| **CVX-204**  | Implement provider yield calculation model within a dedicated service/module               | 6          | ⬜     |                  |          |                                                                 |
-| **CVX-205**  | Create `calculateBuyerPremium` **internal query** used by the service                      | 4          | ⬜     | CVX-203          |          |                                                                 |
-| **CVX-206**  | Create `calculateProviderYield` **internal query** used by the service                     | 4          | ⬜     | CVX-204          |          |                                                                 |
-| **CVX-207**  | Create public-facing `getBuyerPremiumQuote` query (calls service)                          | 3          | ⬜     | CVX-205          |          | Exposed to the frontend hook.                                   |
-| **CVX-208**  | Create public-facing `getProviderYieldQuote` query (calls service)                         | 3          | ⬜     | CVX-206          |          | Exposed to the frontend hook.                                   |
-| **CVX-209**  | Implement risk parameter fetching within services (use hardcoded defaults initially)       | 3          | ⬜     | CVX-201          |          |                                                                 |
-| **CVX-210**  | Integrate Oracle volatility data into calculation services                                 | 4          | ⬜     | CVX-203, CVX-204 |          | Fetch volatility based on duration.                             |
-| **CVX-211**  | Implement helper function to generate price scenarios for visualization                    | 6          | ⬜     | CVX-203          |          | Likely part of the calculation service.                         |
-| **CVX-212**  | Create function to calculate break-even prices for both buyer and provider                 | 4          | ⬜     | CVX-203, CVX-204 |          | Likely part of the calculation service.                         |
-| **TEST-201** | Write unit tests for calculation models (property-based testing recommended)               | 8          | ⬜     | CVX-203, CVX-204 |          | Test models in isolation.                                       |
-| **TEST-202** | Test public-facing quote query functions (`getBuyerPremiumQuote`, `getProviderYieldQuote`) | 5          | ⬜     | CVX-207, CVX-208 |          | Test integration with internal services and parameter fetching. |
+| Task ID      | Description                                                                                | Est. Hours | Status | Dependencies     | Assignee | Notes                                                                   |
+| :----------- | :----------------------------------------------------------------------------------------- | :--------- | :----- | :--------------- | :------- | :---------------------------------------------------------------------- |
+| **CVX-201**  | Define Convex schema: `premiumCalculations`, `yieldCalculations`, `riskParameters`         | 4          | 🟢     |                  |          | As per `convex-schema-design.md`. Implemented in `convex/schema.ts`.    |
+| **CVX-202**  | Define `PremiumCalculationService` (Conceptual TS interface/class structure)               | 2          | 🟢     |                  |          | Implemented as functions in `convex/premium.ts`.                        |
+| **CVX-203**  | Implement Black-Scholes model within `PremiumCalculationService`                           | 8          | 🟢     | CVX-202          |          | Implemented in `convex/premium.ts`.                                     |
+| **CVX-204**  | Implement provider yield calculation model within a dedicated service/module               | 6          | 🟢     |                  |          | Implemented in `convex/premium.ts`.                                     |
+| **CVX-205**  | Create `calculateBuyerPremium` **internal query** used by the service                      | 4          | 🟢     | CVX-203          |          | Implemented as internal helper functions in `convex/premium.ts`.        |
+| **CVX-206**  | Create `calculateProviderYield` **internal query** used by the service                     | 4          | 🟢     | CVX-204          |          | Implemented as internal helper functions in `convex/premium.ts`.        |
+| **CVX-207**  | Create public-facing `getBuyerPremiumQuote` query (calls service)                          | 3          | 🟢     | CVX-205          |          | Exposed to the frontend hook. Implemented in `convex/premium.ts`.       |
+| **CVX-208**  | Create public-facing `getProviderYieldQuote` query (calls service)                         | 3          | 🟢     | CVX-206          |          | Exposed to the frontend hook. Implemented in `convex/premium.ts`.       |
+| **CVX-209**  | Implement risk parameter fetching within services (use hardcoded defaults initially)       | 3          | 🟢     | CVX-201          |          | Implemented with fallback defaults in `convex/premium.ts`.              |
+| **CVX-210**  | Integrate Oracle volatility data into calculation services                                 | 4          | 🟢     | CVX-203, CVX-204 |          | Fetch volatility based on duration. Implemented in `convex/premium.ts`. |
+| **CVX-211**  | Implement helper function to generate price scenarios for visualization                    | 6          | 🟢     | CVX-203          |          | Implemented in `convex/premium.ts`.                                     |
+| **CVX-212**  | Create function to calculate break-even prices for both buyer and provider                 | 4          | 🟢     | CVX-203, CVX-204 |          | Implemented in `convex/premium.ts`.                                     |
+| **TEST-201** | Write unit tests for calculation models (property-based testing recommended)               | 8          | ⬜     | CVX-203, CVX-204 |          | Test models in isolation.                                               |
+| **TEST-202** | Test public-facing quote query functions (`getBuyerPremiumQuote`, `getProviderYieldQuote`) | 5          | ⬜     | CVX-207, CVX-208 |          | Test integration with internal services and parameter fetching.         |
+
+**Phase 2 Architectural Notes (Post-Implementation Review):**
+
+- **Architecture:** The implemented Convex backend (`premium.ts`, `quotes.ts`, `schema.ts`, `types.ts`, `blockchainPreparation.ts`) establishes a robust, service-oriented architecture. Key components include a multi-source Price Oracle (`prices.ts`), Risk Parameter management (`riskParameters` table, `premium.ts` helpers), a dedicated Premium Calculation Service (`premium.ts` functions), Quote Management (`quotes.ts`), and Blockchain Preparation logic (`blockchainPreparation.ts`).
+- **`premium.ts` vs. `options.ts`:** `premium.ts` acts as the modern service layer for detailed quote generation, integrating risk parameters and market data, designed to work with `quotes.ts` for persistence. `options.ts` appears to be a legacy module containing simpler, embedded premium calculation tied directly to a `contracts` table; it lacks the features and separation of concerns found in `premium.ts`.
+- **Strengths:** Clear Separation of Concerns, effective use of Convex primitives (internal/public functions, scheduled actions), improved data modeling with quote snapshots (`quotes` table), good modularity, and enhanced type safety via `types.ts`.
+- **Areas for Refinement:** The primary concern is the redundancy between `premium.ts` and `options.ts` calculation logic, suggesting `options.ts` should potentially be deprecated/removed. Further enhancements could include more flexible risk parameter fetching, more robust error handling across all modules, implementing the planned testing strategy (TEST-201, TEST-202), and potentially centralizing configuration.
 
 **Phase 2 Deliverables:**
 
@@ -164,175 +171,4 @@ useEffect(() => {
 
 ### Bitcoin Price Synchronization
 
-- `useBitcoinPrice` hook must be robust, handling loading states, errors, and potentially providing volatility data directly.
-
-```typescript
-// src/hooks/useBitcoinPrice.ts - Enhanced Concept
-export const useBitcoinPrice = () => {
-  const aggregatedData = useQuery(api.prices.getLatestPrice);
-  const error = aggregatedData === null; // Or more specific error handling
-
-  return {
-    currentPrice: aggregatedData?.price ?? 0,
-    volatility: aggregatedData?.volatility ?? 0, // Provide volatility
-    isLoading: aggregatedData === undefined,
-    error: error ? "Failed to load price data" : null,
-    lastUpdated: aggregatedData?.timestamp ?? 0,
-  };
-};
-```
-
-### Premium Calculation API
-
-- Public queries (`getBuyerPremiumQuote`, `getProviderYieldQuote`) provide the primary interface.
-- Internal services (`PremiumCalculationService`) encapsulate complex logic.
-- Return types should be well-defined (e.g., `PremiumCalculationResult`, `YieldCalculationResult`).
-
-```typescript
-// Convex query function type definition for Buyer Quote
-export type PremiumCalculationResult = // ... as defined before
-```
-
-### Quote to Blockchain Preparation
-
-- `BlockchainInteractionService` acts as the boundary.
-- `prepareQuoteForBlockchain` handles the crucial data transformation.
-- Define clear DTOs (Data Transfer Objects) for blockchain function arguments.
-
-```typescript
-// DTO Example
-export interface PolicyCreationParamsClarity {
-  protectedValueMicroStx: bigint;
-  protectedAmountSats: bigint;
-  expirationBlocks: bigint;
-  premiumMicroStx: bigint;
-  policyType: string; // Clarity representation if needed
-}
-
-// Inside BlockchainInteractionService
-async preparePolicyCreationTx(quoteId: Id<"quotes">): Promise<PolicyCreationParamsClarity> {
-  const preparedData = await runQuery(internal.blockchain.prepareQuoteForBlockchain, { quoteId });
-  // Further conversion to Clarity values (uintCV, stringAsciiCV etc.) happens here or just before tx submission
-  return { /* Converted Clarity-compatible values */ };
-}
-```
-
-## 5. Entity Relationships
-
-_(Data Flow Diagram updated to reflect context split and quote saving)_
-
-```mermaid
-graph TD
-    subgraph "Frontend UI"
-        BTC["BitcoinPriceCard"]
-        BPI["BuyerParametersUI"]
-        PPI["ProviderParametersUI"]
-        PP["ProtectionParameters"]
-        BCtx["BuyerContext"]
-        PCtx["ProviderContext"]
-        PSM["PolicySummary"]
-        ISM["IncomeSummary"]
-        SQList["(Optional) SavedQuotesList"]
-    end
-
-    subgraph "Convex Backend"
-        PCS["PremiumCalculationService"]
-        YCS["YieldCalculationService"]
-        BIS["BlockchainInteractionService"]
-        GCPQ["getBuyerPremiumQuote"]
-        GPYQ["getProviderYieldQuote"]
-        SQ["saveQuote"]
-        GQ["getQuoteById"]
-        GUQ["getUserQuotes"]
-        PQFB["prepareQuoteForBlockchain (Internal)"]
-    end
-
-    subgraph "Blockchain Contracts"
-        PR["PolicyRegistry"]
-        LP["LiquidityPool"]
-    end
-
-    BTC -->|"Current Price"| BCtx
-    BTC -->|"Current Price"| PCtx
-
-    PP --Manages--> BCtx
-    PP --Manages--> PCtx
-
-    BPI -->|"Buyer Params Update"| BCtx
-    PPI -->|"Provider Params Update"| PCtx
-
-    BCtx -->|"State"| BPI
-    PCtx -->|"State"| PPI
-
-    BCtx -->|"Request Buyer Quote"| GCPQ
-    PCtx -->|"Request Provider Quote"| GPYQ
-
-    GCPQ -->|"Use Service"| PCS
-    GPYQ -->|"Use Service"| YCS
-
-    PCS -->|"Calculated Premium"| GCPQ
-    YCS -->|"Calculated Yield"| GPYQ
-
-    GCPQ -->|"Quote Results"| BCtx
-    GPYQ -->|"Quote Results"| PCtx
-
-    BCtx -->|"Buyer Quote"| PSM
-    PCtx -->|"Provider Quote"| ISM
-
-    PSM -->|"Save Quote Action"| SQ
-    ISM -->|"Save Quote Action"| SQ
-
-    SQ -->|"Saved Quote ID"| PSM
-    SQ -->|"Saved Quote ID"| ISM
-
-    SQList -->|"Fetch Quotes"| GUQ
-    PSM -->|"Fetch Specific Quote"| GQ
-
-    GQ -->|"Quote Data"| BIS(prepareQuoteForBlockchain)
-
-    BIS(prepareQuoteForBlockchain) -..->|"Policy DTO (Future)"| PR
-    BIS(prepareQuoteForBlockchain) -..->|"Liquidity DTO (Future)"| LP
-```
-
-## 6. Implementation Strategy
-
-_(Strategy remains largely the same, but with emphasis on context separation and client-side estimation)_
-
-1.  **Context First:** Implement `BuyerContext` and `ProviderContext`.
-2.  **UI Integration:** Connect components to the new contexts. Implement `useBitcoinPrice` hook.
-3.  **Convex Services:** Build the core calculation logic within services.
-4.  **Client-Side Estimation:** Add lightweight estimation logic to the UI for responsiveness.
-5.  **Convex Queries:** Create public-facing Convex queries for accurate quotes.
-6.  **UI-Convex Connection:** Integrate UI with debounced calls to Convex queries. Implement loading/error states.
-7.  **Quote Persistence:** Add Convex schema and functions for saving/retrieving quotes.
-8.  **Blockchain Prep:** Design the interface and preparation functions.
-
-## 7. Testing Strategy
-
-_(Enhanced based on review)_
-
-1.  **Model Accuracy:** Use property-based testing for calculation models (CVX-203, CVX-204) to cover a wide range of inputs.
-2.  **Component Integration:** Use mock context providers and mock Convex client (`@testing-library/react`) to test UI components' interaction with context and hooks.
-3.  **Convex Function Testing:** Write Convex-specific unit/integration tests for queries and mutations (`convex/server` testing utilities).
-4.  **End-to-End (Manual):** Perform thorough manual testing covering different user flows, parameter combinations, loading states, and error conditions.
-5.  **Blockchain Prep Testing:** Unit test the `prepareQuoteForBlockchain` function rigorously to ensure correct data transformations.
-
-## 8. Dependencies and Risks
-
-_(Risks remain similar, added context complexity)_
-
-### Key Risks
-
-1.  **Calculation Complexity:** Addressed by thorough model testing (TEST-201).
-2.  **Performance Issues:** Mitigated by client-side estimation (UI-301) and debouncing (UI-304).
-3.  **Data Synchronization:** Addressed by clear context boundaries (UI-101) and the `useBitcoinPrice` hook (UI-105).
-4.  **Context Complexity:** Splitting context adds complexity; requires careful state management design (UI-101, UI-102).
-5.  **Error Handling:** Requires dedicated tasks (UI-309) and robust implementation in hooks/UI.
-
-## 9. Future Blockchain Integration
-
-_(No changes needed here, acknowledges the preparation phase)_
-
-## 10. Conclusion
-
-This updated development plan incorporates architectural feedback, emphasizing domain separation, a hybrid calculation strategy for better UX, refined data schemas, and clearer interfaces for future blockchain integration. This provides a more robust and scalable foundation for the BitHedge premium calculation and quote system.
+- `

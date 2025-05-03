@@ -16,6 +16,7 @@ import {
   Button,
   Grid,
   GridItem,
+  Spinner,
 } from "@chakra-ui/react";
 import {
   IoInformationCircle,
@@ -24,35 +25,39 @@ import {
   IoTrendingUpOutline,
   IoWalletOutline,
 } from "react-icons/io5";
-
-// Define Types needed within this component
-type ProviderTier = 'conservative' | 'balanced' | 'aggressive';
-
-// Define Props for the component
-interface ProviderParametersUIProps {
-  selectedTier: ProviderTier;
-  commitmentAmount: string;
-  commitmentAmountUSD: number;
-  selectedPeriod: number;
-  walletBalanceSTX: number;
-  handleTierSelect: (tier: ProviderTier) => void;
-  handleCommitmentChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  handleQuickSelect: (percentage: number) => void;
-  handlePeriodSelect: (period: number) => void;
-}
+import { useProviderContext } from "@/contexts/ProviderContext";
+import type { ProviderTier } from '@/types';
+import { useBitcoinPrice } from "@/hooks/useBitcoinPrice";
+import { formatUSD, formatBTC, formatPercent } from "@/utils/formatters";
 
 // --- Provider Specific UI Component --- 
-const ProviderParametersUI = ({ 
-  selectedTier,
-  commitmentAmount,
-  commitmentAmountUSD,
-  selectedPeriod,
-  walletBalanceSTX,
-  handleTierSelect,
-  handleCommitmentChange,
-  handleQuickSelect,
-  handlePeriodSelect,
-}: ProviderParametersUIProps) => {
+const ProviderParametersUI = () => {
+  // Use the ProviderContext
+  const { inputs, updateProviderInputs, validationErrors } = useProviderContext();
+  
+  // Extract values from inputs
+  const { riskRewardTier, capitalCommitment, incomePeriod } = inputs;
+  
+  // Use Bitcoin price hook
+  const { 
+    currentPrice,
+    volatility,
+    isLoading: isPriceLoading,
+    hasError: hasPriceError,
+    errorMessage: priceErrorMessage,
+    isStale: isPriceStale 
+  } = useBitcoinPrice();
+  
+  // Mock wallet balance - this should be replaced with actual wallet balance later
+  const walletBalanceSTX = 1000;
+  
+  // Calculate USD values using real BTC price
+  const capitalCommitmentUSD = typeof capitalCommitment === 'number' 
+    ? capitalCommitment * currentPrice 
+    : 0;
+  
+  const walletBalanceUSD = walletBalanceSTX * currentPrice;
+
   // Neumorphic styles
   const neumorphicBg = "#E8EAE9"; 
   const neumorphicShadowLight = "-10px -10px 20px rgba(255, 255, 255, 0.8)"; 
@@ -98,9 +103,65 @@ const ProviderParametersUI = ({
       default: return "";
     }
   };
+  
+  // Handler functions
+  const handleTierSelect = (tier: ProviderTier) => {
+    updateProviderInputs({ riskRewardTier: tier });
+  };
+
+  const handleCommitmentChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    if (/^\d*\.?\d*$/.test(value)) { 
+      const numericValue = parseFloat(value);
+      // Update only the commitment amount in context
+      // The USD value is calculated in the render
+      updateProviderInputs({ capitalCommitment: isNaN(numericValue) ? 0 : numericValue });
+    }
+  };
+
+  const handleQuickSelect = (percentage: number) => {
+    const amount = walletBalanceSTX * (percentage / 100);
+    updateProviderInputs({ capitalCommitment: amount });
+  };
+
+  const handlePeriodSelect = (period: number) => {
+    updateProviderInputs({ incomePeriod: period });
+  };
 
   return (
     <Box>
+      {/* Price Loading Indicator */}
+      {isPriceLoading && !isPriceStale && (
+        <Flex justify="center" mb={4} p={2} bg="blue.50" borderRadius="md">
+          <Spinner size="sm" color="blue.500" mr={2} />
+          <Text fontSize="sm" color="blue.700">Loading Bitcoin price data...</Text>
+        </Flex>
+      )}
+      
+      {/* Price Error Message */}
+      {hasPriceError && (
+        <Flex justify="center" mb={4} p={2} bg="red.50" borderRadius="md">
+          <Icon as={IoInformationCircle} color="red.500" mr={2} />
+          <Text fontSize="sm" color="red.700">{priceErrorMessage || "Error loading price data"}</Text>
+        </Flex>
+      )}
+      
+      {/* Stale Data Indicator */}
+      {isPriceStale && (
+        <Flex justify="center" mb={4} p={2} bg="yellow.50" borderRadius="md">
+          <Icon as={IoInformationCircle} color="yellow.500" mr={2} />
+          <Text fontSize="sm" color="yellow.700">Using cached price data while refreshing...</Text>
+        </Flex>
+      )}
+      
+      {/* Current Price Display */}
+      <Flex justify="center" mb={4} p={2} bg="gray.50" borderRadius="md">
+        <Text fontWeight="medium" fontSize="sm" color="gray.700">
+          Current BTC Price: {formatUSD(currentPrice)} 
+          {volatility > 0 && ` | Volatility: ${formatPercent(volatility * 100)}`}
+        </Text>
+      </Flex>
+      
       {/* Risk-Reward Tier Section */}
       <Box mb={8}>
          <Flex align="center" mb={4}>
@@ -115,7 +176,7 @@ const ProviderParametersUI = ({
           </Flex>
         <SimpleGrid columns={{ base: 1, md: 3 }} spacing={4}>
           {tiers.map((tier) => {
-            const isSelected = selectedTier === tier.id;
+            const isSelected = riskRewardTier === tier.id;
             return (
               <Box
                 key={tier.id}
@@ -162,7 +223,7 @@ const ProviderParametersUI = ({
             <Heading as="h3" fontSize="lg" fontWeight="bold" mr={1} color="gray.800">
               How Much Capital Will You Commit?
             </Heading>
-            <Tooltip hasArrow label="Enter the amount of STX you wish to commit to this income strategy.">
+            <Tooltip hasArrow label="Enter the amount of BTC you wish to commit to this income strategy.">
               <Box display="inline">
                 <Icon as={IoInformationCircle} color="blue.500" />
               </Box>
@@ -186,10 +247,10 @@ const ProviderParametersUI = ({
             display="flex"
             alignItems="center"
           >
-             <Text fontWeight="bold" color="purple.500" mr={2}>STX</Text> 
+             <Text fontWeight="bold" color="purple.500" mr={2}>BTC</Text> 
              <Input
                 variant="unstyled"
-                value={commitmentAmount}
+                value={capitalCommitment === 0 ? '' : capitalCommitment.toString()}
                 onChange={handleCommitmentChange}
                 textAlign="right"
                 fontWeight="bold"
@@ -198,173 +259,118 @@ const ProviderParametersUI = ({
                 color="gray.800"
                 _placeholder={{ color: "gray.500" }}
                 flex="1"
-                mr={2}
-              />
-              {/* USD Value Display */}
-              <Text fontSize="sm" color="gray.600" whiteSpace="nowrap">
-                 ≈ ${commitmentAmountUSD.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </Text>
+             />
           </Box>
-          
-          {/* Wallet Balance */}
-          <Box 
+
+          {/* USD Value */}
+          <Flex 
             flex="1" 
-            p={3} 
-            bg="rgba(255, 255, 255, 0.5)"
+            bg={neumorphicBg} 
+            py={2} 
+            px={4} 
             borderRadius={neumorphicBorderRadius} 
-            boxShadow="inner" 
-            textAlign="center"
+            boxShadow={neumorphicBoxShadow}
+            align="center"
+            justify="center"
+            minH="60px"
           >
-            <Text fontSize="xs" color="gray.600" mb={1}>Available Balance</Text>
-            <Text fontWeight="bold" color="gray.800">{walletBalanceSTX.toLocaleString()} STX</Text>
-          </Box>
+             <VStack>
+               <Text color="gray.500" fontSize="xs">Value in USD</Text>
+               <Text color="gray.700" fontWeight="bold">
+                 {formatUSD(capitalCommitmentUSD)}
+               </Text>
+             </VStack>
+          </Flex>
         </Flex>
 
-        {/* Quick Select Buttons */}
-        <HStack spacing={3}>
-          {[25, 50, 75, 100].map((percentage) => {
-            const amountForButton = walletBalanceSTX * (percentage / 100);
-            const isSelected = parseFloat(commitmentAmount) === amountForButton && commitmentAmount !== "";
-            return (
-              <Button
-                key={percentage}
-                variant="outline"
-                size="sm"
-                flex="1"
-                onClick={() => handleQuickSelect(percentage)}
-                isDisabled={amountForButton > walletBalanceSTX}
-                bg={isSelected ? "blue.100" : neumorphicBg}
-                borderColor={isSelected ? "blue.400" : "gray.300"}
-                color={isSelected ? "blue.700" : "gray.700"}
-                fontWeight={isSelected ? "bold" : "normal"}
-                boxShadow={neumorphicBoxShadow}
-                _hover={{
-                  bg: isSelected ? "blue.100" : "gray.100",
-                  borderColor: isSelected ? "blue.400" : "gray.400",
-                  boxShadow: `${neumorphicShadowLight.replace("10px", "12px").replace("20px", "24px")}, ${neumorphicShadowDark.replace("10px", "12px").replace("20px", "24px")}`,
-                }}
-                _active={{
-                  bg: isSelected ? "blue.200" : "gray.200",
-                  boxShadow: neumorphicInnerBoxShadow
-                }}
-              >
-                {percentage}%
-              </Button>
-            );
-          })}
+        {/* Wallet Balance */}
+        <Flex align="center" justify="space-between" mb={4}>
+          <Flex align="center">
+            <Icon as={IoWalletOutline} color="green.500" mr={1} />
+            <Text fontSize="sm" color="gray.600">Available: <Text as="span" fontWeight="bold">{formatBTC(walletBalanceSTX, { includeSuffix: false })} STX</Text></Text>
+          </Flex>
+          <Text fontSize="sm" color="gray.400">≈ {formatUSD(walletBalanceUSD)}</Text>
+        </Flex>
+
+        {/* Quick Percentages */}
+        <HStack spacing={2} mb={4}>
+          {[25, 50, 75, 100].map(percent => (
+            <Button
+              key={percent}
+              variant="outline"
+              size="sm"
+              onClick={() => handleQuickSelect(percent)}
+              borderRadius="md"
+              colorScheme="purple"
+              color="purple.500"
+              _hover={{ bg: 'purple.50' }}
+            >
+              {percent}%
+            </Button>
+          ))}
         </HStack>
         
-        {/* Yield Projection Placeholder */}
-        <Box mt={4} p={3} bg="rgba(255, 255, 255, 0.5)" borderRadius="lg" boxShadow="inner">
-          <Flex gap={2} justify="center" align="center">
-            <Icon as={IoWalletOutline} color="blue.600" />
-            <Text fontSize="sm" color="blue.800">
-              Estimated Yield: <Text as="span" fontWeight="bold">(Placeholder - Connect to Calculation)</Text>
-            </Text>
-          </Flex>
-        </Box>
+        {/* Validation error display */}
+        {validationErrors.capitalCommitment && (
+          <Text color="red.500" fontSize="sm" mt={1}>{validationErrors.capitalCommitment}</Text>
+        )}
       </Box>
-      
+
       {/* Income Period Section */}
-       <Box mt={8}>
-          <Flex align="center" justify="space-between" mb={4}>
-            <Flex align="center">
-              <Heading as="h3" fontSize="lg" fontWeight="bold" mr={1} color="gray.800">
-                Select Your Income Period
-              </Heading>
-              <Tooltip hasArrow label="The duration for which your capital will be committed to generate income.">
-                <Box display="inline">
-                  <Icon as={IoInformationCircle} color="blue.500" />
-                </Box>
-              </Tooltip>
-            </Flex>
-            <Box>
-              <Heading as="h4" fontSize="xl" fontWeight="semibold" textAlign="right" color="gray.800">
-                {selectedPeriod} days
-              </Heading>
-              <Text fontSize="sm" color="gray.600" textAlign="right">
-                 {getPeriodDescription(selectedPeriod)}
-              </Text>
+      <Box mb={6}>
+        <Flex align="center" mb={4}>
+          <Heading as="h3" fontSize="lg" fontWeight="bold" mr={1} color="gray.800">
+            Select Your Income Period
+          </Heading>
+          <Tooltip hasArrow label="Choose how long you want to commit your capital. Longer periods may offer different yield profiles.">
+            <Box display="inline">
+              <Icon as={IoInformationCircle} color="blue.500" />
             </Box>
-          </Flex>
+          </Tooltip>
+        </Flex>
           
-          <Grid 
-            templateColumns={{ base: "1fr", md: "repeat(4, 1fr)" }} 
-            gap={4}
-            mt={4}
-          >
-            {[30, 90, 180, 360].map((period) => {
-              const isSelected = selectedPeriod === period;
-              return (
-                <GridItem key={period} h="100%">
-                  <Box
-                    h="100%"
-                    p={4}
-                    borderWidth="1px"
-                    borderRadius="lg"
-                    cursor="pointer"
-                    onClick={() => handlePeriodSelect(period)}
-                    transition="all 0.2s ease-in-out"
-                    bg={isSelected ? "blue.600" : "rgba(255, 255, 255, 0.5)"}
-                    bgGradient={isSelected ? "linear(to-b, blue.600, blue.700)" : undefined}
-                    color={isSelected ? "white" : "gray.800"}
-                    borderColor={isSelected ? "blue.600" : "gray.300"}
-                    shadow={isSelected ? "md" : "inner"}
-                    _hover={{
-                      shadow: "md",
-                      borderColor: isSelected ? "blue.700" : "gray.400",
-                      bg: isSelected ? undefined : "rgba(255, 255, 255, 0.7)",
-                      bgGradient: isSelected ? "linear(to-b, blue.700, blue.800)" : undefined,
-                    }}
-                  >
-                    <VStack spacing={2} align="center" h="100%" justify="center"> 
-                      <Heading 
-                        as="h4" 
-                        fontSize="3xl" 
-                        fontWeight="bold" 
-                        mb={0}
-                        color={isSelected ? "white" : "blue.600"}
-                      >
-                        {period}
-                      </Heading>
-                      <Text 
-                        fontSize="md" 
-                        color={isSelected ? "blue.100" : "gray.600"}
-                      >
-                        days
-                      </Text>
-                      <Divider 
-                        my={2} 
-                        borderColor={isSelected ? "blue.500" : "gray.300"}
-                        opacity={isSelected ? 0.5 : 1}
-                      />
-                      <Text 
-                        fontSize="sm" 
-                        fontWeight="medium"
-                        color={isSelected ? "blue.100" : "gray.700"}
-                        textAlign="center"
-                      >
-                        {getPeriodDescription(period)}
-                      </Text>
-                    </VStack>
-                  </Box>
-                </GridItem>
-              );
-            })}
-          </Grid>
-          
-          {/* Provider Specific Info Box */}
-          <Box mt={4} p={3} bg="rgba(255, 255, 255, 0.5)" borderRadius="lg" boxShadow="inner">
-            <Flex gap={2}>
-              <Icon as={IoInformationCircle} color="blue.500" mt={0.5} />
-              <Text fontSize="sm" color="blue.800">
-                Longer commitment periods may offer higher yields but involve longer capital lock-up.
-              </Text>
-            </Flex>
-          </Box>
+        <Grid templateColumns="repeat(4, 1fr)" gap={3}>
+          {[30, 90, 180, 360].map(period => {
+            const isSelected = incomePeriod === period;
+            return (
+              <GridItem key={period} colSpan={1}>
+                <Box
+                  p={3}
+                  textAlign="center"
+                  borderRadius={neumorphicBorderRadius}
+                  bg={isSelected ? 'green.600' : neumorphicBg}
+                  boxShadow={isSelected ? 'md' : neumorphicBoxShadow}
+                  borderWidth="2px"
+                  borderColor={isSelected ? 'green.700' : 'transparent'}
+                  color={isSelected ? 'white' : 'gray.800'}
+                  cursor="pointer"
+                  onClick={() => handlePeriodSelect(period)}
+                  transition="all 0.2s ease-in-out"
+                  _hover={{
+                    boxShadow: isSelected ? 'md' : `${neumorphicShadowLight.replace("10px", "12px").replace("20px", "24px")}, ${neumorphicShadowDark.replace("10px", "12px").replace("20px", "24px")}`,
+                    transform: isSelected ? 'none' : 'translateY(-2px)',
+                  }}
+                   _active={{
+                     boxShadow: isSelected ? 'md' : neumorphicInnerBoxShadow
+                   }}
+                >
+                  <Text fontWeight="bold" fontSize="lg">{period} Days</Text>
+                  <Text fontSize="xs" color={isSelected ? 'green.200' : 'gray.500'}>
+                    {getPeriodDescription(period)}
+                  </Text>
+                </Box>
+              </GridItem>
+            );
+          })}
+        </Grid>
+        
+        {/* Validation error display */}
+        {validationErrors.incomePeriod && (
+          <Text color="red.500" fontSize="sm" mt={1}>{validationErrors.incomePeriod}</Text>
+        )}
       </Box>
     </Box>
   );
 };
 
-export default ProviderParametersUI; // Export the component 
+export default ProviderParametersUI; 

@@ -85,4 +85,205 @@ export default defineSchema({
     .index("by_status", ["status"])
     .index("by_submission_timestamp", ["submissionTimestamp"]),
 
+  // --- Premium Calculation Tables (New) ---
+  premiumCalculations: defineTable({
+    // User identification
+    userId: v.string(),
+
+    // Input parameters
+    asset: v.string(), // e.g., "BTC"
+    currentPrice: v.number(), // Price at calculation time
+    protectedValue: v.number(), // Strike price in USD
+    protectedAmount: v.number(), // Amount of BTC to protect
+    expirationDays: v.number(), // Days until expiration
+    policyType: v.string(), // "PUT" or "CALL"
+    volatilityUsed: v.number(), // Volatility value used in calculation
+
+    // Calculation results
+    premium: v.number(), // Cost in USD
+    premiumPercentage: v.number(), // As percentage of protected value
+    annualizedPremium: v.number(), // Annualized percentage
+    breakEvenPrice: v.number(), // Price at which protection has zero net value
+
+    // Component factors (for breakdown visualization)
+    intrinsicValue: v.number(),
+    timeValue: v.number(),
+    volatilityImpact: v.number(),
+
+    // Metadata
+    calculationModel: v.string(), // e.g., "BlackScholes"
+    timestamp: v.string(), // ISO date string
+
+    // Additional data
+    scenarios: v.array(
+      v.object({
+        price: v.number(),
+        protectionValue: v.number(),
+        netValue: v.number(),
+      })
+    ),
+  })
+    .index("by_userId", ["userId"])
+    .index("by_timestamp", ["timestamp"])
+    .index("by_asset", ["asset"]),
+
+  yieldCalculations: defineTable({
+    // User identification
+    userId: v.string(),
+
+    // Input parameters
+    asset: v.string(), // e.g., "BTC"
+    commitmentAmount: v.number(), // Amount in USD or STX
+    commitmentAmountUSD: v.number(), // USD value of commitment
+    selectedTier: v.string(), // "conservative", "balanced", "aggressive"
+    selectedPeriod: v.number(), // Days
+
+    // Calculation results
+    estimatedYield: v.number(), // Absolute return in USD or STX
+    annualizedYieldPercentage: v.number(), // Annualized percentage
+    estimatedBTCAcquisitionPrice: v.optional(v.number()), // Price at which BTC might be acquired
+
+    // Risk metrics
+    riskLevel: v.number(), // 1-10 scale
+    capitalEfficiency: v.optional(v.number()), // Calculated efficiency
+
+    // Component factors
+    baseYield: v.number(),
+    tierAdjustment: v.number(),
+    durationAdjustment: v.number(),
+    marketConditionAdjustment: v.number(),
+
+    // Metadata
+    calculationModel: v.string(), // e.g., "ProviderYieldModel"
+    timestamp: v.string(), // ISO date string
+    marketConditions: v.object({
+      btcPrice: v.number(),
+      volatility: v.number(),
+      liquidity: v.number(),
+    }),
+  })
+    .index("by_userId", ["userId"])
+    .index("by_timestamp", ["timestamp"])
+    .index("by_tier", ["selectedTier"]),
+
+  quotes: defineTable({
+    // Common fields
+    userId: v.string(),
+    quoteType: v.string(), // "buyer" or "provider"
+    asset: v.string(), // e.g., "BTC"
+    createdAt: v.string(), // ISO date string
+    expiresAt: v.string(), // ISO date string when quote expires
+    status: v.string(), // "active", "expired", "purchased", "committed", "declined"
+
+    // Link to the specific calculation that generated this quote
+    calculationId: v.optional(v.id("premiumCalculations")), // If buyer
+    yieldCalculationId: v.optional(v.id("yieldCalculations")), // If provider
+
+    // Buyer-specific parameters *at the time of quoting*
+    buyerParamsSnapshot: v.optional(
+      v.object({
+        protectedValuePercentage: v.number(),
+        protectionAmount: v.number(),
+        expirationDays: v.number(),
+        policyType: v.string(),
+      })
+    ),
+
+    // Provider-specific parameters *at the time of quoting*
+    providerParamsSnapshot: v.optional(
+      v.object({
+        commitmentAmount: v.number(),
+        commitmentAmountUSD: v.number(),
+        selectedTier: v.string(),
+        selectedPeriod: v.number(),
+      })
+    ),
+
+    // Results from the linked calculation (denormalized for display)
+    quoteResult: v.object({
+      // Buyer result fields
+      premium: v.optional(v.number()),
+      premiumPercentage: v.optional(v.number()),
+      breakEvenPrice: v.optional(v.number()),
+      // Provider result fields
+      estimatedYield: v.optional(v.number()),
+      annualizedYieldPercentage: v.optional(v.number()),
+      estimatedBTCAcquisitionPrice: v.optional(v.number()),
+      capitalEfficiency: v.optional(v.number()),
+    }),
+
+    // Risk parameters used for this specific quote calculation
+    riskParamsSnapshot: v.object({
+      baseRate: v.number(),
+      volatilityMultiplier: v.number(),
+      durationFactor: v.number(),
+      coverageFactor: v.number(),
+      tierMultipliers: v.optional(
+        v.object({
+          conservative: v.optional(v.number()),
+          balanced: v.optional(v.number()),
+          aggressive: v.optional(v.number()),
+        })
+      ),
+    }),
+
+    // Market data at quote time
+    marketDataSnapshot: v.object({
+      btcPrice: v.number(),
+      volatility: v.number(),
+      timestamp: v.string(), // ISO date string
+    }),
+
+    // Transaction data (populated after purchase/commitment)
+    transaction: v.optional(
+      v.object({
+        txHash: v.string(),
+        blockHeight: v.number(),
+        status: v.string(),
+        confirmedAt: v.string(),
+      })
+    ),
+
+    // User-provided metadata
+    metadata: v.optional(
+      v.object({
+        displayName: v.string(),
+        notes: v.string(),
+        tags: v.array(v.string()),
+      })
+    ),
+  })
+    .index("by_userId_status", ["userId", "status"])
+    .index("by_userId_expiresAt", ["userId", "expiresAt"])
+    .index("by_userId_quoteType", ["userId", "quoteType"]),
+
+  riskParameters: defineTable({
+    assetType: v.string(), // e.g., "BTC", "ETH"
+    policyType: v.string(), // "PUT" or "CALL"
+
+    // Base parameters
+    baseRate: v.number(), // Base premium rate
+    volatilityMultiplier: v.number(), // Volatility impact factor
+    durationFactor: v.number(), // Duration impact factor
+    coverageFactor: v.number(), // Coverage amount impact factor
+
+    // Tier-specific adjustments
+    tierMultipliers: v.object({
+      conservative: v.number(),
+      balanced: v.number(),
+      aggressive: v.number(),
+    }),
+
+    // Market condition adjustments
+    liquidityAdjustment: v.number(), // Adjustment for market liquidity
+    marketTrendAdjustment: v.number(), // Adjustment for market trend
+
+    // Metadata
+    version: v.number(), // Version number for tracking changes
+    lastUpdated: v.string(), // ISO date string
+    updatedBy: v.string(), // User ID who last updated
+    isActive: v.boolean(), // Whether these parameters are active
+  })
+    .index("by_asset_policy_active", ["assetType", "policyType", "isActive"])
+    .index("by_version", ["version"]),
 });

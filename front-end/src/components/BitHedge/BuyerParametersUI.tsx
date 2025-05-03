@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useRef } from "react";
 import {
   Box,
   Flex,
@@ -18,24 +18,35 @@ import {
   GridItem,
   Input,
   VStack,
-  Divider,
+  Spinner,
 } from "@chakra-ui/react";
 import { IoInformationCircle } from "react-icons/io5";
+import { useBuyerContext } from "@/contexts/BuyerContext";
+import { useBitcoinPrice } from "@/hooks/useBitcoinPrice";
+import { formatUSD, formatBTC, formatPercent } from "@/utils/formatters";
 
 // --- Buyer Specific UI Component --- 
 const BuyerParametersUI = () => {
-  // Mock data and state (Kept local for now)
-  const [protectedValue, setProtectedValue] = useState(100);
-  const [protectionAmount, setProtectionAmount] = useState(0.25);
-  const [protectionPeriod, setProtectionPeriod] = useState(90);
-  const [inputValue, setInputValue] = useState("0.25");
+  // Use BuyerContext
+  const { inputs, updateBuyerInputs, validationErrors } = useBuyerContext();
+  const { protectedValuePercentage, protectionAmount, protectionPeriod } = inputs;
+  
+  // Use Bitcoin price hook
+  const { 
+    currentPrice,
+    volatility,
+    isLoading: isPriceLoading,
+    hasError: hasPriceError,
+    errorMessage: priceErrorMessage,
+    isStale: isPriceStale 
+  } = useBitcoinPrice();
   
   const protectedValueRef = useRef<HTMLDivElement>(null);
   const protectionAmountRef = useRef<HTMLDivElement>(null);
   
-  const currentPrice = 94270.88; // Consider passing as prop if dynamic
-  const protectedValueUSD = (currentPrice * protectedValue) / 100;
-  const protectionAmountUSD = parseFloat(inputValue || "0") * currentPrice;
+  // Calculate USD values using current BTC price
+  const protectedValueUSD = (currentPrice * protectedValuePercentage) / 100;
+  const protectionAmountUSD = protectionAmount * currentPrice;
 
   // Neumorphic styles
   const neumorphicBg = "#E8EAE9"; 
@@ -49,18 +60,25 @@ const BuyerParametersUI = () => {
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
-    setInputValue(value);
     const numericValue = parseFloat(value);
     if (!isNaN(numericValue)) {
-      setProtectionAmount(numericValue);
+      updateBuyerInputs({ protectionAmount: numericValue });
     } else if (value === "" || value === "." || value.endsWith(".")) {
-      // Handle validation
+      // Handle validation or reset to 0 if needed
+      // For now, we'll maintain the current value
     }
   };
 
   const handleAmountSelection = (amount: number) => {
-    setProtectionAmount(amount);
-    setInputValue(amount.toString());
+    updateBuyerInputs({ protectionAmount: amount });
+  };
+
+  const handleProtectedValueChange = (value: number) => {
+    updateBuyerInputs({ protectedValuePercentage: value });
+  };
+
+  const handlePeriodSelect = (period: number) => {
+    updateBuyerInputs({ protectionPeriod: period });
   };
 
   const getPeriodDescription = (period: number) => {
@@ -75,6 +93,38 @@ const BuyerParametersUI = () => {
 
   return (
     <Box p={0} borderRadius={neumorphicBorderRadius} > 
+      {/* Price Loading Indicator */}
+      {isPriceLoading && !isPriceStale && (
+        <Flex justify="center" mb={4} p={2} bg="blue.50" borderRadius="md">
+          <Spinner size="sm" color="blue.500" mr={2} />
+          <Text fontSize="sm" color="blue.700">Loading Bitcoin price data...</Text>
+        </Flex>
+      )}
+      
+      {/* Price Error Message */}
+      {hasPriceError && (
+        <Flex justify="center" mb={4} p={2} bg="red.50" borderRadius="md">
+          <Icon as={IoInformationCircle} color="red.500" mr={2} />
+          <Text fontSize="sm" color="red.700">{priceErrorMessage || "Error loading price data"}</Text>
+        </Flex>
+      )}
+      
+      {/* Stale Data Indicator */}
+      {isPriceStale && (
+        <Flex justify="center" mb={4} p={2} bg="yellow.50" borderRadius="md">
+          <Icon as={IoInformationCircle} color="yellow.500" mr={2} />
+          <Text fontSize="sm" color="yellow.700">Using cached price data while refreshing...</Text>
+        </Flex>
+      )}
+      
+      {/* Current Price Display */}
+      <Flex justify="center" mb={4} p={2} bg="gray.50" borderRadius="md">
+        <Text fontWeight="medium" fontSize="sm" color="gray.700">
+          Current BTC Price: {formatUSD(currentPrice)} 
+          {volatility > 0 && ` | Volatility: ${formatPercent(volatility * 100)}`}
+        </Text>
+      </Flex>
+
       {/* Existing Flex container for Protected Value and Protection Amount */}
       <Flex 
         direction={{ base: "column", md: "row" }} 
@@ -95,15 +145,15 @@ const BuyerParametersUI = () => {
             </Flex>
             
             <Heading as="h4" fontSize="2xl" fontWeight="semibold" mb={1} color="gray.800">
-              ${protectedValueUSD.toFixed(2)}
+              {formatUSD(protectedValueUSD)}
             </Heading>
             <Text fontSize="sm" color="gray.600" mb={4}>
-              {protectedValue}% of current price
+              {protectedValuePercentage}% of current price
             </Text>
             
             <Slider 
-              value={protectedValue}
-              onChange={setProtectedValue}
+              value={protectedValuePercentage}
+              onChange={handleProtectedValueChange}
               min={50}
               max={150}
               step={1}
@@ -138,13 +188,13 @@ const BuyerParametersUI = () => {
             
             <HStack spacing={3} mt={4}>
               {[80, 90, 100, 110].map((value) => {
-                const isSelected = protectedValue === value;
+                const isSelected = protectedValuePercentage === value;
                 return (
                   <Button 
                     key={value}
                     variant="unstyled"
                     size="sm" 
-                    onClick={() => setProtectedValue(value)}
+                    onClick={() => handleProtectedValueChange(value)}
                     flex="1"
                     bg={neumorphicBg}
                     borderRadius="md"
@@ -165,6 +215,11 @@ const BuyerParametersUI = () => {
                 );
               })}
             </HStack>
+            
+            {/* Validation error display */}
+            {validationErrors.protectedValuePercentage && (
+              <Text color="red.500" fontSize="sm" mt={2}>{validationErrors.protectedValuePercentage}</Text>
+            )}
             
             <Box mt={4} p={3} bg="rgba(255, 255, 255, 0.5)" borderRadius="lg" boxShadow="inner">
               <Flex gap={2}>
@@ -190,7 +245,7 @@ const BuyerParametersUI = () => {
             </Flex>
             
             <Heading as="h4" fontSize="2xl" fontWeight="semibold" mb={1} color="gray.800">
-              ${protectionAmountUSD.toLocaleString()}
+              {formatUSD(protectionAmountUSD)}
             </Heading>
             <Text fontSize="sm" color="gray.600" mb={4}>
               USD Value
@@ -198,66 +253,66 @@ const BuyerParametersUI = () => {
             
             <Flex 
               align="center" 
-              justify="center"
-              mb={6}
-              mt={2}
-              bg={neumorphicBg}
-              p={2}
-              borderRadius="md"
+              bg={neumorphicBg} 
+              p={3} 
+              borderRadius={neumorphicBorderRadius} 
               boxShadow={neumorphicInnerBoxShadow}
+              mb={4}
             >
-              <Text fontSize="2xl" fontWeight="bold" color="orange.500" mr={2}>₿</Text>
+              <Box mr={2} fontWeight="bold" color="orange.500">BTC</Box>
               <Input
                 variant="unstyled"
-                value={inputValue}
+                value={protectionAmount === 0 ? '' : protectionAmount.toString()}
                 onChange={handleInputChange}
-                textAlign="center"
+                textAlign="right"
                 fontWeight="bold"
-                fontSize="2xl"
-                w="100px"
-                p={0}
+                fontSize="xl"
                 placeholder="0.00"
                 color="gray.800"
-                _placeholder={{ color: "gray.500" }}
+                flex="1"
               />
-              <Text ml={2} fontWeight="bold" fontSize="2xl" color="gray.800">BTC</Text>
             </Flex>
             
-            <HStack spacing={3} mt="auto" mb={1}>
-              {[0.25, 0.50, 0.75, 1.00].map((amount) => {
-                 const isSelected = protectionAmount === amount;
-                 return (
-                   <Button 
-                     key={amount}
-                     variant="unstyled"
-                     size="sm" 
-                     onClick={() => handleAmountSelection(amount)}
-                     flex="1"
-                     bg={neumorphicBg}
-                     borderRadius="md"
-                     boxShadow={isSelected ? neumorphicInnerBoxShadow : neumorphicBoxShadow}
-                     color={isSelected ? "blue.600" : "gray.700"}
-                     fontWeight={isSelected ? "bold" : "normal"}
-                     transition="all 0.1s ease-in-out"
-                     _hover={{
-                       boxShadow: isSelected ? neumorphicInnerBoxShadow : `${neumorphicShadowLight.replace("10px", "12px").replace("20px", "24px")}, ${neumorphicShadowDark.replace("10px", "12px").replace("20px", "24px")}`
-                     }}
+            <HStack spacing={3} mb={2}>
+              {[0.1, 0.25, 0.5, 1.0].map((amount) => {
+                const isSelected = protectionAmount === amount;
+                return (
+                  <Button 
+                    key={amount}
+                    variant="unstyled"
+                    size="sm" 
+                    onClick={() => handleAmountSelection(amount)}
+                    flex="1"
+                    bg={neumorphicBg}
+                    borderRadius="md"
+                    boxShadow={isSelected ? neumorphicInnerBoxShadow : neumorphicBoxShadow}
+                    color={isSelected ? "orange.600" : "gray.700"}
+                    fontWeight={isSelected ? "bold" : "normal"}
+                    transition="all 0.1s ease-in-out"
+                    _hover={{
+                      boxShadow: isSelected ? neumorphicInnerBoxShadow : `${neumorphicShadowLight.replace("10px", "12px").replace("20px", "24px")}, ${neumorphicShadowDark.replace("10px", "12px").replace("20px", "24px")}`
+                    }}
                      _active={{
                        boxShadow: neumorphicInnerBoxShadow,
                        transform: "scale(0.98)"
-                     }}
-                   >
-                     {amount.toFixed(2)} BTC
-                   </Button>
-                 );
+                    }}
+                  >
+                    {formatBTC(amount, { minimumFractionDigits: 1, includeSuffix: false })} BTC
+                  </Button>
+                );
               })}
             </HStack>
             
-            <Box mt={4} p={3} bg="rgba(255, 255, 255, 0.5)" borderRadius="lg" boxShadow="inner">
+            {/* Validation error display */}
+            {validationErrors.protectionAmount && (
+              <Text color="red.500" fontSize="sm" mt={1}>{validationErrors.protectionAmount}</Text>
+            )}
+            
+            <Box mt="auto" p={3} bg="rgba(255, 255, 255, 0.5)" borderRadius="lg" boxShadow="inner">
               <Flex gap={2}>
                 <Icon as={IoInformationCircle} color="blue.500" mt={0.5} />
                 <Text fontSize="sm" color="blue.800">
-                  For each 0.1 BTC protected, you&apos;ll pay approximately $188.54 in premium.
+                  Your premium cost increases proportionally with the amount protected.
                 </Text>
               </Flex>
             </Box>
@@ -266,83 +321,47 @@ const BuyerParametersUI = () => {
       
       {/* Protection Period Section */}
       <Box mt={8}>
-          <Flex align="center" justify="space-between" mb={4}>
-            <Flex align="center">
-              <Heading as="h3" fontSize="lg" fontWeight="bold" mr={1} color="gray.800">
-                Protection Period
-              </Heading>
-              <Tooltip hasArrow label="The duration for which your Bitcoin will be protected">
-                <Box display="inline">
-                  <Icon as={IoInformationCircle} color="blue.500" />
-                </Box>
-              </Tooltip>
-            </Flex>
-            <Box>
-              <Heading as="h4" fontSize="xl" fontWeight="semibold" textAlign="right" color="gray.800">
-                {protectionPeriod} days
-              </Heading>
-              <Text fontSize="sm" color="gray.600" textAlign="right">
-                {protectionPeriod} Days
-              </Text>
-            </Box>
+         <Flex align="center" mb={4}>
+            <Heading as="h3" fontSize="lg" fontWeight="bold" mr={1} color="gray.800">
+              Protection Period
+            </Heading>
+            <Tooltip hasArrow label="The timeframe during which your Bitcoin protection will be active.">
+              <Box display="inline">
+                <Icon as={IoInformationCircle} color="blue.500" />
+              </Box>
+            </Tooltip>
           </Flex>
           
           <Grid 
             templateColumns={{ base: "1fr", md: "repeat(4, 1fr)" }} 
             gap={4}
-            mt={4}
           >
             {[30, 90, 180, 360].map((period) => {
               const isSelected = protectionPeriod === period;
               return (
-                <GridItem key={period} h="100%">
+                <GridItem key={period}>
                   <Box
-                    h="100%"
                     p={4}
-                    borderWidth="1px"
-                    borderRadius="lg"
+                    borderRadius={neumorphicBorderRadius}
+                    bg={isSelected ? 'green.600' : neumorphicBg}
+                    boxShadow={isSelected ? 'md' : neumorphicBoxShadow}
+                    borderWidth="2px"
+                    borderColor={isSelected ? 'green.700' : 'transparent'}
+                    color={isSelected ? 'white' : 'gray.800'}
                     cursor="pointer"
-                    onClick={() => setProtectionPeriod(period)}
+                    onClick={() => handlePeriodSelect(period)}
                     transition="all 0.2s ease-in-out"
-                    bg={isSelected ? "blue.600" : "rgba(255, 255, 255, 0.5)"}
-                    bgGradient={isSelected ? "linear(to-b, blue.600, blue.700)" : undefined}
-                    color={isSelected ? "white" : "gray.800"}
-                    borderColor={isSelected ? "blue.600" : "gray.300"}
-                    shadow={isSelected ? "md" : "inner"}
                     _hover={{
-                      shadow: "md",
-                      borderColor: isSelected ? "blue.700" : "gray.400",
-                      bg: isSelected ? undefined : "rgba(255, 255, 255, 0.7)",
-                      bgGradient: isSelected ? "linear(to-b, blue.700, blue.800)" : undefined,
+                      boxShadow: isSelected ? 'md' : `${neumorphicShadowLight.replace("10px", "12px").replace("20px", "24px")}, ${neumorphicShadowDark.replace("10px", "12px").replace("20px", "24px")}`,
+                      transform: isSelected ? 'none' : 'translateY(-2px)',
+                    }}
+                    _active={{
+                      boxShadow: isSelected ? 'md' : neumorphicInnerBoxShadow
                     }}
                   >
-                    <VStack spacing={2} align="center" h="100%" justify="center"> 
-                      <Heading 
-                        as="h4" 
-                        fontSize="3xl" 
-                        fontWeight="bold" 
-                        mb={0}
-                        color={isSelected ? "white" : "blue.600"}
-                      >
-                        {period}
-                      </Heading>
-                      <Text 
-                        fontSize="md" 
-                        color={isSelected ? "blue.100" : "gray.600"}
-                      >
-                        days
-                      </Text>
-                      <Divider 
-                        my={2} 
-                        borderColor={isSelected ? "blue.500" : "gray.300"}
-                        opacity={isSelected ? 0.5 : 1}
-                      />
-                      <Text 
-                        fontSize="sm" 
-                        fontWeight="medium"
-                        color={isSelected ? "blue.100" : "gray.700"}
-                        textAlign="center"
-                      >
+                    <VStack spacing={1} align="center">
+                      <Text fontSize="xl" fontWeight="bold">{period} Days</Text>
+                      <Text fontSize="sm" color={isSelected ? 'green.200' : 'gray.500'}>
                         {getPeriodDescription(period)}
                       </Text>
                     </VStack>
@@ -352,14 +371,10 @@ const BuyerParametersUI = () => {
             })}
           </Grid>
           
-          <Box mt={4} p={3} bg="rgba(255, 255, 255, 0.5)" borderRadius="lg" boxShadow="inner">
-            <Flex gap={2}>
-              <Icon as={IoInformationCircle} color="blue.500" mt={0.5} />
-              <Text fontSize="sm" color="blue.800">
-                Longer protection periods usually cost more but provide extended downside coverage.
-              </Text>
-            </Flex>
-          </Box>
+          {/* Validation error display */}
+          {validationErrors.protectionPeriod && (
+            <Text color="red.500" fontSize="sm" mt={1}>{validationErrors.protectionPeriod}</Text>
+          )}
       </Box>
     </Box>
   );
