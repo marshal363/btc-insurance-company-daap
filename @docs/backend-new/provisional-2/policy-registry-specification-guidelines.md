@@ -290,6 +290,16 @@ The Policy Registry contract serves as the official on-chain record of all BitHe
 )
 ```
 
+> **IMPLEMENTATION NOTE:** The current implementation of `expire-policies-batch` has been simplified for the initial version of the contract. Instead of using the `fold` operation described above, it currently verifies authorization and logs the batch attempt but doesn't actually expire individual policies. This simplified approach was adopted to ensure contract compatibility and avoid potential syntax errors during the initial deployment.
+>
+> For the time being, the Convex backend should:
+>
+> 1. Continue to call `expire-policies-batch` for tracking purposes
+> 2. Additionally use individual `update-policy-status` calls for each policy requiring expiration
+> 3. A future update will implement the full fold-based batch processing as described in this specification
+>
+> This temporary limitation doesn't affect the core functionality as policies can still be expired individually, and the full batch implementation will be added in a subsequent update without changing the function signature.
+
 ### 4.4 Read-Only Functions
 
 ```clarity

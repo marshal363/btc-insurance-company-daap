@@ -30,6 +30,11 @@ path = 'contracts/policy-registry.clar'
 clarity_version = 3
 epoch = 3.0
 
+[contracts.liquidity-pool-vault]
+path = 'contracts/liquidity-pool-vault.clar'
+clarity_version = 3
+epoch = 3.0
+
 #[contracts.parameter]
 #path = 'contracts/parameter.clar'
 #clarity_version = 3

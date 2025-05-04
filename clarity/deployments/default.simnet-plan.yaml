@@ -80,6 +80,11 @@ plan:
             path: contracts/fundraising.clar
             clarity-version: 3
         - emulated-contract-publish:
+            contract-name: liquidity-pool-vault
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: contracts/liquidity-pool-vault.clar
+            clarity-version: 3
+        - emulated-contract-publish:
             contract-name: oracle
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
             path: contracts/oracle.clar

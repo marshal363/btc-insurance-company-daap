@@ -501,6 +501,15 @@ export const checkExpiredPolicies = action(async ({ db, scheduler }) => {
 
     // Handle expiration using backend key (no user signature needed)
     await expirePoliciesBatch(policyIds);
+
+    // TEMPORARY WORKAROUND: Due to simplified batch expiration in the initial contract implementation,
+    // we also need to expire each policy individually until the full batch functionality is implemented
+    for (const policy of batch) {
+      await updatePolicyStatus({
+        policyId: policy.policyId,
+        newStatus: PolicyStatus.EXPIRED,
+      });
+    }
   }
 
   // Schedule next check (e.g., every hour)
