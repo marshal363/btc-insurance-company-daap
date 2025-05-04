@@ -1,4 +1,4 @@
-\
+
 ;; BitHedge Policy Registry Contract
 ;; Version: 1.0
 ;; Implementation based on: @docs/backend-new/provisional-2/policy-registry-specification-guidelines.md

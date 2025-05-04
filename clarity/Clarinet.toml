@@ -25,10 +25,10 @@ epoch = 3.0
 #clarity_version = 3
 #epoch = 3.0
 
-#[contracts.policy-registry]
-#path = 'contracts/policy-registry.clar'
-#clarity_version = 3
-#epoch = 3.0
+[contracts.policy-registry]
+path = 'contracts/policy-registry.clar'
+clarity_version = 3
+epoch = 3.0
 
 #[contracts.parameter]
 #path = 'contracts/parameter.clar'

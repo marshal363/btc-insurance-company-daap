@@ -47,10 +47,10 @@ plan:
             anchor-block-only: true
             clarity-version: 3
         - contract-publish:
-            contract-name: parameter-oracle-impl
+            contract-name: policy-registry
             expected-sender: STMN69T7KZRPHM55Z5N8BAFQWKGFR56VVMD3H5E3
             cost: 30000
-            path: contracts/parameter-oracle-impl.clar
+            path: contracts/policy-registry.clar
             anchor-block-only: true
             clarity-version: 3
       epoch: "3.0"
