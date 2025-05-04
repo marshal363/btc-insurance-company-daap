@@ -2,7 +2,7 @@
 id: 0
 name: Testnet deployment
 network: testnet
-stacks-node: "https://api.testnet.hiro.so"
+stacks-node: "https://stacks-node-api.testnet.stacks.co"
 bitcoin-node: "http://blockstack:blockstacksystem@bitcoind.testnet.stacks.co:18332"
 plan:
   batches:
@@ -34,15 +34,15 @@ plan:
             clarity-version: 3
         - contract-publish:
             contract-name: fundraising
-            expected-sender: STMN69T7KZRPHM55Z5N8BAFQWKGFR56VVMD3H5E3
+            expected-sender: ST3EXYD6X5D7R4RHC7FR6Y54SQBF2267YY4YSFXHR
             cost: 6735
             path: contracts/fundraising.clar
             anchor-block-only: true
             clarity-version: 3
         - contract-publish:
             contract-name: oracle
-            expected-sender: STMN69T7KZRPHM55Z5N8BAFQWKGFR56VVMD3H5E3
-            cost: 60000
+            expected-sender: ST3EXYD6X5D7R4RHC7FR6Y54SQBF2267YY4YSFXHR
+            cost: 9545
             path: contracts/oracle.clar
             anchor-block-only: true
             clarity-version: 3
