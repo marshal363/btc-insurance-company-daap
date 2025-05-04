@@ -53,5 +53,12 @@ plan:
             path: contracts/policy-registry.clar
             anchor-block-only: true
             clarity-version: 3
+        - contract-publish:
+            contract-name: liquidity-pool-vault
+            expected-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            cost: 91670
+            path: contracts/liquidity-pool-vault.clar
+            anchor-block-only: true
+            clarity-version: 3
 
       epoch: "3.0"
