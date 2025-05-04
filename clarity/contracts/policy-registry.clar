@@ -16,6 +16,7 @@
 (define-constant ERR-ZERO-PROTECTION-AMOUNT (err u1003))
 (define-constant ERR-EXPIRATION-IN-PAST (err u1004))
 (define-constant ERR-NOT-YET-EXPIRED (err u1006))
+(define-constant ERR-INSUFFICIENT-LIQUIDITY (err u502))
 
 ;; Status constants
 (define-constant STATUS-ACTIVE "Active")
@@ -59,6 +60,12 @@
 ;; Defaults to the contract deployer initially
 (define-data-var backend-authorized-principal principal tx-sender)
 
+;; Principal of the Oracle contract (must be set after deployment)
+(define-data-var oracle-principal principal tx-sender) ;; Placeholder, set via set-oracle-principal
+
+;; Principal of the Liquidity Pool Vault contract (must be set after deployment)
+(define-data-var liquidity-pool-vault-principal principal tx-sender) ;; Placeholder
+
 ;; --- Administrative Functions ---
 
 ;; Set the backend authorized principal
@@ -67,6 +74,26 @@
   (begin
     (asserts! (is-eq tx-sender CONTRACT-OWNER) ERR-UNAUTHORIZED) ;; Use CONTRACT-OWNER instead of contract-deployer
     (var-set backend-authorized-principal new-principal)
+    (ok true)
+  )
+)
+
+;; Set the Oracle contract principal
+;; Can only be called by the contract deployer (contract owner)
+(define-public (set-oracle-principal (new-principal principal))
+  (begin
+    (asserts! (is-eq tx-sender CONTRACT-OWNER) ERR-UNAUTHORIZED)
+    (var-set oracle-principal new-principal)
+    (ok true)
+  )
+)
+
+;; Set the Liquidity Pool Vault contract principal
+;; Can only be called by the contract deployer (contract owner)
+(define-public (set-liquidity-pool-vault-principal (new-principal principal))
+  (begin
+    (asserts! (is-eq tx-sender CONTRACT-OWNER) ERR-UNAUTHORIZED)
+    (var-set liquidity-pool-vault-principal new-principal)
     (ok true)
   )
 )
@@ -97,6 +124,13 @@
       (asserts! (> protected-value u0) ERR-ZERO-PROTECTED-VALUE)
       (asserts! (> protection-amount u0) ERR-ZERO-PROTECTION-AMOUNT)
       (asserts! (> expiration-height burn-block-height) ERR-EXPIRATION-IN-PAST)
+
+      ;; Ensure sufficient liquidity in the pool (PR-111)
+      (asserts! (unwrap! (check-liquidity-for-policy protected-value protection-amount policy-type) (err u502)) ;; Error u502 for liquidity check failure
+                ERR-INSUFFICIENT-LIQUIDITY)
+      
+      ;; Lock collateral in the pool (PR-111)
+      (unwrap! (lock-policy-collateral policy-id protected-value protection-amount policy-type) (err u503)) ;; Error u503 for lock failure
 
       ;; Insert the policy entry
       (map-set policies
@@ -285,70 +319,66 @@
 (define-read-only (is-policy-active (policy-id uint))
   (match (map-get? policies { id: policy-id })
     policy (is-eq (get status policy) STATUS-ACTIVE)
-    false))
-
-;; --- Advanced Read-Only Functions ---
-
-;; Check if a policy is exercisable given the current price
-(define-read-only (is-policy-exercisable (policy-id uint) (current-price uint))
-  (match (map-get? policies { id: policy-id })
-    policy
-    (let (
-        (p-status (get status policy))
-        (p-expiration (get expiration-height policy))
-        (p-type (get policy-type policy))
-        (p-protected-value (get protected-value policy))
-      )
-      (and
-        ;; Must be active
-        (is-eq p-status STATUS-ACTIVE)
-        ;; Not expired
-        (< burn-block-height p-expiration)
-        ;; Price conditions depending on policy type
-        (if (is-eq p-type POLICY-TYPE-PUT)
-            ;; For PUT: current price must be below protected value (strike)
-            (< current-price p-protected-value)
-            ;; For CALL: current price must be above protected value (strike)
-            (> current-price p-protected-value)
-        )
-      )
-    )
-    ;; Policy not found
-    false
+    ERR-NOT-FOUND ;; Returns (err u404) if not found
   )
 )
 
-;; Calculate settlement amount for a policy if exercised at the given current price
-;; Returns u0 if the policy is not found or conditions are not met for settlement at that price.
-(define-read-only (calculate-settlement-amount (policy-id uint) (current-price uint))
-  (match (map-get? policies { id: policy-id })
-    policy
-    (let
-      (
-        (protected-value (get protected-value policy))
-        (protection-amount (get protection-amount policy))
-        (policy-type (get policy-type policy))
-      )
-      (if (is-eq policy-type POLICY-TYPE-PUT)
-          ;; For PUT: Settlement = (Strike - Current) * ProtectionAmount / Strike
-          ;; Check if current price is below strike before calculating
-          (if (< current-price protected-value)
-              ;; Use max(0, ...) implicitly via uint subtraction rules
-              (/ (* (- protected-value current-price) protection-amount) protected-value)
-              u0 ;; No payout if current price >= strike
-          )
-          ;; For CALL: Settlement = (Current - Strike) * ProtectionAmount / Strike
-          ;; Check if current price is above strike before calculating
-          (if (> current-price protected-value)
-              ;; Use max(0, ...) implicitly via uint subtraction rules
-              (/ (* (- current-price protected-value) protection-amount) protected-value)
-              u0 ;; No payout if current price <= strike
-          )
-      )
-    )
-    ;; Policy not found
-    u0
+;; --- Advanced Read-Only Functions ---
+
+;; Get the current BTC price from the Oracle contract
+(define-read-only (get-current-btc-price)
+  (match (contract-call? (var-get oracle-principal) get-latest-price)
+    success-response (ok (get price success-response)) ;; Extract price from the {price: uint, timestamp: uint} tuple
+    error-response (err u500) ;; Generic error for Oracle call failure
   )
+)
+
+;; Check if a policy is exercisable based on the current Oracle price
+(define-read-only (is-policy-exercisable (policy-id uint))
+  (let (
+      (policy (unwrap! (map-get? policies { id: policy-id }) ERR-NOT-FOUND))
+      (current-price (unwrap! (get-current-btc-price) (err u501))) ;; Error u501 for Oracle price fetch error
+    )
+    ;; Check if the policy is active first
+    (asserts! (is-eq (get status policy) STATUS-ACTIVE) ERR-NOT-ACTIVE)
+    ;; Check if it's expired
+    (asserts! (< burn-block-height (get expiration-height policy)) ERR-EXPIRED)
+
+    (if (is-eq (get policy-type policy) POLICY-TYPE-PUT)
+      ;; PUT: Exercisable if current price < protected value
+      (ok (< current-price (get protected-value policy)))
+      ;; CALL: Exercisable if current price > protected value
+      (ok (> current-price (get protected-value policy)))
+    )
+  )
+)
+
+;; Calculate the settlement amount for a policy based on a given price
+;; Note: This uses a provided price, not necessarily the live Oracle price
+(define-read-only (calculate-settlement-amount (policy-id uint) (settlement-price uint))
+  (let ((policy (unwrap! (map-get? policies { id: policy-id }) ERR-NOT-FOUND)))
+    (if (is-eq (get policy-type policy) POLICY-TYPE-PUT)
+      ;; PUT: max(0, strike - settlement_price) * amount / strike
+      (if (>= settlement-price (get protected-value policy))
+        u0
+        (/ (* (- (get protected-value policy) settlement-price) (get protection-amount policy)) (get protected-value policy)))
+      ;; CALL: max(0, settlement_price - strike) * amount / strike
+      (if (<= settlement-price (get protected-value policy))
+        u0
+        (/ (* (- settlement-price (get protected-value policy)) (get protection-amount policy)) (get protected-value policy)))
+    )
+  )
+)
+
+;; Check if the Liquidity Pool has sufficient collateral for a potential policy (PR-111)
+(define-read-only (check-liquidity-for-policy
+  (protected-value uint)
+  (protection-amount uint)
+  (policy-type (string-ascii 4)))
+  (contract-call? liquidity-pool-vault-principal has-sufficient-collateral
+                  protected-value
+                  protection-amount
+                  policy-type)
 )
 
 ;; --- Integration Points ---
@@ -368,3 +398,39 @@
 ;; - Direct calls *from* this contract *to* the Oracle might be added later
 ;;   if on-chain validation during state transitions (e.g., exercise) is required,
 ;;   but this is avoided in the current "On-Chain Light" design. 
+
+;; --- Private Functions ---
+
+;; Request collateral lock from the Liquidity Pool contract (PR-111)
+(define-private (lock-policy-collateral
+  (policy-id uint)
+  (protected-value uint)
+  (protection-amount uint)
+  (policy-type (string-ascii 4)))
+  (contract-call? liquidity-pool-vault-principal lock-collateral
+                  (get token-id-for-policy policy-type) ;; Need helper to determine token based on policy
+                  (calculate-required-collateral policy-type protected-value protection-amount) ;; Need helper for calculation
+                  policy-id)
+)
+
+;; Calculate required collateral amount based on policy parameters
+(define-private (calculate-required-collateral
+  (policy-type (string-ascii 4)) 
+  (protected-value uint) 
+  (protection-amount uint))
+  ;; Simplified: Assume PUT requires full protection amount in collateral token
+  ;; Assume CALL requires a fraction (e.g., 50%) - adjust based on risk model
+  (if (is-eq policy-type POLICY-TYPE-PUT)
+    protection-amount
+    (/ protection-amount u2) ;; Example: 50% for CALL
+  )
+)
+
+;; Determine the required token ID based on policy type (placeholder)
+(define-private (get-token-id-for-policy (policy-type (string-ascii 4)))
+  ;; Placeholder: Assume STX is used for PUT, sBTC for CALL - adjust as needed
+  (if (is-eq policy-type POLICY-TYPE-PUT)
+    "STX"
+    "SBTC"
+  )
+) 

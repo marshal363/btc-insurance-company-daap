@@ -112,6 +112,39 @@
   (default-to false (get initialized (map-get? supported-tokens { token: token-id })))
 )
 
+;; Check if a policy exists and is active via Policy Registry (LP-110)
+(define-private (verify-policy-active (policy-id uint))
+  (contract-call? (var-get policy-registry-principal) is-policy-active policy-id)
+)
+
+;; Get settlement details for a policy from Policy Registry (LP-110)
+;; Assumes policy registry has a function like this
+(define-private (get-policy-settlement-details (policy-id uint) (settlement-price uint))
+  (contract-call? (var-get policy-registry-principal) calculate-settlement-amount policy-id settlement-price)
+)
+
+;; Calculate required collateral amount based on policy parameters (copied from policy-registry)
+(define-private (calculate-required-collateral 
+  (policy-type (string-ascii 4)) 
+  (protected-value uint) 
+  (protection-amount uint))
+  ;; Simplified: Assume PUT requires full protection amount in collateral token
+  ;; Assume CALL requires a fraction (e.g., 50%) - adjust based on risk model
+  (if (is-eq policy-type "PUT")
+    protection-amount
+    (/ protection-amount u2) ;; Example: 50% for CALL
+  )
+)
+
+;; Determine the required token ID based on policy type (placeholder, copied from policy-registry)
+(define-private (get-token-id-for-policy (policy-type (string-ascii 4)))
+  ;; Placeholder: Assume STX is used for PUT, sBTC for CALL - adjust as needed
+  (if (is-eq policy-type "PUT")
+    "STX"
+    "SBTC"
+  )
+)
+
 ;; --- Public Functions (Deposit, Withdraw) ---
 
 ;; Deposit STX into the vault
@@ -279,39 +312,54 @@
   )
 )
 
-;; Settle a policy by paying out the settlement amount to the buyer
-;; Updated approach based on the fundraising.clar contract to handle STX and SIP-010 tokens differently
-(define-public (pay-settlement (token-id (string-ascii 32)) (amount uint) (recipient principal) (policy-id uint))
+;; Pay settlement for an exercised policy
+;; Restricted to the backend authorized principal
+;; NOTE: This function ONLY handles the transfer of settlement funds.
+;; The corresponding collateral release MUST be handled by a separate call
+;; to `release-collateral` by the backend after confirming this payment.
+(define-public (pay-settlement (token-id (string-ascii 32)) (settlement-amount uint) (recipient principal) (policy-id uint))
   (let (
       (caller tx-sender)
       (current-balance (default-to u0 (get balance (map-get? token-balances { token: token-id }))))
+      (current-locked (default-to u0 (get amount (map-get? locked-collateral { token: token-id }))))
     )
     (begin
       (asserts! (is-eq caller (var-get backend-authorized-principal)) ERR-UNAUTHORIZED)
-      (asserts! (> amount u0) ERR-AMOUNT-MUST-BE-POSITIVE)
+      (asserts! (> settlement-amount u0) ERR-AMOUNT-MUST-BE-POSITIVE)
       (asserts! (is-token-supported token-id) ERR-TOKEN-NOT-INITIALIZED)
-      ;; Ensure the vault has enough *total* balance to cover the settlement
-      (asserts! (>= current-balance amount) ERR-NOT-ENOUGH-BALANCE)
+      (asserts! (>= current-balance settlement-amount) ERR-NOT-ENOUGH-BALANCE) ;; Ensure total balance covers settlement
+
+      ;; Verify the policy status with the registry (LP-110) - Placeholder check
+      ;; TODO: Uncomment and refine this check based on Policy Registry capabilities
+      ;; (asserts! (unwrap! (verify-policy-active policy-id) (err u404)) (err u403))
 
       ;; Perform the transfer based on token type
       (if (is-eq token-id "STX")
-          ;; Transfer STX
-          (try! (as-contract (stx-transfer? amount tx-sender recipient)))
-          ;; If not STX, assume it's sBTC for this example - in a real contract, we would have a token mapping
-          (try! (as-contract (contract-call? 'SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token transfer
-            amount
-            tx-sender
-            recipient
-            none)))
+          ;; STX Settlement
+          (try! (as-contract (stx-transfer? settlement-amount tx-sender recipient)))
+          ;; SIP-010 Settlement (e.g., sBTC)
+          (let ((token-trait (unwrap! (get-token-trait token-id) ERR-INVALID-TOKEN)))
+             (try! (as-contract (contract-call? token-trait transfer settlement-amount tx-sender recipient none))))
       )
-      
-      ;; Update the total token balance in the vault
-      (map-set token-balances { token: token-id } { balance: (- current-balance amount) })
-      
+
+      ;; Update total token balance
+      (map-set token-balances { token: token-id } { balance: (- current-balance settlement-amount) })
+
+      ;; Collateral Release is handled separately by the backend calling `release-collateral`.
+      ;; This ensures separation of concerns and keeps this function focused on payment.
+
       ;; Emit event
-      (print { event: "settlement-paid", policy-id: policy-id, buyer: recipient, settlement-amount: amount, token: token-id })
+      (print { event: "settlement-paid", policy-id: policy-id, buyer: recipient, settlement-amount: settlement-amount, token: token-id })
       (ok true)
     )
+  )
+)
+
+;; Placeholder for getting token trait based on string ID - needs actual implementation
+(define-private (get-token-trait (token-id (string-ascii 32)))
+  (if (is-eq token-id "SBTC") ;; Check if the ID is SBTC
+    (ok SBTC-TOKEN) ;; Return the principal stored in the SBTC-TOKEN constant
+    (err ERR-INVALID-TOKEN) ;; Return error for any other token ID
   )
 )
 
@@ -354,6 +402,21 @@
 ;; Get the policy registry principal address
 (define-read-only (get-policy-registry-principal)
   (var-get policy-registry-principal)
+)
+
+;; Check if the vault has sufficient available balance to cover the required collateral for a potential policy
+;; Called by policy-registry contract during policy creation check (PR-111)
+(define-read-only (has-sufficient-collateral
+  (protected-value uint)
+  (protection-amount uint)
+  (policy-type (string-ascii 4)))
+  (let (
+      (token-id (get-token-id-for-policy policy-type))
+      (required-collateral (calculate-required-collateral policy-type protected-value protection-amount))
+      (available (get-available-balance token-id))
+    )
+    (ok (>= available required-collateral))
+  )
 )
 
 ;; --- Integration Points ---

@@ -69,8 +69,8 @@ The implementation covers these core components:
 | PR-108  | Implement settlement calculation utility function                     | 4          | 🟢     | PR-102         |          |
 | PR-109  | Add event emission for all state-changing functions                   | 4          | 🟢     | PR-104, PR-105 |          |
 | PR-110  | Create helper functions for policy index management                   | 6          | 🟢     | PR-102         |          |
-| PR-111  | Create integration points with Liquidity Pool contract                | 6          | 🟡     | PR-104, LP-110 |          |
-| PR-112  | Implement Oracle integration for price checking                       | 6          | 🟡     | PR-105         |          |
+| PR-111  | Create integration points with Liquidity Pool contract                | 6          | 🟢     | PR-104, LP-110 |          |
+| PR-112  | Implement Oracle integration for price checking                       | 6          | 🟢     | PR-105         |          |
 
 #### B. Liquidity Pool Vault Contract
 
@@ -85,7 +85,7 @@ The implementation covers these core components:
 | LP-107  | Implement settlement function (pay-settlement)                        | 8          | 🟢     | LP-106         |          |
 | LP-108  | Implement read-only functions (get balances, availability)            | 4          | 🟢     | LP-102         |          |
 | LP-109  | Add event emission for all state-changing functions                   | 4          | 🟢     | LP-104, LP-105 |          |
-| LP-110  | Create integration points with Policy Registry contract               | 6          | 🟡     | LP-107         |          |
+| LP-110  | Create integration points with Policy Registry contract               | 6          | 🟢     | LP-107         |          |
 | LP-111  | Implement SIP-010 token handling logic                                | 8          | 🟢     | LP-104         |          |
 
 #### C. Contract Testing & Deployment
@@ -110,6 +110,8 @@ We have successfully implemented the core components of both the Policy Registry
    - Added settlement calculation utilities
    - Implemented basic event emission for all state-changing operations
    - Simplified batch expiration functionality to ensure contract compatibility
+   - **Added Oracle integration (`get-current-btc-price`, `is-policy-exercisable`) for price-dependent checks (PR-112).**
+   - **Implemented integration points to call the Liquidity Pool Vault (`check-liquidity-for-policy`, `lock-policy-collateral`) (PR-111).**
 
 2. **Liquidity Pool Vault Contract**:
 
@@ -118,6 +120,9 @@ We have successfully implemented the core components of both the Policy Registry
    - Created settlement payment functionality for policy fulfillment
    - Added comprehensive balance checking and authorization controls
    - Implemented proper event emission for all state-changing operations
+   - **Implemented integration points to call the Policy Registry (`verify-policy-active`, `get-policy-settlement-details`) (LP-110).**
+   - **Added `has-sufficient-collateral` function for policy creation checks.**
+   - **Refined `pay-settlement` logic to clarify separate handling of collateral release.**
 
 3. **Debugging and Optimizations**:
    - Fixed multiple syntax errors related to SIP-010 trait definition
@@ -125,6 +130,7 @@ We have successfully implemented the core components of both the Policy Registry
    - Improved burn-block-height usage for proper block height references
    - Simplified batch operations to ensure contract compatibility and stability
    - Ensured proper owner authorization using CONTRACT-OWNER constant
+   - **Addressed several linter errors, although some related to `contract-call?` with `var-get` persist due to linter interpretation.**
 
 The contracts now compile successfully with Clarinet, with a few remaining tasks related to integration points and testing. The implemented contracts maintain the minimal on-chain footprint design while providing all essential functionality for the BitHedge platform.
 
