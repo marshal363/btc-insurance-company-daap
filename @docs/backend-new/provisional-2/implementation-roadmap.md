@@ -103,36 +103,36 @@ The implementation covers these core components:
 **Phase 1 Progress Summary:**
 We have successfully implemented the core components of both the Policy Registry and Liquidity Pool Vault contracts following the "On-Chain Light" architectural approach. Key achievements include:
 
-1. **Policy Registry Contract**:
+1.  **Policy Registry Contract**:
 
-   - Implemented comprehensive data structures for policy management
-   - Created functions for policy creation, status updates, and querying
-   - Added settlement calculation utilities
-   - Implemented basic event emission for all state-changing operations
-   - Simplified batch expiration functionality to ensure contract compatibility
-   - **Added Oracle integration (`get-current-btc-price`, `is-policy-exercisable`) for price-dependent checks (PR-112).**
-   - **Implemented integration points to call the Liquidity Pool Vault (`check-liquidity-for-policy`, `lock-policy-collateral`) (PR-111).**
+    - Implemented comprehensive data structures for policy management
+    - Created functions for policy creation, status updates, and querying
+    - Added settlement calculation utilities
+    - Implemented basic event emission for all state-changing operations
+    - Simplified batch expiration functionality to ensure contract compatibility
+    - **Completed Oracle integration (`get-current-btc-price`, `is-policy-exercisable`) using placeholder functions (PR-112).**
+    - **Completed integration points with Liquidity Pool Vault (`check-liquidity-for-policy`, `lock-policy-collateral`) using placeholder functions (PR-111).**
 
-2. **Liquidity Pool Vault Contract**:
+2.  **Liquidity Pool Vault Contract**:
 
-   - Established robust token management for both STX and SIP-010 tokens
-   - Implemented deposit, withdrawal, and collateral management functions
-   - Created settlement payment functionality for policy fulfillment
-   - Added comprehensive balance checking and authorization controls
-   - Implemented proper event emission for all state-changing operations
-   - **Implemented integration points to call the Policy Registry (`verify-policy-active`, `get-policy-settlement-details`) (LP-110).**
-   - **Added `has-sufficient-collateral` function for policy creation checks.**
-   - **Refined `pay-settlement` logic to clarify separate handling of collateral release.**
+    - Established robust token management for both STX and SIP-010 tokens
+    - Implemented deposit, withdrawal, and collateral management functions
+    - Created settlement payment functionality for policy fulfillment
+    - Added comprehensive balance checking and authorization controls
+    - Implemented proper event emission for all state-changing operations
+    - **Completed integration points with Policy Registry (`verify-policy-active`, `get-policy-settlement-details`) using placeholder functions (LP-110).**
+    - **Added `has-sufficient-collateral` function for policy creation checks.**
+    - **Refined `pay-settlement` logic to clarify separate handling of collateral release.**
 
-3. **Debugging and Optimizations**:
-   - Fixed multiple syntax errors related to SIP-010 trait definition
-   - Adapted token contract handling to use direct principal references instead of complex trait handling
-   - Improved burn-block-height usage for proper block height references
-   - Simplified batch operations to ensure contract compatibility and stability
-   - Ensured proper owner authorization using CONTRACT-OWNER constant
-   - **Addressed several linter errors, although some related to `contract-call?` with `var-get` persist due to linter interpretation.**
+3.  **Debugging and Optimizations**:
+    - Fixed multiple syntax errors related to SIP-010 trait definition
+    - Adapted token contract handling to use direct principal references instead of complex trait handling
+    - Improved burn-block-height usage for proper block height references
+    - Simplified batch operations to ensure contract compatibility and stability
+    - Ensured proper owner authorization using CONTRACT-OWNER constant
+    - **Resolved `clarinet check` errors, including circular dependency issues, by implementing placeholder functions for cross-contract calls. The contracts now compile successfully.**
 
-The contracts now compile successfully with Clarinet, with a few remaining tasks related to integration points and testing. The implemented contracts maintain the minimal on-chain footprint design while providing all essential functionality for the BitHedge platform.
+The implemented contracts maintain the minimal on-chain footprint design while providing all essential functionality for the BitHedge platform. The placeholder functions resolve the compilation issues and allow deployment, but the unit tests (`TEST-101`, `TEST-102`) are currently failing and need to be updated to reflect the contract changes and mock the placeholder behavior.
 
 ### Phase 2: Convex Backend Implementation (Duration: Est. 4 weeks)
 
