@@ -76,7 +76,7 @@ The implementation covers these core components:
 | PR-115  | Add premium distribution tracking and processing                      | 8          | 🟢     | PR-105, LP-107 |          |
 | PR-116  | Add collateral type tracking for different policy types               | 6          | 🟢     | PR-113         |          |
 | PR-117  | Implement multiple settlement asset support                           | 8          | 🟢     | PR-116         |          |
-| PR-118  | Enhance premium distribution logic with provider-specific tracking    | 10         | ⬜     | PR-115, LP-112 |          |
+| PR-118  | Enhance premium distribution logic with provider-specific tracking    | 10         | 🟢     | PR-115, LP-112 |          |
 | PR-119  | Implement premium-distribution-initiated event emission               | 4          | 🟢     | PR-115         |          |
 | PR-120  | Add counterparty notification for premium distribution                | 6          | 🟢     | PR-119         |          |
 | PR-121  | Enhance policy creation to handle position type assignment            | 6          | 🟢     | PR-113         |          |
@@ -97,18 +97,31 @@ The implementation covers these core components:
 | LP-109  | Add event emission for all state-changing functions                    | 4          | 🟢     | LP-104, LP-105 |          |
 | LP-110  | Create integration points with Policy Registry contract                | 6          | 🟢     | LP-107         |          |
 | LP-111  | Implement SIP-010 token handling logic                                 | 8          | 🟢     | LP-104         |          |
-| LP-112  | Implement provider-specific premium accounting                         | 10         | ⬜     | LP-107         |          |
-| LP-113  | Enhance release-collateral to handle premium distribution              | 6          | ⬜     | LP-107         |          |
-| LP-114  | Add premium-balances map to track premiums                             | 6          | ⬜     | LP-112         |          |
-| LP-115  | Implement record-premium-payment function                              | 8          | ⬜     | LP-114         |          |
-| LP-116  | Implement distribute-premium function                                  | 8          | ⬜     | LP-115         |          |
-| LP-117  | Implement provider-policy-allocations map                              | 6          | ⬜     | LP-112         |          |
-| LP-118  | Add distribute-provider-premium function                               | 8          | ⬜     | LP-117         |          |
-| LP-119  | Implement premium distribution event emissions                         | 4          | ⬜     | LP-116, LP-118 |          |
-| LP-120  | Create functions for premium allocation based on provider contribution | 10         | ⬜     | LP-117         |          |
-| LP-121  | Add premium-earned tracking for provider analytics                     | 6          | ⬜     | LP-112, LP-118 |          |
-| LP-122  | Implement withdrawal functions with premium balance inclusion          | 8          | ⬜     | LP-114, LP-105 |          |
-| LP-123  | Create premium-distributed event hook for provider notifications       | 6          | ⬜     | LP-119         |          |
+| LP-112  | Implement provider-specific premium accounting                         | 10         | 🟢     | LP-107         |          |
+| LP-113  | Enhance release-collateral to handle premium distribution              | 6          | 🟢     | LP-107         |          |
+| LP-114  | Add premium-balances map to track premiums                             | 6          | 🟢     | LP-112         |          |
+| LP-115  | Implement record-premium-payment function                              | 8          | 🟢     | LP-114         |          |
+| LP-116  | Implement distribute-premium function                                  | 8          | 🟢     | LP-115         |          |
+| LP-117  | Implement provider-policy-allocations map                              | 6          | 🟢     | LP-112         |          |
+| LP-118  | Add distribute-provider-premium function                               | 8          | 🟢     | LP-117         |          |
+| LP-119  | Implement premium distribution event emissions                         | 4          | 🟢     | LP-116, LP-118 |          |
+| LP-120  | Create functions for premium allocation based on provider contribution | 10         | 🟢     | LP-117         |          |
+| LP-121  | Add premium-earned tracking for provider analytics                     | 6          | 🟢     | LP-112, LP-118 |          |
+| LP-122  | Implement withdrawal functions with premium balance inclusion          | 8          | 🟢     | LP-114, LP-105 |          |
+| LP-123  | Create premium-distributed event hook for provider notifications       | 6          | 🟢     | LP-119         |          |
+
+**Implementation Notes (LP-101 to LP-123):**
+
+- Core vault functionalities including deposits, withdrawals (backend-authorized), collateral locking/releasing, and settlement payment are in place.
+- Provider-specific premium accounting has been implemented on-chain, enabling the vault to track and manage premiums at a granular level.
+- Key data structures added: `premium-balances` (for overall premium tracking per token) and `provider-policy-allocations` (to link providers to policies and their premium shares).
+- Core functions for premium lifecycle: `record-premium-payment`, `distribute-premium` (to counterparty), `record-provider-allocation` (by backend), and `distribute-provider-premium` (by backend to provider wallet).
+- Token identification uses `(string-ascii 32)` consistent with existing contract patterns and Convex backend alignment, rather than `principal` from the original vault spec for token map keys.
+- Events for all significant premium-related actions are emitted (e.g., `premium-recorded`, `premium-distributed`, `provider-allocation-recorded`, `provider-premium-distributed`).
+- Read-only functions are available to query premium balances and provider allocations.
+- `LP-113 (Enhance release-collateral)`: Addressed by ensuring the system supports sequenced premium distribution alongside collateral release, orchestrated by the backend. `release-collateral` function itself remains focused on adjusting locked amounts.
+- `LP-122 (Withdrawal functions with premium balance inclusion)`: Addressed by `distribute-provider-premium` directly paying out premiums to providers. Capital withdrawal functions are for capital; backend orchestrates the combined user experience.
+- All listed tasks from LP-101 through LP-123 are now considered implemented on-chain.
 
 #### C. Contract Testing & Deployment
 

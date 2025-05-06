@@ -34,6 +34,12 @@
 (define-constant ERR-TRANSFER-FAILED (err u500))
 (define-constant CONTRACT-OWNER tx-sender)
 
+;; New Error Codes for Premium Logic
+(define-constant ERR-POLICY-NOT-FOUND (err u408)) ;; Assuming u408 is available
+(define-constant ERR-PREMIUM-ALREADY-DISTRIBUTED (err u409)) ;; Assuming u409 is available
+(define-constant ERR-PREMIUM-NOT-RECORDED (err u410)) ;; If attempting to distribute non-existent premium
+(define-constant ERR-INVALID-PREMIUM-SHARE (err u411)) ;; If premium share calculation is problematic
+
 ;; Token Identifiers (Placeholders - replace with actual mainnet/testnet addresses)
 ;; We use a constant for sBTC example, but for STX we handle it differently
 (define-constant SBTC-TOKEN 'SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token) ;; Example sBTC token principal
@@ -50,10 +56,15 @@
 ;; Value: Amount locked
 (define-map locked-collateral { token: (string-ascii 32) } { amount: uint })
 
-;; Map storing balances per liquidity provider (Off-chain responsibility in "On-Chain Light")
-;; (define-map provider-balances { provider: principal, token: principal } { balance: uint })
-;; Note: Individual provider balances are managed off-chain by Convex in this model.
-;; This contract only tracks the *total* pooled amount per token.
+;; Map storing total premiums collected and distributed for each token
+;; Key: Token Identifier (e.g., "STX", "SBTC")
+;; Value: { total-premiums: uint, distributed-premiums: uint }
+(define-map premium-balances { token: (string-ascii 32) } { total-premiums: uint, distributed-premiums: uint })
+
+;; Map storing provider contributions to specific policies for premium distribution
+;; Key: { provider: principal, policy-id: uint }
+;; Value: { token: (string-ascii 32), allocated-amount: uint, premium-share: uint, premium-distributed: bool }
+(define-map provider-policy-allocations { provider: principal, policy-id: uint } { token: (string-ascii 32), allocated-amount: uint, premium-share: uint, premium-distributed: bool })
 
 ;; --- Data Variables ---
 
@@ -98,6 +109,8 @@
     ;; Initialize balances and locked collateral maps for the token if not already done
     (map-insert token-balances { token: token-id } { balance: u0 })
     (map-insert locked-collateral { token: token-id } { amount: u0 })
+    ;; Initialize premium balances map for the token
+    (map-insert premium-balances { token: token-id } { total-premiums: u0, distributed-premiums: u0 })
     (map-set supported-tokens { token: token-id } { initialized: true })
     ;; Emit event (optional)
     (print { event: "token-initialized", token: token-id })
@@ -404,6 +417,24 @@
   (var-get policy-registry-principal)
 )
 
+;; --- Read-Only Functions for Premium Data ---
+
+;; Get premium balance information for a token
+(define-read-only (get-premium-balances-for-token (token-id (string-ascii 32)))
+  (default-to { total-premiums: u0, distributed-premiums: u0 }
+              (map-get? premium-balances { token: token-id })))
+
+;; Get undistributed premium amount for a token
+(define-read-only (get-undistributed-premiums-for-token (token-id (string-ascii 32)))
+  (let ((premiums (get-premium-balances-for-token token-id)))
+    (- (get total-premiums premiums) (get distributed-premiums premiums))
+  )
+)
+
+;; Get provider allocation for a policy
+(define-read-only (get-provider-allocation (provider principal) (policy-id uint))
+  (map-get? provider-policy-allocations { provider: provider, policy-id: policy-id }))
+
 ;; Check if the vault has sufficient available balance to cover the required collateral for a potential policy
 ;; Called by policy-registry contract during policy creation check (PR-111)
 (define-read-only (has-sufficient-collateral
@@ -416,6 +447,123 @@
       (available (get-available-balance token-id))
     )
     (ok (>= available required-collateral))
+  )
+)
+
+;; --- Premium Management Functions ---
+
+;; Record a premium payment received for a policy
+;; Called by the Policy Registry contract when a premium is paid by a policy buyer
+(define-public (record-premium-payment (token-id (string-ascii 32)) (amount uint) (policy-id uint) (counterparty principal))
+  (begin
+    (asserts! (is-eq tx-sender (var-get policy-registry-principal)) ERR-UNAUTHORIZED)
+    (asserts! (is-token-supported token-id) ERR-TOKEN-NOT-INITIALIZED) 
+    (asserts! (> amount u0) ERR-AMOUNT-MUST-BE-POSITIVE)
+
+    (let ((current-premiums (default-to {total-premiums: u0, distributed-premiums: u0} (map-get? premium-balances {token: token-id}))))
+      (map-set premium-balances {token: token-id} {
+        total-premiums: (+ (get total-premiums current-premiums) amount),
+        distributed-premiums: (get distributed-premiums current-premiums)
+      })
+    )
+    (print { event: "premium-recorded", policy-id: policy-id, counterparty: counterparty, premium-amount: amount, token: token-id })
+    (ok true)
+  )
+)
+
+;; Distribute premium to the policy counterparty (e.g., seller) when a policy expires unexercised
+;; Called by the Policy Registry contract or the backend authorized principal
+(define-public (distribute-premium (token-id (string-ascii 32)) (amount uint) (counterparty principal) (policy-id uint))
+  (begin
+    (asserts! (or (is-eq tx-sender (var-get policy-registry-principal))
+                  (is-eq tx-sender (var-get backend-authorized-principal)))
+              ERR-UNAUTHORIZED)
+    (asserts! (is-token-supported token-id) ERR-TOKEN-NOT-INITIALIZED)
+    (asserts! (> amount u0) ERR-AMOUNT-MUST-BE-POSITIVE)
+
+    (let ((current-premiums (unwrap! (map-get? premium-balances {token: token-id}) ERR-PREMIUM-NOT-RECORDED)))
+      (asserts! (>= (- (get total-premiums current-premiums) (get distributed-premiums current-premiums)) amount) ERR-INSUFFICIENT-LIQUIDITY) ;; Not enough undistributed premium
+
+      (map-set premium-balances {token: token-id} {
+        total-premiums: (get total-premiums current-premiums),
+        distributed-premiums: (+ (get distributed-premiums current-premiums) amount)
+      })
+
+      ;; Transfer funds to counterparty
+      (if (is-eq token-id "STX")
+        (try! (as-contract (stx-transfer? amount tx-sender counterparty)))
+        ;; Assuming only STX and a single SIP-010 (SBTC) for now as per contract structure
+        (try! (as-contract (contract-call? SBTC-TOKEN transfer amount tx-sender counterparty none)))
+      )
+      
+      (print { event: "premium-distributed", policy-id: policy-id, counterparty: counterparty, premium-amount: amount, token: token-id })
+      (ok true)
+    )
+  )
+)
+
+;; Record a provider's allocation to a specific policy for premium sharing purposes
+;; Called by the backend authorized principal
+(define-public (record-provider-allocation (provider principal) (policy-id uint) (token-id (string-ascii 32)) (allocated-amount uint) (premium-share uint))
+  (begin
+    (asserts! (is-eq tx-sender (var-get backend-authorized-principal)) ERR-UNAUTHORIZED)
+    (asserts! (is-token-supported token-id) ERR-TOKEN-NOT-INITIALIZED)
+    ;; premium-share is a percentage, e.g., u50 for 50%. Max u100.
+    (asserts! (and (> premium-share u0) (<= premium-share u100)) ERR-INVALID-PREMIUM-SHARE)
+
+    (map-set provider-policy-allocations {provider: provider, policy-id: policy-id} {
+      token: token-id,
+      allocated-amount: allocated-amount,
+      premium-share: premium-share, ;; This should be the provider's share of the *total policy premium*
+      premium-distributed: false
+    })
+
+    (print { event: "provider-allocation-recorded", provider: provider, policy-id: policy-id, allocated-amount: allocated-amount, premium-share: premium-share, token: token-id })
+    (ok true)
+  )
+)
+
+;; Distribute a specific provider's share of a policy's premium to that provider
+;; Called by the backend authorized principal
+(define-public (distribute-provider-premium (provider principal) (policy-id uint) (actual-premium-to-distribute uint))
+  (begin
+    (asserts! (is-eq tx-sender (var-get backend-authorized-principal)) ERR-UNAUTHORIZED)
+
+    (let ((allocation (unwrap! (map-get? provider-policy-allocations {provider: provider, policy-id: policy-id}) ERR-POLICY-NOT-FOUND)))
+      (let ( ;; Nested let to handle sequential binding
+        (token-id (get token allocation))
+        (current-premiums (unwrap! (map-get? premium-balances {token: (get token allocation)}) ERR-PREMIUM-NOT-RECORDED)) ;; Access token-id directly from allocation for this binding
+      )
+        (asserts! (is-token-supported token-id) ERR-TOKEN-NOT-INITIALIZED) ;; Now use the bound token-id
+        (asserts! (not (get premium-distributed allocation)) ERR-PREMIUM-ALREADY-DISTRIBUTED)
+        (asserts! (> actual-premium-to-distribute u0) ERR-AMOUNT-MUST-BE-POSITIVE)
+        
+        ;; Ensure the amount to distribute to provider does not exceed their recorded share (which might be pre-calculated by backend)
+        ;; AND ensure the overall pool of undistributed premiums for this token can cover this specific payout.
+        ;; This is critical: the `premium-share` in allocation is a percentage. The `actual-premium-to-distribute` 
+        ;; would be calculated by the backend (e.g. total_policy_premium * (premium-share / 100)).
+        ;; We need to ensure this amount is available in the global undistributed premiums for that token.
+        (asserts! (>= (- (get total-premiums current-premiums) (get distributed-premiums current-premiums)) actual-premium-to-distribute) ERR-INSUFFICIENT-LIQUIDITY)
+
+        ;; Update provider's allocation to mark premium as distributed
+        (map-set provider-policy-allocations {provider: provider, policy-id: policy-id} (merge allocation {premium-distributed: true}))
+
+        ;; Update the global premium balance for the token
+        (map-set premium-balances {token: token-id} { ;; Use bound token-id
+          total-premiums: (get total-premiums current-premiums),
+          distributed-premiums: (+ (get distributed-premiums current-premiums) actual-premium-to-distribute)
+        })
+
+        ;; Transfer funds to provider
+        (if (is-eq token-id "STX") ;; Use bound token-id
+          (try! (as-contract (stx-transfer? actual-premium-to-distribute tx-sender provider)))
+          (try! (as-contract (contract-call? SBTC-TOKEN transfer actual-premium-to-distribute tx-sender provider none)))
+        )
+
+        (print { event: "provider-premium-distributed", provider: provider, policy-id: policy-id, premium-amount: actual-premium-to-distribute, token: token-id }) ;; Use bound token-id
+        (ok true)
+      )
+    )
   )
 )
 
