@@ -74,13 +74,13 @@ The implementation covers these core components:
 | PR-113  | Add explicit position type field to policy data structure             | 4          | 🟢     | PR-102         |          |
 | PR-114  | Implement policy-by-counterparty index                                | 4          | 🟢     | PR-102         |          |
 | PR-115  | Add premium distribution tracking and processing                      | 8          | 🟢     | PR-105, LP-107 |          |
-| PR-116  | Add collateral type tracking for different policy types               | 6          | ⬜     | PR-113         |          |
-| PR-117  | Implement multiple settlement asset support                           | 8          | ⬜     | PR-116         |          |
+| PR-116  | Add collateral type tracking for different policy types               | 6          | 🟢     | PR-113         |          |
+| PR-117  | Implement multiple settlement asset support                           | 8          | 🟢     | PR-116         |          |
 | PR-118  | Enhance premium distribution logic with provider-specific tracking    | 10         | ⬜     | PR-115, LP-112 |          |
-| PR-119  | Implement premium-distribution-initiated event emission               | 4          | ⬜     | PR-115         |          |
-| PR-120  | Add counterparty notification for premium distribution                | 6          | ⬜     | PR-119         |          |
-| PR-121  | Enhance policy creation to handle position type assignment            | 6          | ⬜     | PR-113         |          |
-| PR-122  | Create process-expired-policy-premium function                        | 8          | ⬜     | PR-115, PR-119 |          |
+| PR-119  | Implement premium-distribution-initiated event emission               | 4          | 🟢     | PR-115         |          |
+| PR-120  | Add counterparty notification for premium distribution                | 6          | 🟢     | PR-119         |          |
+| PR-121  | Enhance policy creation to handle position type assignment            | 6          | 🟢     | PR-113         |          |
+| PR-122  | Create process-expired-policy-premium function                        | 8          | 🟢     | PR-115, PR-119 |          |
 
 #### B. Liquidity Pool Vault Contract
 
