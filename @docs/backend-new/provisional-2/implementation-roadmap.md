@@ -194,15 +194,15 @@ The implemented contracts maintain the minimal on-chain footprint design while p
 | CV-PR-201 | Define schema for `policies` table in `convex/schema.ts` as per `convex-policy-registry-architecture.md`. Include all fields mirroring on-chain data (ref: PR-102) and extended off-chain metadata.                                                                                | 4          | 🟢     | PR-102                                |          |
 | CV-PR-202 | Define schema for `policyEvents` table in `convex/schema.ts` for historical event tracking.                                                                                                                                                                                        | 4          | 🟢     | CV-PR-201                             |          |
 | CV-PR-203 | Define schema for `pendingPolicyTransactions` table in `convex/schema.ts` for managing asynchronous on-chain interactions.                                                                                                                                                         | 4          | 🟢     | CV-PR-201                             |          |
-| CV-PR-204 | Implement foundational policy query functions: `getPolicy(policyId)` and initial `getPoliciesForUser(filters)` (owner-based, basic filters) in `convex/policyRegistry.ts`.                                                                                                         | 6          | 🟡     | CV-PR-201                             |          |
-| CV-PR-205 | Implement `getPolicyEvents(policyId)` query function in `convex/policyRegistry.ts` to fetch historical events for a specific policy.                                                                                                                                               | 4          | 🟡     | CV-PR-202                             |          |
+| CV-PR-204 | Implement foundational policy query functions: `getPolicy(policyId)` and initial `getPoliciesForUser(filters)` (owner-based, basic filters) in `convex/policyRegistry.ts`.                                                                                                         | 6          | 🟢     | CV-PR-201                             |          |
+| CV-PR-205 | Implement `getPolicyEvents(policyId)` query function in `convex/policyRegistry.ts` to fetch historical events for a specific policy.                                                                                                                                               | 4          | 🟢     | CV-PR-202                             |          |
 | CV-PR-206 | Implement `checkPolicyActivationEligibility(policyId)` query in `convex/policyRegistry.ts`. Use mocked Oracle interactions (e.g., `mockGetCurrentBTCPrice()`) and blockchain data (e.g. `mockGetLatestBlockHeight()`).                                                             | 6          | 🟢     | CV-PR-201, mock(BI-204)               |          |
 | CV-PR-207 | Implement/Integrate `premiumCalculationService`. Analyze `convex/premium.ts` and `convex/prices.ts`; wrap existing logic or define a new service structure for policy lifecycle premium calculations.                                                                              | 8          | 🟢     | CV-PR-201                             |          |
 | CV-PR-208 | Implement a mock `poolLiquidityCheckingService` (e.g., in `convex/mocks.ts` or inline mock) to simulate checking Liquidity Pool capacity. This replaces the direct CV-LP-201 dependency for now.                                                                                   | 4          | 🟢     | mock(CV-LP-201)                       |          |
-| CV-PR-209 | Implement `requestPolicyCreation(params)` action in `convex/policyRegistry.ts`. Utilizes `premiumCalculationService`, mock `poolLiquidityCheckingService`, determines position type/counterparty, prepares mock transaction payload, and inserts into `pendingPolicyTransactions`. | 10         | ⬜     | CV-PR-203, CV-PR-207, CV-PR-208       |          |
-| CV-PR-210 | Implement `requestPolicyActivation(params)` action in `convex/policyRegistry.ts`. Uses `checkPolicyActivationEligibility`, prepares mock transaction payload, and inserts into `pendingPolicyTransactions`.                                                                        | 8          | ⬜     | CV-PR-206, CV-PR-203                  |          |
-| CV-PR-211 | Implement `updateTransactionStatus(pendingTxId, transactionId, status, error?)` mutation in `convex/policyRegistry.ts` to manage entries in `pendingPolicyTransactions`.                                                                                                           | 6          | ⬜     | CV-PR-203                             |          |
-| CV-PR-212 | Implement scheduled job `checkTransactionStatusJob` in `convex/crons.ts`. Queries `pendingPolicyTransactions`, uses mocked `mockGetTransactionStatus(transactionId)` (replaces BI-201 dependency for now), and calls `updateTransactionStatus`.                                    | 8          | ⬜     | CV-PR-211, mock(BI-201), mock(BI-209) |          |
+| CV-PR-209 | Implement `requestPolicyCreation(params)` action in `convex/policyRegistry.ts`. Utilizes `premiumCalculationService`, mock `poolLiquidityCheckingService`, determines position type/counterparty, prepares mock transaction payload, and inserts into `pendingPolicyTransactions`. | 10         | 🟢     | CV-PR-203, CV-PR-207, CV-PR-208       |          |
+| CV-PR-210 | Implement `requestPolicyActivation(params)` action in `convex/policyRegistry.ts`. Uses `checkPolicyActivationEligibility`, prepares mock transaction payload, and inserts into `pendingPolicyTransactions`.                                                                        | 8          | 🟢     | CV-PR-206, CV-PR-203                  |          |
+| CV-PR-211 | Implement `updateTransactionStatus(pendingTxId, transactionId, status, error?)` mutation in `convex/policyRegistry.ts` to manage entries in `pendingPolicyTransactions`.                                                                                                           | 6          | 🟢     | CV-PR-203                             |          |
+| CV-PR-212 | Implement scheduled job `checkTransactionStatusJob` in `convex/crons.ts`. Queries `pendingPolicyTransactions`, uses mocked `mockGetTransactionStatus(transactionId)` (replaces BI-201 dependency for now), and calls `updateTransactionStatus`.                                    | 8          | 🟡     | CV-PR-211, mock(BI-201), mock(BI-209) |          |
 | CV-PR-213 | Implement scheduled job `checkExpiredPoliciesJob` in `convex/crons.ts`. Queries `policies` for active policies past `expirationHeight` (using mocked `mockGetLatestBlockHeight()`). Logs expired policies and prepares for creating pending expiration transactions.               | 8          | ⬜     | CV-PR-201, CV-PR-204, mock(BI-204)    |          |
 | CV-PR-214 | Implement basic `processPolicyStatusEvent(eventData)` mutation in `convex/policyRegistry.ts`. Designed for future blockchain event listeners; updates `policies` table and creates `policyEvents` entry. Testable with mock data.                                                  | 8          | ⬜     | CV-PR-202, CV-PR-201, mock(BI-202)    |          |
 | CV-PR-215 | Implement placeholder structure for `reconcileOnChainState` scheduled job in `convex/crons.ts`. Logs execution but no actual reconciliation. (Full reconciliation depends on BI-204).                                                                                              | 4          | ⬜     | CV-PR-214, mock(BI-204)               |          |
@@ -224,26 +224,79 @@ The implemented contracts maintain the minimal on-chain footprint design while p
 - **Schema Definition (CV-PR-201, CV-PR-202, CV-PR-203):** Tasks Completed.
   - Added `policies`, `policyEvents`, and `pendingPolicyTransactions` table definitions to `convex/schema.ts`.
   - Schemas align with `convex-policy-registry-architecture.md`, including necessary fields and indexes.
-- **Basic Queries & Enums (CV-PR-204 partial, CV-PR-205 partial):** Tasks In Progress (initial versions implemented).
-  - Created `convex/policyRegistry.ts`.
-  - Implemented `getPolicy`, basic `getPoliciesForUser`, and `getPolicyEvents`.
-  - Defined core enums (`PolicyStatus`, `PolicyType`, etc.) in `convex/policyRegistry.ts`.
-- **Key Considerations & Next Steps for these tasks:**
-  - `getPoliciesForUser` will need pagination and more robust filtering for production.
-  - Further development will populate and utilize these schemas and queries.
 
 **Implementation Notes (Policy Registry Service - Convex - Sub-Phase 2A.2):**
 
 - **Eligibility Checks & Service Stubs (CV-PR-206, CV-PR-207, CV-PR-208):** Tasks Completed.
   - `convex/premium.ts`: Exported `calculateBlackScholesPremium`.
   - `convex/policyRegistry.ts`:
-    - Added `calculatePremiumForPolicyCreation` leveraging `calculateBlackScholesPremium` and `internal.prices.getLatestPrice` (mocked for now). This serves as the `premiumCalculationService`.
+    - Added `calculatePremiumForPolicyCreation` leveraging `calculateBlackScholesPremium` and `internal.prices.getLatestPrice`. This serves as the `premiumCalculationService`.
     - Added `mockCheckPoolLiquidity` as a placeholder for `poolLiquidityCheckingService`.
-    - Added `checkPolicyActivationEligibility` query, using `mockGetLatestBlockHeight` and `mockGetCurrentBTCPrice` for simulated on-chain/oracle data.
-- **Key Considerations & Next Steps for these tasks:**
-  - The `calculatePremiumForPolicyCreation` currently assumes it can fetch `currentPriceUSD` and `volatility` via `internal.prices.getLatestPrice` and `internal.prices.getRecentVolatility`. The `prices.ts` file will need to be updated to provide these, potentially requiring new Convex functions/queries there. For now, the mock BTC price is used.
-  - `mockCheckPoolLiquidity` will need to be replaced with actual integration with the Liquidity Pool service (CV-LP-201) once available.
-  - `checkPolicyActivationEligibility` relies on mock data; will need integration with the Blockchain Integration layer (BI-204) for real data.
+    - Added `mockGetLatestBlockHeight` and `mockGetCurrentBTCPrice` for simulated on-chain/oracle data.
+    - Added `checkPolicyActivationEligibility` query, using mock functions to simulate blockchain/oracle interactions.
+
+**Implementation Notes (Policy Registry Service - Convex - Sub-Phase 2A.3):**
+
+- **Basic Query Functions (CV-PR-204, CV-PR-205):** Tasks Completed.
+  - Enhanced `getPoliciesForUser` with robust filtering capabilities:
+    - Added support for filtering by `status`, `policyType`, and `creationTimestamp` range
+    - Implemented pagination with `limit` and `offset` parameters
+    - Used user authentication to derive owner principal
+    - Added JavaScript-based sorting for consistent pagination
+  - Refined `getPolicyEvents` to properly use database indexing:
+    - Ensured correct ordering by event `timestamp`
+    - Used the `by_policyConvexId_and_timestamp` index for efficient querying
+    - Optimized for showing newest events first
+
+**Current Focus (CV-PR-212):**
+
+- Working on implementing `checkTransactionStatusJob` scheduled job with the following objectives:
+  - Query pending transactions with non-terminal status (Pending, Submitted)
+  - Use mock blockchain integration to check transaction status
+  - Update transaction status based on blockchain state via `updateTransactionStatus` mutation
+  - Implement retry mechanism for failed blockchain queries (if applicable)
+  - Set up proper cron scheduling for periodic checking in `convex/crons.ts`
+
+**Completed (CV-PR-211):**
+
+- Successfully implemented `updateTransactionStatus` mutation in `convex/policyRegistry.ts`.
+- Added `TransactionStatus` enum for standardized tracking of pending transaction states.
+- Implemented a state machine logic within the mutation to validate and manage transitions between statuses (e.g., Pending -> Submitted -> Confirmed/Failed).
+- Integrated helper internal mutations `createPolicyEvent` and `updatePolicyStatus` for modularity.
+- Developed `handleConfirmedPolicyCreation` function to:
+  - Create new policy documents in the `policies` table upon confirmation of "Create" type transactions.
+  - Record relevant `CREATED` and `ONCHAIN_CONFIRMED` policy events.
+  - Link the confirmed policy ID back to the `pendingPolicyTransactions` record via `policyConvexId`.
+- Developed `handleConfirmedPolicyActivation` function to:
+  - Update the corresponding policy's status to `EXERCISED`.
+  - Record `ACTIVATED` and `SETTLEMENT_REQUESTED` policy events.
+  - Store settlement details (amount, price) in the policy document.
+- Implemented error handling for failed transactions, including logging and creating `ERROR` policy events when a `policyConvexId` is available.
+- Resolved several TypeScript schema-related issues by updating `convex/schema.ts` to ensure fields like `updatedAt`, `onChainPolicyId`, `exercisedAt` (for `policies` table) and `policyConvexId` (for `pendingPolicyTransactions` table) were correctly defined and typed, leading to successful typechecking.
+
+**Completed (CV-PR-210):**
+
+- Successfully implemented `requestPolicyActivation(params)` action with comprehensive functionality:
+  - Added policy existence and ownership validation
+  - Leveraged `checkPolicyActivationEligibility` to verify if the policy can be exercised
+  - Implemented transaction preparation for activating (exercising) policies
+  - Ensured settlement amount validation
+  - Created transaction tracking through the pending transactions table
+  - Provided appropriate error handling and user feedback
+
+**Completed (CV-PR-209):**
+
+- Successfully implemented `requestPolicyCreation(params)` action with comprehensive functionality:
+  - Added parameter validation to ensure policy request is valid
+  - Integrated with premium calculation service to determine appropriate premium
+  - Added mock pool liquidity checking to simulate capacity verification
+  - Created helper functions for blockchain conversions:
+    - `daysToBlockHeight`: Converts duration days to block height
+    - `usdToSats` and `btcToSats`: Convert values to on-chain units
+  - Implemented proper position type determination based on policy type
+  - Added transaction payload preparation for blockchain integration
+  - Created proper database interaction for tracking pending transactions
+  - Ensured correct use of internal mutations for database operations from actions
 
 #### B. Liquidity Pool Service - Convex Implementation
 
