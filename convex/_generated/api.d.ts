@@ -19,6 +19,7 @@ import type * as crons from "../crons.js";
 import type * as http from "../http.js";
 import type * as options from "../options.js";
 import type * as oracleSubmissions from "../oracleSubmissions.js";
+import type * as policyRegistry from "../policyRegistry.js";
 import type * as premium from "../premium.js";
 import type * as prices from "../prices.js";
 import type * as quotes from "../quotes.js";
@@ -41,6 +42,7 @@ declare const fullApi: ApiFromModules<{
   http: typeof http;
   options: typeof options;
   oracleSubmissions: typeof oracleSubmissions;
+  policyRegistry: typeof policyRegistry;
   premium: typeof premium;
   prices: typeof prices;
   quotes: typeof quotes;
