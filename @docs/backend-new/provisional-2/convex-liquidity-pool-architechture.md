@@ -1,1509 +1,1431 @@
-BitHedge Liquidity Pool: Convex Backend Architecture
+# BitHedge Liquidity Pool: Convex Architecture
 
-1. Introduction
-   This document outlines the architecture of the Liquidity Pool component within the BitHedge platform, focusing specifically on its off-chain implementation in the Convex backend. The Liquidity Pool is responsible for managing capital from providers, allocating collateral to policies, processing settlements, distributing yield, and providing risk management services. Following the "On-Chain Light" approach, this component distributes responsibilities between minimal on-chain storage and comprehensive off-chain management.
-2. System Context
-   The Liquidity Pool Service is a core component of the BitHedge platform, interacting with several other components:
+## 1. Introduction
 
-┌──────────────────────┐ ┌───────────────┐ ┌─────────────────────┐
-│ │ │ │ │ │
-│ Frontend Components ├─────►│ Liquidity │◄────►│ Policy Registry │
-│ (ProviderIncome.tsx)│ │ Pool Service │ │ Service │
-│ │ │ │ │ │
-└──────────────────────┘ └─────┬─────────┘ └─────────────────────┘
-│ ▲
-│ │
-▼ │
-┌──────────────────────┐ ┌─────┴──┴────────────┐ ┌─────────────────────┐
-│ │ │ │ │ │
-│ Oracle Service │◄────►│ Blockchain │◄────►│ On-Chain │
-│ │ │ Integration Layer │ │ Liquidity Pool │
-│ │ │ │ │ Vault │
-└──────────────────────┘ └──────────────────────┘ └─────────────────────┘
+This document outlines the architecture for the Convex backend implementation of the BitHedge Liquidity Pool. Following the "On-Chain Light" approach, the Convex backend handles complex provider-specific accounting, premium distribution tracking, yield calculations, and user interfaces while the on-chain contract provides secure custody and basic financial operations.
 
-3. Data Model
-   3.1 Convex Schema
-   The Liquidity Pool manages several key data structures within Convex:
+## 2. System Overview
 
-// Provider deposits and balances table
+The Liquidity Pool subsystem consists of:
+
+1. **On-Chain Vault Contract**: Securely holds funds and handles basic financial operations.
+2. **Convex Backend**: Manages provider-specific data, allocations, premium accounting, and interfaces with the Vault contract.
+3. **Frontend Components**: Allow users to interact with the Liquidity Pool through the Convex backend.
+
+## 3. Data Model
+
+### 3.1 Key Tables
+
+#### Provider Balances
+
+```javascript
 defineTable({
-name: "providerBalances",
-schema: {
-// Primary identification
-providerId: v.string(), // Principal of the provider
-tokenId: v.string(), // Token identifier (e.g., 'STX', 'sBTC')
-
-    // Balance tracking
-    totalDeposited: v.number(), // Total amount ever deposited
-    currentBalance: v.number(), // Current balance (total - withdrawals)
-    allocatedBalance: v.number(), // Amount backing active policies
-    availableBalance: v.number(), // Amount available for withdrawal
-
-    // Risk tier information
-    riskTier: v.string(), // "Conservative", "Balanced", "Aggressive"
-    riskMultiplier: v.number(), // Risk-based allocation multiplier
-
-    // Yield tracking
-    totalEarnedPremiums: v.number(), // Total earned from premiums
-    totalSettlementLosses: v.number(), // Total lost to settlements
-    netYield: v.number(), // Net yield (premiums - losses)
-
-    // Time-based fields
-    lastDepositTimestamp: v.number(), // Last deposit time
-    lastWithdrawalTimestamp: v.number(), // Last withdrawal time
-    lastUpdateTimestamp: v.number(), // Last update time
-
-},
-indexes: [
-// Find balances for a provider
-{ field: "providerId" },
-// Find balances by token
-{ field: "tokenId" },
-// Find balances by risk tier
-{ field: "riskTier" },
-],
+  name: "provider_balances",
+  schema: {
+    provider: v.string(), // Provider principal
+    token: v.string(), // Token ID (STX, sBTC, etc.)
+    total_deposited: v.number(), // Total amount deposited
+    available_balance: v.number(), // Available (unlocked) balance
+    locked_balance: v.number(), // Balance locked as collateral
+    earned_premiums: v.number(), // Total premiums earned
+    withdrawn_premiums: v.number(), // Premiums withdrawn
+    pending_premiums: v.number(), // Premiums pending distribution
+    last_updated: v.number(), // Timestamp of last update
+  },
+  primaryIndex: {
+    name: "provider_token",
+    field: ["provider", "token"],
+  },
 });
+```
 
-// Pool-wide metrics and state
+#### Policy Allocations
+
+```javascript
 defineTable({
-name: "poolMetrics",
-schema: {
-tokenId: v.string(), // Token identifier (primary key)
-
-    // Pool capacity metrics
-    totalDeposited: v.number(), // Total ever deposited
-    currentTotalBalance: v.number(), // Current total balance
-    totalAllocated: v.number(), // Total allocated to policies
-    totalAvailable: v.number(), // Total available for new policies
-
-    // Risk tier distributions
-    conservativeTierAmount: v.number(), // Amount in conservative tier
-    balancedTierAmount: v.number(), // Amount in balanced tier
-    aggressiveTierAmount: v.number(), // Amount in aggressive tier
-
-    // Performance metrics
-    totalPremiumsCollected: v.number(), // Total premiums collected
-    totalSettlementsPaid: v.number(), // Total settlements paid
-    netPoolYield: v.number(), // Net yield across the pool
-
-    // Utilization metrics
-    utilizationRate: v.number(), // Percentage of pool in use
-    averageAPY: v.number(), // Average yield across all providers
-
-    // Last updated timestamp
-    lastUpdateTimestamp: v.number(),
-
-},
+  name: "policy_allocations",
+  schema: {
+    policy_id: v.number(), // Policy ID
+    provider: v.string(), // Provider principal
+    token: v.string(), // Token ID
+    allocated_amount: v.number(), // Amount allocated as collateral
+    allocation_percentage: v.number(), // Percentage of total policy collateral
+    premium_share: v.number(), // Share of premium allocated to this provider
+    premium_distributed: v.boolean(), // Whether premium has been distributed
+    allocation_timestamp: v.number(), // When allocation was made
+    status: v.string(), // ACTIVE, EXPIRED, EXERCISED, etc.
+  },
+  primaryIndex: {
+    name: "policy_provider",
+    field: ["policy_id", "provider"],
+  },
 });
+```
 
-// Policy allocations table (tracks which providers back which policies)
+#### Provider Transactions
+
+```javascript
 defineTable({
-name: "policyAllocations",
-schema: {
-policyId: v.number(), // Reference to policy
-providerId: v.string(), // Provider backing this policy
-tokenId: v.string(), // Token type used for backing
-allocatedAmount: v.number(), // Amount allocated from this provider
-premiumShare: v.number(), // Provider's share of the premium
-settlementLiability: v.number(), // Provider's liability if settled
-allocationTimestamp: v.number(), // When allocation was made
-},
-indexes: [
-// Find allocations for a policy
-{ field: "policyId" },
-// Find allocations by provider
-{ field: "providerId" },
-],
+  name: "provider_transactions",
+  schema: {
+    provider: v.string(), // Provider principal
+    tx_id: v.string(), // Transaction ID
+    tx_type: v.string(), // DEPOSIT, WITHDRAWAL, PREMIUM, etc.
+    amount: v.number(), // Amount involved
+    token: v.string(), // Token ID
+    timestamp: v.number(), // Transaction timestamp
+    policy_id: v.optional(v.number()), // Associated policy (if applicable)
+    status: v.string(), // PENDING, CONFIRMED, FAILED
+    chain_tx_id: v.optional(v.string()), // On-chain transaction ID
+  },
+  primaryIndex: {
+    name: "provider_timestamp",
+    field: ["provider", "timestamp"],
+  },
 });
+```
 
-// Transaction history table
+#### Premium Distribution Records
+
+```javascript
 defineTable({
-name: "poolTransactions",
-schema: {
-transactionId: v.string(), // Unique identifier or blockchain txid
-providerId: v.string(), // Provider involved (if applicable)
-transactionType: v.string(), // "Deposit", "Withdrawal", "Settlement", etc.
-tokenId: v.string(), // Token involved
-amount: v.number(), // Transaction amount
-timestamp: v.number(), // Transaction time
-status: v.string(), // "Pending", "Confirmed", "Failed"
-blockHeight: v.optional(v.number()), // Block height if confirmed
-relatedPolicyId: v.optional(v.number()), // Related policy if applicable
-metadata: v.optional(v.any()), // Additional transaction-specific data
-},
-indexes: [
-// Find transactions by provider
-{ field: "providerId" },
-// Find transactions by type
-{ field: "transactionType" },
-// Find transactions by status
-{ field: "status" },
-],
+  name: "premium_distributions",
+  schema: {
+    policy_id: v.number(), // Policy ID
+    counterparty: v.string(), // Counterparty principal (pool address)
+    total_premium: v.number(), // Total premium amount
+    distribution_timestamp: v.number(), // When premium was distributed
+    status: v.string(), // PENDING, COMPLETED, FAILED
+    token: v.string(), // Token used for premium payment
+    chain_tx_id: v.optional(v.string()), // On-chain transaction ID
+  },
+  primaryIndex: {
+    name: "policy_id",
+    field: ["policy_id"],
+  },
 });
+```
 
-// Pending pool transactions table
+#### Provider Premium Distributions
+
+```javascript
 defineTable({
-name: "pendingPoolTransactions",
-schema: {
-actionType: v.string(), // "Deposit", "Withdrawal", "Settlement", etc.
-status: v.string(), // "Pending", "Submitted", "Confirmed", "Failed"
-createdAt: v.number(), // When transaction was initiated
-updatedAt: v.number(), // Last status update
-transactionId: v.optional(v.string()), // Stacks txid when available
-providerId: v.string(), // Principal of provider who initiated
-tokenId: v.string(), // Token being transferred
-amount: v.number(), // Amount being transferred
-payload: v.any(), // Transaction payload/params
-error: v.optional(v.string()), // Error message if failed
-retryCount: v.number(), // Count of retry attempts
-},
-indexes: [
-// Find pending transactions by provider
-{ field: "providerId" },
-// Find pending transactions by status
-{ field: "status" },
-],
+  name: "provider_premium_distributions",
+  schema: {
+    policy_id: v.number(), // Policy ID
+    provider: v.string(), // Provider principal
+    premium_amount: v.number(), // Premium amount for this provider
+    token: v.string(), // Token used for premium payment
+    distribution_timestamp: v.number(), // When premium was distributed
+    status: v.string(), // PENDING, COMPLETED, FAILED
+    chain_tx_id: v.optional(v.string()), // On-chain transaction ID
+  },
+  primaryIndex: {
+    name: "policy_provider",
+    field: ["policy_id", "provider"],
+  },
 });
+```
 
-3.2 Key Data Types
+### 3.2 Indexes and Relationships
 
-// Exported TypeScript types for use across the platform
+1. **Provider Balances by Provider**:
 
-// Risk tier enum
-export enum RiskTier {
-CONSERVATIVE = "Conservative",
-BALANCED = "Balanced",
-AGGRESSIVE = "Aggressive",
-}
+   - Index on `provider` to quickly retrieve all token balances for a provider
 
-// Transaction type enum
-export enum PoolTransactionType {
-DEPOSIT = "Deposit",
-WITHDRAWAL = "Withdrawal",
-SETTLEMENT = "Settlement",
-PREMIUM_EARNED = "PremiumEarned",
-ALLOCATION = "Allocation",
-RELEASE = "Release",
-}
+2. **Policy Allocations by Status**:
 
-// Transaction status enum
-export enum TransactionStatus {
-PENDING = "Pending",
-SUBMITTED = "Submitted",
-CONFIRMED = "Confirmed",
-FAILED = "Failed",
-}
+   - Index on `status` to filter allocations by their current status
 
-// Deposit parameters interface
-export interface DepositParams {
-providerId: string; // Principal of depositor
-tokenId: string; // Token to deposit
-amount: number; // Amount to deposit
-riskTier: RiskTier; // Desired risk tier
-}
+3. **Provider Transactions by Type**:
 
-// Withdrawal parameters interface
-export interface WithdrawalParams {
-providerId: string; // Principal of withdrawer
-tokenId: string; // Token to withdraw
-amount: number; // Amount to withdraw
-}
+   - Index on `tx_type` to filter different types of transactions
 
-// Policy allocation parameters interface
-export interface PolicyAllocationParams {
-policyId: number; // Policy to allocate for
-premium: number; // Premium amount
-protectedValue: number; // Strike price in base units
-protectionAmount: number; // Amount protected in base units
-policyType: string; // "PUT" or "CALL"
-tokenId: string; // Token required for collateral
-}
+4. **Premium Distributions by Status**:
 
-4. Services and Functions
-   The Liquidity Pool Service exposes several key services to the rest of the application:
-   4.1 Public API (Exposed to Frontend)
-   Queries (Read-Only)
+   - Index on `status` to track pending and completed distributions
 
-// Get provider balances across all tokens
-export const getProviderBalances = query(
-async ({ db, auth }) => {
-// Check authentication
-const identity = auth.getUserIdentity();
-if (!identity) throw new Error("Not authenticated");
+5. **Provider Premium Distributions by Provider**:
+   - Index on `provider` to retrieve all premium distributions for a provider
 
-    const providerId = identity.tokenIdentifier;
+## 4. Key Services and Functions
 
-    // Get provider balances for all tokens
-    const balances = await db
-      .query("providerBalances")
-      .withIndex("providerId", (q) => q.eq("providerId", providerId))
-      .collect();
+### 4.1 Provider Balance Management
 
-    return balances;
+#### Track Provider Deposits
 
-}
-);
-
-// Get detailed provider dashboard data
-export const getProviderDashboard = query(
-async ({ db, auth }) => {
-// Check authentication
-const identity = auth.getUserIdentity();
-if (!identity) throw new Error("Not authenticated");
-
-    const providerId = identity.tokenIdentifier;
-
-    // Get provider balances
-    const balances = await db
-      .query("providerBalances")
-      .withIndex("providerId", (q) => q.eq("providerId", providerId))
-      .collect();
-
-    // Get provider's policy allocations
-    const allocations = await db
-      .query("policyAllocations")
-      .withIndex("providerId", (q) => q.eq("providerId", providerId))
-      .collect();
-
-    // Get provider's recent transactions
-    const transactions = await db
-      .query("poolTransactions")
-      .withIndex("providerId", (q) => q.eq("providerId", providerId))
-      .order("desc")
-      .take(20);
-
-    // Get pool-wide metrics for context
-    const poolMetrics = await Promise.all(
-      [...new Set(balances.map((b) => b.tokenId))].map(async (tokenId) => {
-        return await db.get("poolMetrics", tokenId);
-      })
-    );
-
-    // Calculate provider-specific metrics
-    const metrics = calculateProviderMetrics(balances, allocations, poolMetrics);
-
-    return {
-      balances,
-      allocations,
-      transactions,
-      poolMetrics,
-      providerMetrics: metrics,
-    };
-
-}
-);
-
-// Get pool-wide metrics for a specific token
-export const getPoolMetrics = query(
-async ({ db }, tokenId: string) => {
-// Get pool metrics record
-const metrics = await db.get("poolMetrics", tokenId);
-if (!metrics) {
-throw new Error(`No metrics found for token ${tokenId}`);
-}
-
-    return metrics;
-
-}
-);
-
-// Check if a withdrawal is possible
-export const checkWithdrawalEligibility = query(
-async ({ db, auth }, { tokenId, amount }: { tokenId: string; amount: number }) => {
-// Check authentication
-const identity = auth.getUserIdentity();
-if (!identity) throw new Error("Not authenticated");
-
-    const providerId = identity.tokenIdentifier;
-
-    // Get provider balance
-    const balance = await db
-      .query("providerBalances")
-      .withIndex("providerId", (q) =>
-        q.eq("providerId", providerId).eq("tokenId", tokenId)
+```javascript
+// Record a new deposit from a provider
+export const recordProviderDeposit = mutation(
+  async ({ db }, { provider, token, amount, chainTxId }) => {
+    // Get current balance
+    const currentBalance = await db
+      .query("provider_balances")
+      .filter(
+        (q) =>
+          q.eq(q.field("provider"), provider) && q.eq(q.field("token"), token)
       )
-      .first();
+      .unique();
 
-    if (!balance) {
-      return {
-        eligible: false,
-        reason: "No balance found for this token"
-      };
-    }
-
-    // Check if amount is available
-    if (balance.availableBalance < amount) {
-      return {
-        eligible: false,
-        reason: `Insufficient available balance. Available: ${balance.availableBalance}`
-      };
-    }
-
-    // Check for time-based restrictions (e.g., cooldown period)
-    const cooldownPeriod = 24 * 60 * 60 * 1000; // 24 hours in ms
-    const now = Date.now();
-    if (balance.lastDepositTimestamp > 0 &&
-        now - balance.lastDepositTimestamp < cooldownPeriod) {
-      const remainingTime = Math.ceil(
-        (balance.lastDepositTimestamp + cooldownPeriod - now) / (60 * 60 * 1000)
-      );
-      return {
-        eligible: false,
-        reason: `Withdrawal available in ${remainingTime} hours due to cooldown period`
-      };
-    }
-
-    // All checks passed
-    return {
-      eligible: true,
-      availableBalance: balance.availableBalance
-    };
-
-}
-);
-
-Mutations and Actions (Write Operations)
-
-// Request capital commitment (deposit)
-export const requestCapitalCommitment = action(
-async ({ db, scheduler }, params: DepositParams) => {
-// 1. Validate the parameters
-validateDepositParameters(params);
-
-    // 2. Check if provider already has a balance record for this token
-    const existingBalance = await db
-      .query("providerBalances")
-      .withIndex("providerId", (q) =>
-        q.eq("providerId", params.providerId).eq("tokenId", params.tokenId)
-      )
-      .first();
-
-    // 3. Prepare the transaction based on token type
-    const isStx = params.tokenId.toUpperCase() === 'STX';
-    const depositTx = await prepareDepositTransaction({
-      providerId: params.providerId,
-      tokenId: params.tokenId,
-      amount: params.amount,
-      isStx: isStx
-    });
-
-    // 4. Create pending transaction record
-    const pendingTxId = await db.insert("pendingPoolTransactions", {
-      actionType: PoolTransactionType.DEPOSIT,
-      status: TransactionStatus.PENDING,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      providerId: params.providerId,
-      tokenId: params.tokenId,
-      amount: params.amount,
-      payload: {
-        params,
-        transaction: depositTx,
-        riskTier: params.riskTier
-      },
-      retryCount: 0,
-    });
-
-    // 5. Return transaction data for user to sign
-    return {
-      pendingTxId,
-      transaction: depositTx.txOptions,
-      estimatedFee: depositTx.estimatedFee,
-    };
-
-}
-);
-
-// Request capital withdrawal
-export const requestCapitalWithdrawal = action(
-async ({ db, scheduler }, params: WithdrawalParams) => {
-// 1. Check withdrawal eligibility (reusing query)
-const eligibility = await checkWithdrawalEligibility({
-tokenId: params.tokenId,
-amount: params.amount
-});
-
-    if (!eligibility.eligible) {
-      throw new Error(`Withdrawal not eligible: ${eligibility.reason}`);
-    }
-
-    // 2. Prepare the transaction based on token type
-    const isStx = params.tokenId.toUpperCase() === 'STX';
-    const withdrawalTx = await prepareWithdrawalTransaction({
-      providerId: params.providerId,
-      tokenId: params.tokenId,
-      amount: params.amount,
-      isStx: isStx
-    });
-
-    // 3. Create pending transaction record
-    const pendingTxId = await db.insert("pendingPoolTransactions", {
-      actionType: PoolTransactionType.WITHDRAWAL,
-      status: TransactionStatus.PENDING,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      providerId: params.providerId,
-      tokenId: params.tokenId,
-      amount: params.amount,
-      payload: {
-        params,
-        transaction: withdrawalTx
-      },
-      retryCount: 0,
-    });
-
-    // 4. Return transaction data for user to sign
-    return {
-      pendingTxId,
-      transaction: withdrawalTx.txOptions,
-      estimatedFee: withdrawalTx.estimatedFee,
-    };
-
-}
-);
-
-// Handle transaction status update (after user signs and submits)
-export const updateTransactionStatus = mutation(
-async ({ db }, pendingTxId: string, transactionId: string) => {
-// Update the pending transaction with the Stacks txid
-await db.patch("pendingPoolTransactions", pendingTxId, {
-status: TransactionStatus.SUBMITTED,
-transactionId,
-updatedAt: Date.now(),
-});
-
-    // Schedule a job to check transaction status
-    await scheduler.runAfter(60000, "internal:checkPoolTransactionStatus", {
-      pendingTxId,
-      transactionId,
-    });
-
-    return { success: true };
-
-}
-);
-
-// Change provider's risk tier
-export const updateProviderRiskTier = mutation(
-async ({ db, auth }, { tokenId, newRiskTier }: { tokenId: string; newRiskTier: RiskTier }) => {
-// Check authentication
-const identity = auth.getUserIdentity();
-if (!identity) throw new Error("Not authenticated");
-
-    const providerId = identity.tokenIdentifier;
-
-    // Get provider balance
-    const balance = await db
-      .query("providerBalances")
-      .withIndex("providerId", (q) =>
-        q.eq("providerId", providerId).eq("tokenId", tokenId)
-      )
-      .first();
-
-    if (!balance) {
-      throw new Error("No balance found for this token");
-    }
-
-    // Calculate new risk multiplier based on tier
-    const riskMultiplier = getRiskMultiplierForTier(newRiskTier);
-
-    // Update the balance record
-    await db.patch("providerBalances", {
-      providerId,
-      tokenId
-    }, {
-      riskTier: newRiskTier,
-      riskMultiplier,
-      lastUpdateTimestamp: Date.now()
-    });
-
-    // Update pool metrics to reflect the tier change
-    await updatePoolRiskTierDistribution(db, tokenId);
-
-    return { success: true };
-
-}
-);
-
-4.2 Internal Functions
-
-// Check pool transaction status and update records
-export const checkPoolTransactionStatus = action(
-async (
-{ db, scheduler },
-{
-pendingTxId,
-transactionId,
-}: { pendingTxId: string; transactionId: string }
-) => {
-// Get pending transaction
-const pendingTx = await db.get("pendingPoolTransactions", pendingTxId);
-if (!pendingTx) {
-return { error: "Pending transaction not found" };
-}
-
-    // Query Stacks API for transaction status
-    const txStatus = await getTransactionStatus(transactionId);
-
-    if (txStatus.status === "pending") {
-      // Still pending, check again later
-      await scheduler.runAfter(60000, "internal:checkPoolTransactionStatus", {
-        pendingTxId,
-        transactionId,
-      });
-      return { status: "pending" };
-    }
-
-    if (txStatus.status === "success") {
-      // Transaction confirmed - update records based on action type
-      await db.patch("pendingPoolTransactions", pendingTxId, {
-        status: TransactionStatus.CONFIRMED,
-        updatedAt: Date.now(),
-      });
-
-      if (pendingTx.actionType === PoolTransactionType.DEPOSIT) {
-        // Handle successful deposit
-        await handleDepositSuccess(db, pendingTx, txStatus);
-      } else if (pendingTx.actionType === PoolTransactionType.WITHDRAWAL) {
-        // Handle successful withdrawal
-        await handleWithdrawalSuccess(db, pendingTx, txStatus);
-      }
-
-      return { status: "confirmed" };
-    }
-
-    if (txStatus.status === "failed") {
-      // Transaction failed
-      await db.patch("pendingPoolTransactions", pendingTxId, {
-        status: TransactionStatus.FAILED,
-        error: txStatus.reason || "Transaction failed",
-        updatedAt: Date.now(),
-      });
-
-      return { status: "failed", reason: txStatus.reason };
-    }
-
-}
-);
-
-// Allocate collateral for policies from the pool
-export const allocateCollateralForPolicy = mutation(
-async ({ db }, params: PolicyAllocationParams) => {
-// Calculate required collateral based on policy type and terms
-const requiredCollateral = calculateRequiredCollateral(
-params.policyType,
-params.protectedValue,
-params.protectionAmount
-);
-
-    // Get all providers for this token with available balance
-    const eligibleProviders = await db
-      .query("providerBalances")
-      .withIndex("tokenId", (q) => q.eq("tokenId", params.tokenId))
-      .filter((q) => q.gt((p) => p.availableBalance, 0))
-      .collect();
-
-    // Sort providers by risk tier (aggressive first) and then by available balance
-    const sortedProviders = sortProvidersByRiskAndBalance(eligibleProviders);
-
-    // Check if we have enough total available balance
-    const totalAvailable = sortedProviders.reduce(
-      (sum, p) => sum + p.availableBalance,
-      0
-    );
-
-    if (totalAvailable < requiredCollateral) {
-      throw new Error(`Insufficient pool liquidity. Required: ${requiredCollateral}, Available: ${totalAvailable}`);
-    }
-
-    // Allocate collateral from providers based on risk tier
-    const allocations = allocateCollateralFromProviders(
-      sortedProviders,
-      requiredCollateral,
-      params.premium
-    );
-
-    // Record allocations in database
-    for (const allocation of allocations) {
-      await db.insert("policyAllocations", {
-        policyId: params.policyId,
-        providerId: allocation.providerId,
-        tokenId: params.tokenId,
-        allocatedAmount: allocation.allocatedAmount,
-        premiumShare: allocation.premiumShare,
-        settlementLiability: allocation.settlementLiability,
-        allocationTimestamp: Date.now()
-      });
-
-      // Update provider's balance
-      const provider = sortedProviders.find(p => p.providerId === allocation.providerId)!;
-      await db.patch("providerBalances", {
-        providerId: provider.providerId,
-        tokenId: params.tokenId
-      }, {
-        allocatedBalance: provider.allocatedBalance + allocation.allocatedAmount,
-        availableBalance: provider.availableBalance - allocation.allocatedAmount,
-        lastUpdateTimestamp: Date.now()
-      });
-
-      // Record allocation transaction
-      await db.insert("poolTransactions", {
-        transactionId: `allocation-${params.policyId}-${allocation.providerId}`,
-        providerId: allocation.providerId,
-        transactionType: PoolTransactionType.ALLOCATION,
-        tokenId: params.tokenId,
-        amount: allocation.allocatedAmount,
-        timestamp: Date.now(),
-        status: TransactionStatus.CONFIRMED,
-        relatedPolicyId: params.policyId,
-        metadata: {
-          premiumShare: allocation.premiumShare,
-          settlementLiability: allocation.settlementLiability
+    if (currentBalance) {
+      // Update existing balance
+      await db.patch(
+        "provider_balances",
+        { provider, token },
+        {
+          total_deposited: currentBalance.total_deposited + amount,
+          available_balance: currentBalance.available_balance + amount,
+          last_updated: Date.now(),
         }
+      );
+    } else {
+      // Create new balance record
+      await db.insert("provider_balances", {
+        provider,
+        token,
+        total_deposited: amount,
+        available_balance: amount,
+        locked_balance: 0,
+        earned_premiums: 0,
+        withdrawn_premiums: 0,
+        pending_premiums: 0,
+        last_updated: Date.now(),
       });
     }
 
-    // Update pool metrics
-    await updatePoolMetrics(db, params.tokenId);
+    // Record transaction
+    await db.insert("provider_transactions", {
+      provider,
+      tx_id: genId(),
+      tx_type: "DEPOSIT",
+      amount,
+      token,
+      timestamp: Date.now(),
+      status: "CONFIRMED",
+      chain_tx_id: chainTxId,
+    });
+
+    return { success: true };
+  }
+);
+
+// Process a provider withdrawal
+export const processProviderWithdrawal = mutation(
+  async ({ db }, { provider, token, amount }) => {
+    // Get current balance
+    const currentBalance = await db
+      .query("provider_balances")
+      .filter(
+        (q) =>
+          q.eq(q.field("provider"), provider) && q.eq(q.field("token"), token)
+      )
+      .unique();
+
+    if (!currentBalance || currentBalance.available_balance < amount) {
+      return {
+        success: false,
+        error: "Insufficient available balance",
+      };
+    }
+
+    // Record transaction as pending
+    const txId = genId();
+    await db.insert("provider_transactions", {
+      provider,
+      tx_id: txId,
+      tx_type: "WITHDRAWAL",
+      amount,
+      token,
+      timestamp: Date.now(),
+      status: "PENDING",
+    });
 
     return {
       success: true,
-      allocations: allocations.map(a => ({
-        providerId: a.providerId,
-        allocatedAmount: a.allocatedAmount,
-        premiumShare: a.premiumShare
-      }))
+      txId,
+      withdrawalData: {
+        provider,
+        token,
+        amount,
+      },
     };
-
-}
+  }
 );
 
-// Process policy settlement
-export const processSettlement = mutation(
-async ({ db }, {
-policyId,
-tokenId,
-settlementAmount
-}: {
-policyId: number;
-tokenId: string;
-settlementAmount: number
-}) => {
-// Get all allocations for the policy
-const allocations = await db
-.query("policyAllocations")
-.withIndex("policyId", (q) => q.eq("policyId", policyId))
-.collect();
+// Confirm withdrawal after on-chain execution
+export const confirmProviderWithdrawal = mutation(
+  async ({ db }, { txId, chainTxId, status }) => {
+    // Get the transaction
+    const tx = await db
+      .query("provider_transactions")
+      .filter((q) => q.eq(q.field("tx_id"), txId))
+      .unique();
 
-    if (allocations.length === 0) {
-      throw new Error(`No allocations found for policy ${policyId}`);
+    if (!tx) {
+      return { success: false, error: "Transaction not found" };
     }
 
-    // Calculate settlement impact on each provider
-    for (const allocation of allocations) {
-      // Get provider's balance
-      const balance = await db
-        .query("providerBalances")
-        .withIndex("providerId", (q) =>
-          q.eq("providerId", allocation.providerId).eq("tokenId", tokenId)
-        )
-        .first();
-
-      if (!balance) {
-        throw new Error(`Provider balance not found: ${allocation.providerId}`);
+    // Update transaction status
+    await db.patch(
+      "provider_transactions",
+      { tx_id: txId },
+      {
+        status: status,
+        chain_tx_id: chainTxId,
       }
+    );
 
-      // Calculate provider's share of the settlement
-      const providerSettlementShare =
-        (allocation.allocatedAmount / allocations.reduce((sum, a) => sum + a.allocatedAmount, 0)) *
-        settlementAmount;
-
-      // Update provider's balance
-      await db.patch("providerBalances", {
-        providerId: allocation.providerId,
-        tokenId
-      }, {
-        allocatedBalance: balance.allocatedBalance - allocation.allocatedAmount,
-        currentBalance: balance.currentBalance - providerSettlementShare,
-        totalSettlementLosses: balance.totalSettlementLosses + providerSettlementShare,
-        netYield: balance.netYield - providerSettlementShare,
-        lastUpdateTimestamp: Date.now()
-      });
-
-      // Record settlement transaction
-      await db.insert("poolTransactions", {
-        transactionId: `settlement-${policyId}-${allocation.providerId}`,
-        providerId: allocation.providerId,
-        transactionType: PoolTransactionType.SETTLEMENT,
-        tokenId,
-        amount: providerSettlementShare,
-        timestamp: Date.now(),
-        status: TransactionStatus.CONFIRMED,
-        relatedPolicyId: policyId,
-        metadata: {
-          allocationAmount: allocation.allocatedAmount,
-          settlementShare: providerSettlementShare
+    if (status === "CONFIRMED") {
+      // Update provider balance
+      await db.patch(
+        "provider_balances",
+        { provider: tx.provider, token: tx.token },
+        {
+          available_balance: (q) =>
+            q.sub(q.field("available_balance"), tx.amount),
+          last_updated: Date.now(),
         }
-      });
+      );
     }
-
-    // Update pool metrics
-    await updatePoolMetrics(db, tokenId);
 
     return { success: true };
-
-}
+  }
 );
+```
 
-// Process premium distribution
-export const distributePremium = mutation(
-async ({ db }, {
-policyId,
-tokenId,
-premiumAmount
-}: {
-policyId: number;
-tokenId: string;
-premiumAmount: number
-}) => {
-// Get all allocations for the policy
-const allocations = await db
-.query("policyAllocations")
-.withIndex("policyId", (q) => q.eq("policyId", policyId))
-.collect();
+### 4.2 Policy Allocation Management
 
-    if (allocations.length === 0) {
-      throw new Error(`No allocations found for policy ${policyId}`);
+```javascript
+// Allocate provider funds to a policy
+export const allocateProviderToPolicy = mutation(
+  async (
+    { db },
+    {
+      policyId,
+      provider,
+      token,
+      allocatedAmount,
+      allocationPercentage,
+      premiumShare,
+    }
+  ) => {
+    // Get current provider balance
+    const currentBalance = await db
+      .query("provider_balances")
+      .filter(
+        (q) =>
+          q.eq(q.field("provider"), provider) && q.eq(q.field("token"), token)
+      )
+      .unique();
+
+    if (!currentBalance || currentBalance.available_balance < allocatedAmount) {
+      return {
+        success: false,
+        error: "Insufficient available balance",
+      };
     }
 
-    // Distribute premium to each provider
-    for (const allocation of allocations) {
-      // Get provider's balance
-      const balance = await db
-        .query("providerBalances")
-        .withIndex("providerId", (q) =>
-          q.eq("providerId", allocation.providerId).eq("tokenId", tokenId)
-        )
-        .first();
-
-      if (!balance) {
-        throw new Error(`Provider balance not found: ${allocation.providerId}`);
+    // Update provider balance
+    await db.patch(
+      "provider_balances",
+      { provider, token },
+      {
+        available_balance: currentBalance.available_balance - allocatedAmount,
+        locked_balance: currentBalance.locked_balance + allocatedAmount,
+        last_updated: Date.now(),
       }
+    );
 
-      // Calculate provider's share of the premium
-      const premiumShare = allocation.premiumShare;
-
-      // Update provider's balance
-      await db.patch("providerBalances", {
-        providerId: allocation.providerId,
-        tokenId
-      }, {
-        totalEarnedPremiums: balance.totalEarnedPremiums + premiumShare,
-        netYield: balance.netYield + premiumShare,
-        lastUpdateTimestamp: Date.now()
-      });
-
-      // Record premium transaction
-      await db.insert("poolTransactions", {
-        transactionId: `premium-${policyId}-${allocation.providerId}`,
-        providerId: allocation.providerId,
-        transactionType: PoolTransactionType.PREMIUM_EARNED,
-        tokenId,
-        amount: premiumShare,
-        timestamp: Date.now(),
-        status: TransactionStatus.CONFIRMED,
-        relatedPolicyId: policyId,
-        metadata: {
-          allocationAmount: allocation.allocatedAmount,
-          premiumShare
-        }
-      });
-    }
-
-    // Update pool metrics
-    await updatePoolMetrics(db, tokenId);
-
-    return { success: true };
-
-}
-);
-
-4.3 Helper Functions
-
-// Handle successful deposit transaction
-async function handleDepositSuccess(db, pendingTx, txStatus) {
-const { providerId, tokenId, amount } = pendingTx;
-const { riskTier } = pendingTx.payload;
-
-// Check if provider already has a balance record
-const existingBalance = await db
-.query("providerBalances")
-.withIndex("providerId", (q) =>
-q.eq("providerId", providerId).eq("tokenId", tokenId)
-)
-.first();
-
-if (existingBalance) {
-// Update existing balance
-await db.patch("providerBalances", {
-providerId,
-tokenId
-}, {
-totalDeposited: existingBalance.totalDeposited + amount,
-currentBalance: existingBalance.currentBalance + amount,
-availableBalance: existingBalance.availableBalance + amount,
-lastDepositTimestamp: Date.now(),
-lastUpdateTimestamp: Date.now()
-});
-} else {
-// Create new balance record
-const riskMultiplier = getRiskMultiplierForTier(riskTier);
-
-    await db.insert("providerBalances", {
-      providerId,
-      tokenId,
-      totalDeposited: amount,
-      currentBalance: amount,
-      allocatedBalance: 0,
-      availableBalance: amount,
-      riskTier,
-      riskMultiplier,
-      totalEarnedPremiums: 0,
-      totalSettlementLosses: 0,
-      netYield: 0,
-      lastDepositTimestamp: Date.now(),
-      lastWithdrawalTimestamp: 0,
-      lastUpdateTimestamp: Date.now()
+    // Create policy allocation record
+    await db.insert("policy_allocations", {
+      policy_id: policyId,
+      provider,
+      token,
+      allocated_amount: allocatedAmount,
+      allocation_percentage: allocationPercentage,
+      premium_share: premiumShare,
+      premium_distributed: false,
+      allocation_timestamp: Date.now(),
+      status: "ACTIVE",
     });
 
-}
+    // Record transaction
+    await db.insert("provider_transactions", {
+      provider,
+      tx_id: genId(),
+      tx_type: "ALLOCATION",
+      amount: allocatedAmount,
+      token,
+      timestamp: Date.now(),
+      policy_id: policyId,
+      status: "CONFIRMED",
+    });
 
-// Record transaction in history
-await db.insert("poolTransactions", {
-transactionId: pendingTx.transactionId,
-providerId,
-transactionType: PoolTransactionType.DEPOSIT,
-tokenId,
-amount,
-timestamp: Date.now(),
-status: TransactionStatus.CONFIRMED,
-blockHeight: txStatus.blockHeight,
-metadata: {
-riskTier
-}
-});
-
-// Update pool metrics
-await updatePoolMetrics(db, tokenId);
-await updatePoolRiskTierDistribution(db, tokenId);
-}
-
-// Handle successful withdrawal transaction
-async function handleWithdrawalSuccess(db, pendingTx, txStatus) {
-const { providerId, tokenId, amount } = pendingTx;
-
-// Get provider's balance
-const balance = await db
-.query("providerBalances")
-.withIndex("providerId", (q) =>
-q.eq("providerId", providerId).eq("tokenId", tokenId)
-)
-.first();
-
-if (!balance) {
-throw new Error(`Provider balance not found: ${providerId}`);
-}
-
-// Update balance
-await db.patch("providerBalances", {
-providerId,
-tokenId
-}, {
-currentBalance: balance.currentBalance - amount,
-availableBalance: balance.availableBalance - amount,
-lastWithdrawalTimestamp: Date.now(),
-lastUpdateTimestamp: Date.now()
-});
-
-// Record transaction in history
-await db.insert("poolTransactions", {
-transactionId: pendingTx.transactionId,
-providerId,
-transactionType: PoolTransactionType.WITHDRAWAL,
-tokenId,
-amount,
-timestamp: Date.now(),
-status: TransactionStatus.CONFIRMED,
-blockHeight: txStatus.blockHeight
-});
-
-// Update pool metrics
-await updatePoolMetrics(db, tokenId);
-}
-
-// Update pool metrics based on current state
-async function updatePoolMetrics(db, tokenId) {
-// Get all provider balances for this token
-const balances = await db
-.query("providerBalances")
-.withIndex("tokenId", (q) => q.eq("tokenId", tokenId))
-.collect();
-
-// Calculate aggregated metrics
-const totalDeposited = balances.reduce((sum, b) => sum + b.totalDeposited, 0);
-const currentTotalBalance = balances.reduce((sum, b) => sum + b.currentBalance, 0);
-const totalAllocated = balances.reduce((sum, b) => sum + b.allocatedBalance, 0);
-const totalAvailable = balances.reduce((sum, b) => sum + b.availableBalance, 0);
-
-const totalPremiumsCollected = balances.reduce((sum, b) => sum + b.totalEarnedPremiums, 0);
-const totalSettlementsPaid = balances.reduce((sum, b) => sum + b.totalSettlementLosses, 0);
-const netPoolYield = totalPremiumsCollected - totalSettlementsPaid;
-
-const utilizationRate = currentTotalBalance > 0 ?
-(totalAllocated / currentTotalBalance) \* 100 : 0;
-
-const weightedYield = balances.reduce(
-(sum, b) => sum + (b.netYield \* (b.currentBalance / currentTotalBalance)),
-0
-);
-const averageAPY = calculateAnnualizedYield(weightedYield, currentTotalBalance);
-
-// Update risk tier distribution
-const conservativeTierAmount = balances
-.filter(b => b.riskTier === RiskTier.CONSERVATIVE)
-.reduce((sum, b) => sum + b.currentBalance, 0);
-
-const balancedTierAmount = balances
-.filter(b => b.riskTier === RiskTier.BALANCED)
-.reduce((sum, b) => sum + b.currentBalance, 0);
-
-const aggressiveTierAmount = balances
-.filter(b => b.riskTier === RiskTier.AGGRESSIVE)
-.reduce((sum, b) => sum + b.currentBalance, 0);
-
-// Update or create pool metrics record
-const existingMetrics = await db.get("poolMetrics", tokenId);
-
-if (existingMetrics) {
-await db.patch("poolMetrics", tokenId, {
-totalDeposited,
-currentTotalBalance,
-totalAllocated,
-totalAvailable,
-conservativeTierAmount,
-balancedTierAmount,
-aggressiveTierAmount,
-totalPremiumsCollected,
-totalSettlementsPaid,
-netPoolYield,
-utilizationRate,
-averageAPY,
-lastUpdateTimestamp: Date.now()
-});
-} else {
-await db.insert("poolMetrics", {
-tokenId,
-totalDeposited,
-currentTotalBalance,
-totalAllocated,
-totalAvailable,
-conservativeTierAmount,
-balancedTierAmount,
-aggressiveTierAmount,
-totalPremiumsCollected,
-totalSettlementsPaid,
-netPoolYield,
-utilizationRate,
-averageAPY,
-lastUpdateTimestamp: Date.now()
-});
-}
-}
-
-// Get risk multiplier based on tier
-function getRiskMultiplierForTier(tier: RiskTier): number {
-switch (tier) {
-case RiskTier.CONSERVATIVE:
-return 0.5; // Lower risk, lower reward
-case RiskTier.BALANCED:
-return 1.0; // Balanced risk/reward
-case RiskTier.AGGRESSIVE:
-return 2.0; // Higher risk, higher reward
-default:
-return 1.0;
-}
-}
-
-// Sort providers by risk tier and available balance
-function sortProvidersByRiskAndBalance(providers) {
-// Custom sort: Aggressive first, then by available balance (high to low)
-return [...providers].sort((a, b) => {
-// First sort by risk tier (Aggressive > Balanced > Conservative)
-const tierOrder = {
-[RiskTier.AGGRESSIVE]: 0,
-[RiskTier.BALANCED]: 1,
-[RiskTier.CONSERVATIVE]: 2
-};
-
-    const tierDiff = tierOrder[a.riskTier] - tierOrder[b.riskTier];
-    if (tierDiff !== 0) return tierDiff;
-
-    // Then sort by available balance (high to low)
-    return b.availableBalance - a.availableBalance;
-
-});
-}
-
-// Allocate collateral from providers based on risk preference
-function allocateCollateralFromProviders(
-sortedProviders,
-requiredCollateral,
-premium
-) {
-const allocations = [];
-let remainingCollateral = requiredCollateral;
-
-// First pass: allocate from aggressive providers
-const aggressiveProviders = sortedProviders.filter(
-p => p.riskTier === RiskTier.AGGRESSIVE
+    return { success: true };
+  }
 );
 
-    for (const provider of aggressiveProviders) {
-    const allocation = Math.min(provider.availableBalance, remainingCollateral);
-    if (allocation > 0) {
-      allocations.push({
-        providerId: provider.providerId,
-        allocatedAmount: allocation,
-        premiumShare: (allocation / requiredCollateral) * premium,
-        settlementLiability: allocation
-      });
-      remainingCollateral -= allocation;
-    }
-
-    if (remainingCollateral <= 0) break;
-
-}
-
-// Second pass: allocate from balanced providers if needed
-if (remainingCollateral > 0) {
-const balancedProviders = sortedProviders.filter(
-p => p.riskTier === RiskTier.BALANCED
-);
-
-    for (const provider of balancedProviders) {
-      const allocation = Math.min(provider.availableBalance, remainingCollateral);
-      if (allocation > 0) {
-        allocations.push({
-          providerId: provider.providerId,
-          allocatedAmount: allocation,
-          premiumShare: (allocation / requiredCollateral) * premium,
-          settlementLiability: allocation
-        });
-        remainingCollateral -= allocation;
-      }
-
-      if (remainingCollateral <= 0) break;
-    }
-
-}
-
-// Final pass: allocate from conservative providers if still needed
-if (remainingCollateral > 0) {
-const conservativeProviders = sortedProviders.filter(
-p => p.riskTier === RiskTier.CONSERVATIVE
-);
-
-    for (const provider of conservativeProviders) {
-      const allocation = Math.min(provider.availableBalance, remainingCollateral);
-      if (allocation > 0) {
-        allocations.push({
-          providerId: provider.providerId,
-          allocatedAmount: allocation,
-          premiumShare: (allocation / requiredCollateral) * premium,
-          settlementLiability: allocation
-        });
-        remainingCollateral -= allocation;
-      }
-
-      if (remainingCollateral <= 0) break;
-    }
-
-}
-
-return allocations;
-}
-
-// Calculate required collateral based on policy parameters
-function calculateRequiredCollateral(policyType, protectedValue, protectionAmount) {
-// For PUT options, collateral is the full protected amount
-if (policyType === "PUT") {
-return protectionAmount;
-}
-
-// For CALL options, collateral is calculated differently
-// This is a simplified version - actual implementation may vary
-if (policyType === "CALL") {
-return protectionAmount \* 0.5; // Example: 50% collateralization for CALLs
-}
-
-throw new Error(`Unsupported policy type: ${policyType}`);
-}
-
-// Calculate annualized yield percentage
-function calculateAnnualizedYield(yield, principal) {
-if (principal <= 0) return 0;
-
-// Simple annualization assuming yield is accrued over last 30 days
-const annualizedYield = (yield / principal) _ (365 / 30) _ 100;
-return Math.max(0, annualizedYield); // Ensure non-negative
-}
-
-5. Blockchain Integration
-   The Liquidity Pool Service interacts with the minimal on-chain Liquidity Pool Vault contract through the Blockchain Integration Layer:
-   5.1 Transaction Preparation
-
-// Prepare deposit transaction
-async function prepareDepositTransaction(params: {
-providerId: string;
-tokenId: string;
-amount: number;
-isStx: boolean;
-}): Promise<{ txOptions: any; estimatedFee: number }> {
-// 1. Get contract address for Liquidity Pool Vault
-const vaultContract = await getContractAddress("liquidityPoolVault");
-
-// 2. Construct transaction options based on token type
-if (params.isStx) {
-// STX deposit
-return {
-txOptions: {
-network: getNetwork(),
-anchorMode: AnchorMode.Any,
-fee: calculateFee(1), // Fee for a transaction with 1 post-condition
-postConditionMode: PostConditionMode.Deny,
-postConditions: [
-makeStandardSTXPostCondition(
-params.providerId,
-FungibleConditionCode.Equal,
-params.amount
-),
-],
-txType: "contract_call",
-contractAddress: vaultContract.address,
-contractName: vaultContract.name,
-functionName: "deposit-stx",
-functionArgs: [
-uintCV(params.amount),
-],
-},
-estimatedFee: calculateFee(1),
-};
-} else {
-// Token deposit (e.g., sBTC)
-const tokenContract = await getTokenContractDetails(params.tokenId);
-
-    return {
-      txOptions: {
-        network: getNetwork(),
-        anchorMode: AnchorMode.Any,
-        fee: calculateFee(1),
-        postConditionMode: PostConditionMode.Deny,
-        postConditions: [
-          makeStandardFungiblePostCondition(
-            params.providerId,
-            FungibleConditionCode.Equal,
-            params.amount,
-            createAssetInfo(tokenContract.address, tokenContract.name, tokenContract.assetName)
-          ),
-        ],
-        txType: "contract_call",
-        contractAddress: vaultContract.address,
-        contractName: vaultContract.name,
-        functionName: "deposit-sbtc",
-        functionArgs: [
-          uintCV(params.amount),
-        ],
-      },
-      estimatedFee: calculateFee(1),
-    };
-
-}
-}
-
-// Prepare withdrawal transaction
-async function prepareWithdrawalTransaction(params: {
-providerId: string;
-tokenId: string;
-amount: number;
-isStx: boolean;
-}): Promise<{ txOptions: any; estimatedFee: number }> {
-// 1. Get contract address for Liquidity Pool Vault
-const vaultContract = await getContractAddress("liquidityPoolVault");
-
-// 2. Construct transaction options based on token type
-if (params.isStx) {
-// STX withdrawal
-return {
-txOptions: {
-network: getNetwork(),
-anchorMode: AnchorMode.Any,
-fee: calculateFee(1),
-postConditionMode: PostConditionMode.Deny,
-txType: "contract_call",
-contractAddress: vaultContract.address,
-contractName: vaultContract.name,
-functionName: "withdraw-stx",
-functionArgs: [
-uintCV(params.amount),
-],
-},
-estimatedFee: calculateFee(1),
-};
-} else {
-// Token withdrawal (e.g., sBTC)
-return {
-txOptions: {
-network: getNetwork(),
-anchorMode: AnchorMode.Any,
-fee: calculateFee(1),
-postConditionMode: PostConditionMode.Deny,
-txType: "contract_call",
-contractAddress: vaultContract.address,
-contractName: vaultContract.name,
-functionName: "withdraw-sbtc",
-functionArgs: [
-uintCV(params.amount),
-],
-},
-estimatedFee: calculateFee(1),
-};
-}
-}
-
-5.2 Event Handling
-
-// Set up listeners for on-chain events
-export function initializePoolEventListeners() {
-// Get Liquidity Pool Vault contract details
-const vaultContract = getContractDetails("liquidityPoolVault");
-
-// Listen for deposit events
-listenForContractEvent({
-contractAddress: vaultContract.address,
-contractName: vaultContract.name,
-eventName: "funds-deposited",
-callback: (event) => {
-// Process deposit event
-processDepositEvent(event);
-},
-});
-
-// Listen for withdrawal events
-listenForContractEvent({
-contractAddress: vaultContract.address,
-contractName: vaultContract.name,
-eventName: "funds-withdrawn",
-callback: (event) => {
-// Process withdrawal event
-processWithdrawalEvent(event);
-},
-});
-
-// Listen for settlement events
-listenForContractEvent({
-contractAddress: vaultContract.address,
-contractName: vaultContract.name,
-eventName: "settlement-paid",
-callback: (event) => {
-// Process settlement event
-processSettlementEvent(event);
-},
-});
-
-// Listen for collateral events
-listenForContractEvent({
-contractAddress: vaultContract.address,
-contractName: vaultContract.name,
-eventName: "collateral-locked",
-callback: (event) => {
-// Process collateral locked event
-processCollateralLockedEvent(event);
-},
-});
-
-listenForContractEvent({
-contractAddress: vaultContract.address,
-contractName: vaultContract.name,
-eventName: "collateral-released",
-callback: (event) => {
-// Process collateral released event
-processCollateralReleasedEvent(event);
-},
-});
-}
-
-6. Error Handling and Recovery
-   The Liquidity Pool Service implements several strategies for robust error handling:
-   6.1 Transaction Monitoring
-   Every submitted transaction is tracked with a corresponding record in the pendingPoolTransactions table
-   Scheduled jobs check transaction status regularly
-   Failed transactions are clearly marked, with error details captured
-   6.2 State Reconciliation
-
-// Scheduled job to reconcile on-chain and off-chain state
-export const reconcilePoolState = action(async ({ db, scheduler }) => {
-// Get all supported tokens
-const tokens = await getSupportedTokens();
-
-for (const tokenId of tokens) {
-// 1. Get on-chain state from Vault contract
-const onChainData = await getPoolOnChainState(tokenId);
-
-    // 2. Calculate off-chain state from provider records
-    const providers = await db
-      .query("providerBalances")
-      .withIndex("tokenId", (q) => q.eq("tokenId", tokenId))
+// Update policy allocation status
+export const updatePolicyAllocationStatus = mutation(
+  async ({ db }, { policyId, status }) => {
+    // Get all allocations for this policy
+    const allocations = await db
+      .query("policy_allocations")
+      .filter((q) => q.eq(q.field("policy_id"), policyId))
       .collect();
 
-    const offChainTotal = providers.reduce((sum, p) => sum + p.currentBalance, 0);
-    const offChainLocked = providers.reduce((sum, p) => sum + p.allocatedBalance, 0);
+    // Update status for all allocations
+    for (const allocation of allocations) {
+      await db.patch(
+        "policy_allocations",
+        { policy_id: policyId, provider: allocation.provider },
+        { status }
+      );
 
-    // 3. Check for discrepancies
-    if (Math.abs(onChainData.totalAmount - offChainTotal) > 0.00001) {
-      console.warn(`Total balance mismatch for ${tokenId}:
-        On-chain: ${onChainData.totalAmount},
-        Off-chain: ${offChainTotal}`);
+      // If policy expired or exercised, release collateral back to available balance
+      if (status === "EXPIRED" || status === "EXERCISED") {
+        // For exercised policies, we only release remaining collateral after settlement
+        // This is handled by the settlement confirmation process
+        if (status === "EXPIRED") {
+          await db.patch(
+            "provider_balances",
+            { provider: allocation.provider, token: allocation.token },
+            {
+              available_balance: (q) =>
+                q.add(
+                  q.field("available_balance"),
+                  allocation.allocated_amount
+                ),
+              locked_balance: (q) =>
+                q.sub(q.field("locked_balance"), allocation.allocated_amount),
+              last_updated: Date.now(),
+            }
+          );
 
-      // Record discrepancy for review
-      await recordStateDiscrepancy(db, {
-        tokenId,
-        discrepancyType: "TotalBalance",
-        onChainValue: onChainData.totalAmount,
-        offChainValue: offChainTotal,
-        timestamp: Date.now()
+          // Record transaction
+          await db.insert("provider_transactions", {
+            provider: allocation.provider,
+            tx_id: genId(),
+            tx_type: "COLLATERAL_RELEASE",
+            amount: allocation.allocated_amount,
+            token: allocation.token,
+            timestamp: Date.now(),
+            policy_id: policyId,
+            status: "CONFIRMED",
+          });
+        }
+      }
+    }
+
+    return { success: true };
+  }
+);
+```
+
+### 4.3 Premium Distribution Management
+
+```javascript
+// Record policy premium for a policy
+export const recordPolicyPremium = mutation(
+  async (
+    { db },
+    { policyId, counterparty, totalPremium, token, transactionId }
+  ) => {
+    // Record premium distribution as completed (since it was initiated by Policy Registry)
+    await db.insert("premium_distributions", {
+      policy_id: policyId,
+      counterparty,
+      total_premium: totalPremium,
+      token,
+      distribution_timestamp: Date.now(),
+      status: "COMPLETED",
+      chain_tx_id: transactionId,
+    });
+
+    // Get all allocations for this policy
+    const allocations = await db
+      .query("policy_allocations")
+      .filter((q) => q.eq(q.field("policy_id"), policyId))
+      .collect();
+
+    // Record pending premium for each provider based on their allocation percentage
+    for (const allocation of allocations) {
+      const providerPremium = totalPremium * (allocation.premium_share / 100);
+
+      // Update provider balance with pending premium
+      await db.patch(
+        "provider_balances",
+        { provider: allocation.provider, token },
+        {
+          pending_premiums: (q) =>
+            q.add(q.field("pending_premiums"), providerPremium),
+          last_updated: Date.now(),
+        }
+      );
+
+      // Record provider premium distribution as pending
+      await db.insert("provider_premium_distributions", {
+        policy_id: policyId,
+        provider: allocation.provider,
+        premium_amount: providerPremium,
+        token,
+        distribution_timestamp: Date.now(),
+        status: "PENDING",
       });
     }
 
-    if (Math.abs(onChainData.lockedAmount - offChainLocked) > 0.00001) {
-      console.warn(`Locked amount mismatch for ${tokenId}:
-        On-chain: ${onChainData.lockedAmount},
-        Off-chain: ${offChainLocked}`);
+    // Schedule automatic provider premium distribution (optional)
+    await scheduler.runAfter(
+      3600000, // 1 hour delay before automatic distribution
+      "internal:processProviderPremiumDistributions",
+      { policyId }
+    );
 
-      // Record discrepancy for review
-      await recordStateDiscrepancy(db, {
-        tokenId,
-        discrepancyType: "LockedAmount",
-        onChainValue: onChainData.lockedAmount,
-        offChainValue: offChainLocked,
-        timestamp: Date.now()
+    return { success: true };
+  }
+);
+
+// Process premium distributions for providers
+export const processProviderPremiumDistributions = internalMutation(
+  async ({ db, scheduler }, { policyId }) => {
+    // Get all pending premium distributions for this policy
+    const providerDists = await db
+      .query("provider_premium_distributions")
+      .filter(
+        (q) =>
+          q.eq(q.field("policy_id"), policyId) &&
+          q.eq(q.field("status"), "PENDING")
+      )
+      .collect();
+
+    // Process each provider distribution
+    for (const dist of providerDists) {
+      // Schedule distribution for each provider
+      await scheduler.runAfter(0, "internal:distributeProviderPremium", {
+        policyId,
+        provider: dist.provider,
+        token: dist.token,
       });
     }
 
-}
-
-// Schedule next reconciliation (e.g., daily)
-await scheduler.runAfter(24 _ 60 _ 60 \* 1000, "internal:reconcilePoolState", {});
-
-return { success: true };
-});
-
-7. Risk Management
-   The Liquidity Pool Service incorporates a sophisticated risk management system:
-   7.1 Risk Tier System
-
-// Update pool risk tier distribution
-async function updatePoolRiskTierDistribution(db, tokenId) {
-// Get all provider balances for this token
-const balances = await db
-.query("providerBalances")
-.withIndex("tokenId", (q) => q.eq("tokenId", tokenId))
-.collect();
-
-// Calculate amounts by tier
-const conservativeTierAmount = balances
-.filter(b => b.riskTier === RiskTier.CONSERVATIVE)
-.reduce((sum, b) => sum + b.currentBalance, 0);
-
-const balancedTierAmount = balances
-.filter(b => b.riskTier === RiskTier.BALANCED)
-.reduce((sum, b) => sum + b.currentBalance, 0);
-
-const aggressiveTierAmount = balances
-.filter(b => b.riskTier === RiskTier.AGGRESSIVE)
-.reduce((sum, b) => sum + b.currentBalance, 0);
-
-// Update pool metrics
-const existingMetrics = await db.get("poolMetrics", tokenId);
-
-if (existingMetrics) {
-await db.patch("poolMetrics", tokenId, {
-conservativeTierAmount,
-balancedTierAmount,
-aggressiveTierAmount,
-lastUpdateTimestamp: Date.now()
-});
-}
-
-// Calculate risk capacity based on tier distribution
-const riskCapacity = calculatePoolRiskCapacity(
-conservativeTierAmount,
-balancedTierAmount,
-aggressiveTierAmount
+    return { success: true, processedCount: providerDists.length };
+  }
 );
 
-// Update risk capacity metrics
-await updateRiskCapacityMetrics(db, tokenId, riskCapacity);
+// Distribute premium to individual provider
+export const distributeProviderPremium = internalMutation(
+  async ({ db }, { policyId, provider, token }) => {
+    // Get provider premium distribution
+    const providerDist = await db
+      .query("provider_premium_distributions")
+      .filter(
+        (q) =>
+          q.eq(q.field("policy_id"), policyId) &&
+          q.eq(q.field("provider"), provider) &&
+          q.eq(q.field("status"), "PENDING")
+      )
+      .unique();
 
-return {
-conservativeTierAmount,
-balancedTierAmount,
-aggressiveTierAmount
-};
-}
+    if (!providerDist) {
+      return {
+        success: false,
+        error: "No pending provider premium distribution found",
+      };
+    }
 
-// Calculate pool risk capacity
-function calculatePoolRiskCapacity(conservative, balanced, aggressive) {
-// Apply risk multipliers to each tier
-const conservativeCapacity = conservative _ 0.5; // Lower risk factor
-const balancedCapacity = balanced _ 1.0; // Standard risk factor
-const aggressiveCapacity = aggressive \* 2.0; // Higher risk factor
+    // Update status to processing
+    await db.patch(
+      "provider_premium_distributions",
+      { policy_id: policyId, provider },
+      { status: "PROCESSING" }
+    );
 
-// Calculate capacities for different policy types
-const putCapacity = conservativeCapacity + balancedCapacity + aggressiveCapacity;
-const callCapacity = (conservativeCapacity _ 0.25) + (balancedCapacity _ 0.5) + aggressiveCapacity;
+    // In MVP, we simply move premium from pending to earned since
+    // there's no separate on-chain transaction for each provider
+    // Future enhancement: Implement on-chain provider-specific premium distribution
 
-// Calculate maximum policy sizes based on tier distribution
-const maxPolicySize = Math.min(
-aggressive _ 0.75, // No single policy should use more than 75% of aggressive tier
-(aggressive + balanced) _ 0.5, // Or more than 50% of aggressive+balanced
-(aggressive + balanced + conservative) \* 0.25 // Or more than 25% of total pool
+    // Update provider balance
+    await db.patch(
+      "provider_balances",
+      { provider, token },
+      {
+        pending_premiums: (q) =>
+          q.sub(q.field("pending_premiums"), providerDist.premium_amount),
+        earned_premiums: (q) =>
+          q.add(q.field("earned_premiums"), providerDist.premium_amount),
+        last_updated: Date.now(),
+      }
+    );
+
+    // Update provider premium distribution record
+    await db.patch(
+      "provider_premium_distributions",
+      { policy_id: policyId, provider },
+      {
+        status: "COMPLETED",
+      }
+    );
+
+    // Update policy allocation
+    await db.patch(
+      "policy_allocations",
+      { policy_id: policyId, provider },
+      { premium_distributed: true }
+    );
+
+    // Record transaction
+    await db.insert("provider_transactions", {
+      provider,
+      tx_id: genId(),
+      tx_type: "PREMIUM",
+      amount: providerDist.premium_amount,
+      token,
+      timestamp: Date.now(),
+      policy_id: policyId,
+      status: "CONFIRMED",
+    });
+
+    return { success: true };
+  }
 );
 
-return {
-putCapacity,
-callCapacity,
-conservativeCapacity,
-balancedCapacity,
-aggressiveCapacity,
-maxPolicySize
-};
+// Get pending premium distributions for a provider
+export const getPendingPremiumDistributions = query(
+  async ({ db, auth }, { limit = 20, offset = 0 }) => {
+    // Check authentication
+    const identity = auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    const provider = identity.tokenIdentifier;
+
+    // Get pending premium distributions
+    const distributions = await db
+      .query("provider_premium_distributions")
+      .filter(
+        (q) =>
+          q.eq(q.field("provider"), provider) &&
+          q.eq(q.field("status"), "PENDING")
+      )
+      .order("desc")
+      .take(limit, offset);
+
+    // Get policy details for each distribution
+    const results = [];
+    for (const dist of distributions) {
+      const policy = await db.get("policies", dist.policy_id);
+      results.push({
+        distribution: dist,
+        policy: {
+          policyId: policy?.policyId,
+          positionType: policy?.positionType,
+          policyType: policy?.policyType,
+          expirationHeight: policy?.expirationHeight,
+          expirationDate: policy
+            ? new Date(policy.expirationTimestamp).toLocaleDateString()
+            : null,
+        },
+      });
+    }
+
+    return results;
+  }
+);
+
+// User-initiated request to claim premiums
+export const claimPendingPremiums = action(async ({ db, scheduler, auth }) => {
+  // Check authentication
+  const identity = auth.getUserIdentity();
+  if (!identity) throw new Error("Not authenticated");
+
+  const provider = identity.tokenIdentifier;
+
+  // Get all pending premium distributions for this provider
+  const providerDists = await db
+    .query("provider_premium_distributions")
+    .filter(
+      (q) =>
+        q.eq(q.field("provider"), provider) &&
+        q.eq(q.field("status"), "PENDING")
+    )
+    .collect();
+
+  if (providerDists.length === 0) {
+    return {
+      success: false,
+      error: "No pending premiums to claim",
+    };
+  }
+
+  // Group by token for consolidated processing
+  const tokenGroups = {};
+  for (const dist of providerDists) {
+    if (!tokenGroups[dist.token]) {
+      tokenGroups[dist.token] = [];
+    }
+    tokenGroups[dist.token].push(dist);
+  }
+
+  // Process each token group
+  const results = [];
+  for (const [token, dists] of Object.entries(tokenGroups)) {
+    // Calculate total premium amount for this token
+    const totalAmount = dists.reduce(
+      (sum, dist) => sum + dist.premium_amount,
+      0
+    );
+
+    // List of policy IDs included in this claim
+    const policyIds = dists.map((dist) => dist.policy_id);
+
+    // Schedule batch distribution task
+    const taskId = await scheduler.runAfter(
+      0,
+      "internal:processBatchPremiumClaim",
+      {
+        provider,
+        token,
+        policyIds,
+        totalAmount,
+      }
+    );
+
+    results.push({
+      token,
+      count: dists.length,
+      totalAmount,
+      taskId,
+    });
+  }
+
+  return {
+    success: true,
+    claimRequests: results,
+  };
+});
+
+// Process batch premium claim
+export const processBatchPremiumClaim = internalMutation(
+  async ({ db }, { provider, token, policyIds, totalAmount }) => {
+    // Update all distributions in batch
+    for (const policyId of policyIds) {
+      // Find the specific distribution
+      const dist = await db
+        .query("provider_premium_distributions")
+        .filter(
+          (q) =>
+            q.eq(q.field("policy_id"), policyId) &&
+            q.eq(q.field("provider"), provider) &&
+            q.eq(q.field("status"), "PENDING")
+        )
+        .unique();
+
+      if (dist) {
+        // Process this distribution
+        await distributeProviderPremium({
+          policyId,
+          provider,
+          token,
+        });
+      }
+    }
+
+    // Record a consolidated transaction
+    await db.insert("provider_transactions", {
+      provider,
+      tx_id: genId(),
+      tx_type: "PREMIUM_BATCH",
+      amount: totalAmount,
+      token,
+      timestamp: Date.now(),
+      status: "CONFIRMED",
+    });
+
+    return { success: true, processedCount: policyIds.length };
+  }
+);
+```
+
+### 4.4 Yield Calculation
+
+```javascript
+// Calculate provider yield statistics
+export const getProviderYieldStats = query(async ({ db }, { provider }) => {
+  // Get all balances for this provider
+  const balances = await db
+    .query("provider_balances")
+    .filter((q) => q.eq(q.field("provider"), provider))
+    .collect();
+
+  // Get all transactions for this provider
+  const transactions = await db
+    .query("provider_transactions")
+    .filter((q) => q.eq(q.field("provider"), provider))
+    .collect();
+
+  // Calculate yield stats per token
+  const yieldStats = {};
+
+  for (const balance of balances) {
+    const token = balance.token;
+
+    // Filter transactions for this token
+    const tokenTransactions = transactions.filter((tx) => tx.token === token);
+
+    // Calculate first deposit date
+    const deposits = tokenTransactions.filter((tx) => tx.tx_type === "DEPOSIT");
+    const firstDepositDate =
+      deposits.length > 0
+        ? Math.min(...deposits.map((tx) => tx.timestamp))
+        : Date.now();
+
+    // Calculate time elapsed in days
+    const daysElapsed = (Date.now() - firstDepositDate) / (1000 * 60 * 60 * 24);
+
+    // Calculate annualized yield
+    const totalEarned = balance.earned_premiums + balance.pending_premiums;
+    const averageBalance = balance.total_deposited / 2; // Simplified average
+
+    let annualizedYield = 0;
+    if (averageBalance > 0 && daysElapsed > 0) {
+      annualizedYield =
+        (totalEarned / averageBalance) * (365 / daysElapsed) * 100;
+    }
+
+    yieldStats[token] = {
+      totalDeposited: balance.total_deposited,
+      currentAvailable: balance.available_balance,
+      currentLocked: balance.locked_balance,
+      totalEarned,
+      earnedPremiums: balance.earned_premiums,
+      pendingPremiums: balance.pending_premiums,
+      annualizedYield,
+      daysActive: daysElapsed,
+    };
+  }
+
+  // Get active policies with this provider
+  const activeAllocations = await db
+    .query("policy_allocations")
+    .filter(
+      (q) =>
+        q.eq(q.field("provider"), provider) && q.eq(q.field("status"), "ACTIVE")
+    )
+    .collect();
+
+  return {
+    yieldStats,
+    activeAllocations: activeAllocations.length,
+    activeExposure: activeAllocations.reduce(
+      (sum, allocation) => sum + allocation.allocated_amount,
+      0
+    ),
+  };
+});
+```
+
+### 4.5 Background Tasks
+
+```javascript
+// Task to process expired policies
+export const processExpiredPolicies = internalMutation(
+  async ({ db, scheduler }) => {
+    // This task would be scheduled to run periodically
+
+    // Get policies that have expired but haven't distributed premiums
+    const expiredPolicies = await db
+      .query("premium_distributions")
+      .filter((q) => q.eq(q.field("status"), "PENDING"))
+      .collect();
+
+    // Process each policy
+    for (const policy of expiredPolicies) {
+      await scheduler.runAfter(0, "distributePremiumToCounterparty", {
+        policyId: policy.policy_id,
+      });
+    }
+  }
+);
+
+// Task to sync provider balances with on-chain state
+export const syncProviderBalances = internalMutation(
+  async ({ db, scheduler }) => {
+    // This task would be scheduled to run periodically
+
+    // Get all provider balances
+    const balances = await db.query("provider_balances").collect();
+
+    // For each balance, query the on-chain state and update if needed
+    // This is a placeholder for the actual implementation
+
+    return { success: true };
+  }
+);
+```
+
+## 5. User Interaction Flows
+
+### 5.1 Provider Deposit Flow
+
+1. User initiates deposit through frontend
+2. Convex prepares deposit transaction parameters
+3. User signs and submits on-chain transaction
+4. Blockchain event listener detects deposit
+5. `recordProviderDeposit` is called to update Convex state
+6. UI reflects updated balance
+
+### 5.2 Provider Withdrawal Flow
+
+1. User initiates withdrawal through frontend
+2. `processProviderWithdrawal` validates and records pending withdrawal
+3. Convex prepares withdrawal transaction parameters
+4. User signs and submits on-chain transaction
+5. Blockchain event listener detects withdrawal
+6. `confirmProviderWithdrawal` is called to update Convex state
+7. UI reflects updated balance
+
+### 5.3 Policy Premium Distribution Flow
+
+1. Policy expires without being exercised
+2. Policy Registry triggers premium distribution on-chain
+   - This updates the policy status to "Expired"
+   - Records the policy's position type (SHORT_PUT/LONG_PUT)
+   - Identifies the counterparty relationship
+3. Blockchain event listener detects premium distribution event
+4. `recordPolicyPremium` is called with:
+   - Policy ID
+   - Counterparty information (liquidity pool address)
+   - Premium amount
+   - Token type (STX for PUT options in MVP)
+   - Transaction ID of the on-chain event
+5. For each provider that contributed to the policy's collateral:
+   - Premium is allocated based on the provider's allocation percentage
+   - Provider's pending premium balance is updated
+   - Provider-specific premium distribution record is created
+6. Each provider can view pending premiums in their dashboard
+7. Providers can claim premiums through two methods:
+   - Automatic distribution after a delay (system-initiated)
+   - Manual claim through UI (user-initiated)
+8. When premiums are claimed:
+   - Pending premium moves to earned premium
+   - Provider's yield statistics are updated
+   - UI reflects updated premium earnings with counterparty attribution
+   - Transaction history shows premium source by policy
+
+### 5.4 Premium Distribution User Interface
+
+```jsx
+// Premium Distribution Component
+function PremiumDistributions({ provider }) {
+  const { data, loading } = useQuery(getPendingPremiumDistributions, {});
+  const [claiming, setClaiming] = useState(false);
+
+  const handleClaimAll = async () => {
+    setClaiming(true);
+    try {
+      await mutation.claimPendingPremiums({});
+      // Refresh data after claim
+      await data.refetch();
+    } catch (error) {
+      console.error("Error claiming premiums:", error);
+    } finally {
+      setClaiming(false);
+    }
+  };
+
+  if (loading) return <Loading />;
+
+  // Group by token type
+  const tokenGroups = data.reduce((groups, item) => {
+    const { token } = item.distribution;
+    if (!groups[token]) groups[token] = [];
+    groups[token].push(item);
+    return groups;
+  }, {});
+
+  // Calculate totals by token
+  const tokenTotals = Object.entries(tokenGroups).map(([token, items]) => ({
+    token,
+    count: items.length,
+    total: items.reduce(
+      (sum, item) => sum + item.distribution.premium_amount,
+      0
+    ),
+  }));
+
+  return (
+    <div className="premium-distributions">
+      <div className="header-section">
+        <h3>Pending Premium Distributions</h3>
+        <button
+          className="claim-all-btn"
+          disabled={data.length === 0 || claiming}
+          onClick={handleClaimAll}
+        >
+          {claiming ? "Processing..." : "Claim All Premiums"}
+        </button>
+      </div>
+
+      {/* Token Summary */}
+      <div className="token-summary">
+        {tokenTotals.map(({ token, count, total }) => (
+          <div key={token} className="token-card">
+            <h4>{token}</h4>
+            <div className="token-stats">
+              <div>Policies: {count}</div>
+              <div>
+                Total: {total.toFixed(6)} {token}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Detailed list */}
+      <div className="distributions-list">
+        {data.length === 0 ? (
+          <div className="empty-state">No pending premium distributions</div>
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th>Policy ID</th>
+                <th>Type</th>
+                <th>Expired</th>
+                <th>Amount</th>
+                <th>Token</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.map((item) => (
+                <tr
+                  key={`${item.distribution.policy_id}-${item.distribution.provider}`}
+                >
+                  <td>{item.distribution.policy_id}</td>
+                  <td>{item.policy.positionType}</td>
+                  <td>{item.policy.expirationDate}</td>
+                  <td>{item.distribution.premium_amount.toFixed(6)}</td>
+                  <td>{item.distribution.token}</td>
+                  <td>{item.distribution.status}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+```
+
+This component allows providers to view and claim their pending premium distributions, organized by token type and with details about each policy. It shows the position type (SHORT_PUT) that the provider held in relation to each policy, helping them understand the source of their premium income.
+
+## 6. Frontend Components
+
+### 6.1 Provider Dashboard
+
+```jsx
+// Provider Dashboard Component
+function ProviderDashboard({ provider }) {
+  const { data, loading } = useQuery(getProviderYieldStats, { provider });
+
+  if (loading) return <Loading />;
+
+  return (
+    <div className="provider-dashboard">
+      <BalanceSummary yieldStats={data.yieldStats} />
+      <ActivityChart transactions={data.transactions} />
+      <YieldPerformance yieldStats={data.yieldStats} />
+      <ActiveAllocations
+        count={data.activeAllocations}
+        exposure={data.activeExposure}
+      />
+      <PremiumEarnings yieldStats={data.yieldStats} />
+    </div>
+  );
 }
 
-7.2 Allocation Strategy
-The allocation algorithm preferentially assigns risk to providers based on their chosen risk tier:
-Allocate first from aggressive providers who seek higher returns and accept higher risk
-Then use balanced providers to meet remaining collateral needs
-Only use conservative providers when necessary to fulfill policy requirements
-This tiered approach ensures that risk and reward are properly aligned with provider preferences. 8. Conclusion
-The Liquidity Pool Service design follows the "On-Chain Light" approach by:
-Storing minimal, essential financial data on-chain (total balances, locked amounts)
-Managing comprehensive provider tracking, risk allocation, and yield calculations off-chain in Convex
-Orchestrating the complete capital lifecycle from deposit through allocation to withdrawal
-Providing robust error handling and recovery mechanisms
-Synchronizing state between on-chain and off-chain components
-This architecture achieves the important balance between:
-Blockchain security for custody of funds
-Off-chain flexibility for complex business logic
-Cost efficiency through minimized on-chain operations
-Rich user experience with detailed analytics and reporting
-The Liquidity Pool Service works in concert with the Policy Registry to provide a complete solution for BitHedge's protection platform, enabling secure, flexible, and efficient management of capital for Bitcoin protection policies.
+// Premium Earnings Component
+function PremiumEarnings({ yieldStats }) {
+  return (
+    <div className="premium-earnings">
+      <h3>Premium Earnings</h3>
+      {Object.entries(yieldStats).map(([token, stats]) => (
+        <div key={token} className="token-earnings">
+          <h4>{token}</h4>
+          <div className="stats-row">
+            <div className="stat">
+              <label>Total Earned</label>
+              <value>{stats.totalEarned}</value>
+            </div>
+            <div className="stat">
+              <label>Distributed</label>
+              <value>{stats.earnedPremiums}</value>
+            </div>
+            <div className="stat">
+              <label>Pending</label>
+              <value>{stats.pendingPremiums}</value>
+            </div>
+            <div className="stat">
+              <label>Annual Yield</label>
+              <value>{stats.annualizedYield.toFixed(2)}%</value>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+```
+
+### 6.2 Transaction History
+
+```jsx
+// Transaction History Component
+function TransactionHistory({ provider }) {
+  const [filter, setFilter] = useState("ALL");
+  const { data, loading } = useQuery(getProviderTransactions, {
+    provider,
+    filter,
+  });
+
+  if (loading) return <Loading />;
+
+  return (
+    <div className="transaction-history">
+      <div className="filters">
+        <button
+          className={filter === "ALL" ? "active" : ""}
+          onClick={() => setFilter("ALL")}
+        >
+          All
+        </button>
+        <button
+          className={filter === "DEPOSIT" ? "active" : ""}
+          onClick={() => setFilter("DEPOSIT")}
+        >
+          Deposits
+        </button>
+        <button
+          className={filter === "WITHDRAWAL" ? "active" : ""}
+          onClick={() => setFilter("WITHDRAWAL")}
+        >
+          Withdrawals
+        </button>
+        <button
+          className={filter === "PREMIUM" ? "active" : ""}
+          onClick={() => setFilter("PREMIUM")}
+        >
+          Premiums
+        </button>
+      </div>
+
+      <table className="transactions-table">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Type</th>
+            <th>Amount</th>
+            <th>Token</th>
+            <th>Status</th>
+            <th>Policy ID</th>
+          </tr>
+        </thead>
+        <tbody>
+          {data.transactions.map((tx) => (
+            <tr key={tx.tx_id}>
+              <td>{new Date(tx.timestamp).toLocaleString()}</td>
+              <td>{tx.tx_type}</td>
+              <td>{tx.amount}</td>
+              <td>{tx.token}</td>
+              <td>{tx.status}</td>
+              <td>{tx.policy_id || "-"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+```
+
+## 7. API Integration
+
+### 7.1 Public API Endpoints
+
+```javascript
+// Get pool statistics
+export const getPoolStats = query(async ({ db }) => {
+  // Calculate total balances for each token
+  const tokenBalances = {};
+
+  // Get all provider balances
+  const balances = await db.query("provider_balances").collect();
+
+  // Aggregate by token
+  for (const balance of balances) {
+    const token = balance.token;
+    if (!tokenBalances[token]) {
+      tokenBalances[token] = {
+        totalDeposited: 0,
+        availableBalance: 0,
+        lockedBalance: 0,
+        totalEarned: 0,
+      };
+    }
+
+    tokenBalances[token].totalDeposited += balance.total_deposited;
+    tokenBalances[token].availableBalance += balance.available_balance;
+    tokenBalances[token].lockedBalance += balance.locked_balance;
+    tokenBalances[token].totalEarned +=
+      balance.earned_premiums + balance.pending_premiums;
+  }
+
+  // Get active policy count
+  const activePolicies = await db
+    .query("policy_allocations")
+    .filter((q) => q.eq(q.field("status"), "ACTIVE"))
+    .collect();
+
+  const uniquePolicies = [...new Set(activePolicies.map((a) => a.policy_id))];
+
+  return {
+    tokenBalances,
+    activePolicyCount: uniquePolicies.length,
+    providerCount: [...new Set(balances.map((b) => b.provider))].length,
+  };
+});
+
+// Get provider allocations
+export const getProviderAllocations = query(async ({ db }, { provider }) => {
+  // Get all allocations for this provider
+  const allocations = await db
+    .query("policy_allocations")
+    .filter((q) => q.eq(q.field("provider"), provider))
+    .collect();
+
+  return { allocations };
+});
+```
+
+### 7.2 Webhook Integration
+
+The Convex backend will set up webhooks for blockchain events:
+
+```javascript
+// Register blockchain event listener for premium distributions
+export const handlePremiumDistributionEvent = internalMutation(
+  async (
+    { db },
+    { policyId, counterparty, premiumAmount, token, chainTxId }
+  ) => {
+    // Find the premium distribution record
+    const premiumDist = await db
+      .query("premium_distributions")
+      .filter((q) => q.eq(q.field("policy_id"), policyId))
+      .unique();
+
+    if (premiumDist) {
+      // Update with chain tx ID and status
+      await db.patch(
+        "premium_distributions",
+        { policy_id: policyId },
+        {
+          status: "COMPLETED",
+          chain_tx_id: chainTxId,
+        }
+      );
+    } else {
+      // Create a new record if one doesn't exist (edge case)
+      await db.insert("premium_distributions", {
+        policy_id: policyId,
+        counterparty,
+        total_premium: premiumAmount,
+        token,
+        distribution_timestamp: Date.now(),
+        status: "COMPLETED",
+        chain_tx_id: chainTxId,
+      });
+    }
+
+    return { success: true };
+  }
+);
+```
+
+## 8. Security Considerations
+
+### 8.1 Data Access Controls
+
+```javascript
+// Example access control rules
+
+// Provider Balance Rules
+defineRule({
+  name: "provider_can_read_own_balances",
+  resource: "provider_balances",
+  action: "read",
+  condition: ({ context, resource }) => {
+    return context.identity?.provider === resource.provider;
+  },
+});
+
+// Policy Allocation Rules
+defineRule({
+  name: "provider_can_read_own_allocations",
+  resource: "policy_allocations",
+  action: "read",
+  condition: ({ context, resource }) => {
+    return context.identity?.provider === resource.provider;
+  },
+});
+
+// Transaction Rules
+defineRule({
+  name: "provider_can_read_own_transactions",
+  resource: "provider_transactions",
+  action: "read",
+  condition: ({ context, resource }) => {
+    return context.identity?.provider === resource.provider;
+  },
+});
+
+// Premium Distribution Rules
+defineRule({
+  name: "admin_only_premium_distribution",
+  resource: "premium_distributions",
+  action: "write",
+  condition: ({ context }) => {
+    return context.identity?.roles?.includes("admin");
+  },
+});
+```
+
+### 8.2 On-Chain Transaction Validation
+
+```javascript
+// Validate on-chain transaction before execution
+export const validateOnChainTransaction = query(
+  async ({ db }, { txType, params }) => {
+    switch (txType) {
+      case "WITHDRAWAL":
+        // Verify sufficient available balance
+        const balance = await db
+          .query("provider_balances")
+          .filter(
+            (q) =>
+              q.eq(q.field("provider"), params.provider) &&
+              q.eq(q.field("token"), params.token)
+          )
+          .unique();
+
+        if (!balance || balance.available_balance < params.amount) {
+          return {
+            valid: false,
+            reason: "Insufficient available balance",
+          };
+        }
+        break;
+
+      case "PREMIUM_DISTRIBUTION":
+        // Verify premium not already distributed
+        const premiumDist = await db
+          .query("premium_distributions")
+          .filter((q) => q.eq(q.field("policy_id"), params.policyId))
+          .unique();
+
+        if (!premiumDist || premiumDist.status !== "PENDING") {
+          return {
+            valid: false,
+            reason: "Premium already distributed or not ready",
+          };
+        }
+        break;
+
+      // Add more validation cases as needed
+    }
+
+    return { valid: true };
+  }
+);
+```
+
+## 9. Performance Considerations
+
+### 9.1 Indexing Strategy
+
+Optimizing database queries through proper indexing:
+
+1. All tables have primary indexes on their most frequently queried fields
+2. Secondary indexes are created for common filtering operations
+3. Compound indexes for relationship queries
+
+### 9.2 Caching Strategy
+
+1. Provider balance summaries are cached for quick dashboard loading
+2. Pool statistics are cached with a short TTL for public API consumption
+3. Transaction histories use pagination to limit data transfer
+
+### 9.3 Background Processing
+
+1. Premium distributions are processed asynchronously
+2. Balance synchronization runs as a background task
+3. Large data calculations like yield statistics run in dedicated tasks
+
+## 10. Future Extensions
+
+### 10.1 Governance Integration
+
+The Liquidity Pool architecture is designed to integrate with future governance mechanisms:
+
+1. Fee parameter updates
+2. Risk tier adjustments
+3. Token support expansion
+
+### 10.2 Advanced Premium Distribution
+
+Future enhancements to premium distribution:
+
+1. Risk-based premium allocation
+2. Loyalty rewards for long-term providers
+3. Automatic reinvestment options
+
+### 10.3 Analytics and Reporting
+
+Future data analysis capabilities:
+
+1. Provider performance dashboards
+2. Risk exposure analysis
+3. Yield optimization recommendations
+
+## 11. Implementation Roadmap
+
+### Phase 1: Basic Provider Management
+
+1. **LP-101**: Core provider balance tracking
+2. **LP-102**: Deposit and withdrawal flows
+3. **LP-103**: Basic provider dashboard
+
+### Phase 2: Policy Allocation
+
+1. **LP-104**: Policy allocation tracking
+2. **LP-105**: Collateral locking and release
+3. **LP-106**: Provider yield calculations
+
+### Phase 3: Premium Management
+
+1. **LP-112**: Premium accounting
+2. **LP-113**: Counterparty premium distribution
+3. **LP-114**: Provider-specific premium distribution
+
+### Phase 4: Advanced Features
+
+1. **LP-115**: Enhanced yield analytics
+2. **LP-116**: Risk tier management
+3. **LP-117**: Governance integration
+
+## 12. Conclusion
+
+The BitHedge Liquidity Pool Convex architecture complements the on-chain Vault contract by providing comprehensive provider-specific accounting, premium tracking, yield calculations, and user interfaces. The "On-Chain Light" approach minimizes gas costs while maintaining security by keeping funds and basic financial operations on-chain while leveraging Convex for complex calculations and user experience.
+
+This architecture enables BitHedge to offer a robust, scalable platform for liquidity providers to participate in the BTC options market with transparent tracking of their contributions, allocations, and earnings.

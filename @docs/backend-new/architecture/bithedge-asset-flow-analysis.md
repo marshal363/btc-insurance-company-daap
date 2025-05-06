@@ -10,13 +10,42 @@ The analysis reveals that BitHedge employs a multi-asset approach leveraging the
 
 Before analyzing flows, we must understand the distinct roles each asset plays:
 
-| Asset                        | Primary Role                                    | Technical Implementation                    | User Experience                                  |
-| ---------------------------- | ----------------------------------------------- | ------------------------------------------- | ------------------------------------------------ |
-| **Bitcoin (BTC)**            | Reference asset for protection policies         | Off-chain asset tracked via price oracles   | Protection buyers want to preserve BTC value     |
-| **Synthetic Bitcoin (sBTC)** | Collateral asset for protection sellers         | On-chain Stacks asset backed 1:1 by Bitcoin | Protection sellers can commit sBTC as collateral |
-| **Stacks (STX)**             | Platform utility token and alternate collateral | Native Stacks blockchain token              | Used for fees, collateral, and governance        |
+| Asset                        | Primary Role                                 | Technical Implementation                    | User Experience                                 |
+| ---------------------------- | -------------------------------------------- | ------------------------------------------- | ----------------------------------------------- |
+| **Bitcoin (BTC)**            | Reference asset for protection policies      | Off-chain asset tracked via price oracles   | Protection buyers want to preserve BTC value    |
+| **Synthetic Bitcoin (sBTC)** | Potential future collateral asset (post-MVP) | On-chain Stacks asset backed 1:1 by Bitcoin | Advanced collateral option in future versions   |
+| **Stacks (STX)**             | Primary collateral and settlement token      | Native Stacks blockchain token              | Used for premiums, collateral, fees, settlement |
 
-This multi-asset architecture creates unique technical challenges but also enables critical functionality that would be impossible with a single-asset model.
+This asset architecture enables the core PUT option functionality in the MVP while laying groundwork for future expansion.
+
+## MVP Scope and Design
+
+The BitHedge MVP focuses specifically on providing PUT options (price protection) for Bitcoin holders with a streamlined design:
+
+### MVP Core Design Principles
+
+1. **Focused Functionality**:
+
+   - Only PUT options are supported in the MVP
+   - Protection buyers (Protective Peter) buy PUT options to hedge BTC downside risk
+   - Protection sellers (Income Irene) sell PUT options to earn premium income
+
+2. **Simplified Asset Model**:
+   - STX is used exclusively as collateral for PUT options
+   - STX is used exclusively for premium payment
+   - STX is used exclusively for settlement payments
+3. **Financial Rationale**:
+
+   - STX as collateral/settlement currency preserves the buyer's BTC holdings
+   - Buyer receives STX compensation for BTC value loss rather than having to sell BTC
+   - This aligns with the primary use case: BTC holders wanting to protect value without selling
+
+4. **Technical Simplicity**:
+   - Single collateral type reduces complexity in MVP implementation
+   - Eliminates need for complex risk adjustments for different collateral types
+   - Provides clear user experience for both buyers and sellers
+
+Future versions will expand beyond this MVP scope to include additional assets and option types.
 
 ## Comprehensive Asset Flow Analysis
 
@@ -48,9 +77,9 @@ Protection sellers must fully collateralize their protection offerings:
 
 1. **Collateral Deposit:**
 
-   - Seller deposits sBTC or STX as collateral into the protection contract
-   - Collateral amount must cover the full strike value of the protection policy
-   - Collateralization ratio may be greater than 100% based on protocol risk parameters
+   - For the MVP, sellers deposit STX as collateral into the protection contract
+   - Collateral amount must cover the full potential payout value of the PUT option
+   - STX is used exclusively for PUT option collateral in the MVP phase
 
 2. **Collateral Locking:**
    - Deposited collateral is locked for the duration of the protection policy
@@ -61,8 +90,8 @@ Protection sellers must fully collateralize their protection offerings:
 
 - In the P2P model: Each protection seller's collateral is individually tracked and locked
 - In the Assisted Counterparty model: Collateral is pooled and managed collectively
-- sBTC is the preferred collateral asset due to its direct 1:1 peg to BTC
-- STX may serve as alternative collateral with higher collateralization requirements
+- STX serves as the sole collateral asset for PUT options in the MVP
+- Future versions may add support for sBTC as collateral with appropriate risk adjustments
 
 ### 3. Protection Claim Flow (Protocol → Buyer)
 
@@ -77,13 +106,13 @@ When protection is activated due to price conditions:
 
 2. **Claim Settlement:**
    - Protected value is calculated: (Strike Price - Current Price) × Protected BTC Amount
-   - Equivalent value in sBTC or STX is transferred from the seller's collateral to the buyer
+   - Equivalent value in STX is transferred from the seller's collateral to the buyer
    - Remaining collateral is returned to the seller
 
 **Implementation Details:**
 
 - Settlement is triggered by oracle price feeds crossing the strike threshold
-- No actual BTC is transferred; settlement occurs in sBTC or STX at current market value
+- No actual BTC is transferred; settlement occurs in STX at current market value
 - Settlement transactions execute on Stacks blockchain using smart contracts
 - In the Assisted Counterparty model, settlements are processed from the collective pool
 
@@ -154,60 +183,41 @@ These adjustments are crucial during the early phases to address the chicken-and
 
 ## Collateralization Mechanics and Risk Management
 
-### 1. Collateral Asset Requirements
+### 1. Collateral Asset Requirements in MVP
 
-The protocol accepts two primary forms of collateral:
+The protocol accepts STX as the collateral asset for PUT options in the MVP:
+
+| Collateral Asset | Collateralization Ratio | Liquidation Threshold | Advantages                                | Disadvantages                              |
+| ---------------- | ----------------------- | --------------------- | ----------------------------------------- | ------------------------------------------ |
+| **STX**          | 100%                    | N/A in MVP            | Native to platform, simple implementation | Potential price volatility relative to BTC |
+
+In the MVP implementation, a simplified collateralization model is used with 100% collateral requirement. This ensures the seller can fully cover potential settlements while maintaining implementation simplicity.
+
+### 2. Future Collateral Model (Post-MVP)
+
+In future versions, the protocol plans to implement a more sophisticated collateralization model:
 
 | Collateral Asset | Collateralization Ratio | Liquidation Threshold | Advantages                                       | Disadvantages                              |
 | ---------------- | ----------------------- | --------------------- | ------------------------------------------------ | ------------------------------------------ |
 | **sBTC**         | 100-110%                | 102%                  | Direct 1:1 BTC backing, lower ratio requirements | Limited availability, may require wrapping |
 | **STX**          | 150-200%                | 120%                  | Greater availability, native to platform         | Higher volatility, requires larger buffers |
 
-The higher collateralization ratio for STX accounts for its potential price volatility relative to BTC, ensuring the protocol remains solvent even during market stress.
+The higher collateralization ratio for STX will account for its potential price volatility relative to BTC, ensuring the protocol remains solvent even during market stress.
 
-### 2. Collateral Management System
+### 3. Collateral Management System
 
 Protection sellers must maintain adequate collateralization throughout the policy period:
 
 1. **Initial Collateralization:**
 
    - Collateral locked when protection is created
-   - Must meet minimum collateralization ratio for the selected asset
+   - Must meet minimum collateralization ratio (100% in MVP)
 
-2. **Ongoing Monitoring:**
-
-   - Collateralization ratio continuously monitored against current BTC price
-   - Warning thresholds trigger alerts to protection sellers when ratios approach minimum
-
-3. **Collateral Adjustment:**
-
-   - Sellers can add additional collateral at any time to improve their ratio
-   - No partial withdrawal is permitted while protection is active
-
-4. **Settlement Process:**
+2. **Settlement Process:**
    - Upon protection activation, collateral equivalent to payout value is transferred to buyer
    - Remaining collateral is released back to seller
-   - In case of insufficient collateral (extremely rare with proper ratios), insurance fund activates
 
-### 3. Insurance Fund Mechanism
-
-To provide an additional layer of protection against systemic risks:
-
-1. **Fund Capitalization:**
-
-   - Small percentage (1-2%) of premium income allocated to insurance fund
-   - Additional capital may come from protocol revenue
-
-2. **Activation Conditions:**
-
-   - Fund activates when individual protection seller collateral is insufficient
-   - May also activate during extreme market conditions or oracle failures
-
-3. **Governance Control:**
-   - Insurance fund parameters managed through governance
-   - Includes contribution rates, activation thresholds, and capital allocation
-
-This multi-layered risk management approach ensures the protocol can maintain solvency even during black swan events.
+In the MVP, the simplified model does not include dynamic collateral adjustments or liquidation mechanisms.
 
 ## Income Generation Mechanisms for Participants
 
@@ -226,7 +236,7 @@ Protection sellers generate revenue through several mechanisms:
    - Experienced sellers may implement delta-neutral strategies to maximize returns
 
 3. **Potential Acquisition Discount:**
-   - When protection activates, sellers effectively purchase BTC at below-market rates
+   - When protection activates, sellers effectively purchase BTC exposure at below-market rates
    - Some sellers may deliberately offer protection at strikes where they'd be willing to buy
 
 **Annualized Yield Calculation:**
@@ -248,14 +258,9 @@ The protocol generates revenue for sustainability and development:
    - Potential subscription revenue from advanced features
 
 2. **Treasury Management:**
-
    - Protocol-owned liquidity deployment
    - Strategic investments in ecosystem development
    - Reserves for contingency operations
-
-3. **Potential Governance Token Mechanics:**
-   - If implemented, token holders may receive a portion of protocol revenue
-   - Governance token value derived from protocol usage and fee generation
 
 The protocol's economic design ensures that increased usage directly correlates with increased sustainability.
 
@@ -328,85 +333,44 @@ The BitHedge ecosystem sustainability analysis proposes three potential implemen
 
 This hybrid model provides the most robust path to sustainability by combining the reliability of pooled liquidity with the efficiency of peer-to-peer markets.
 
-## Protocol Sustainability Analysis
-
-### 1. Revenue Adequacy Assessment
-
-For long-term sustainability, protocol revenue must be sufficient to cover:
-
-1. **Operational Costs:**
-
-   - Smart contract maintenance and upgrades
-   - Oracle integration and verification
-   - User interface development and hosting
-   - Security audits and monitoring
-
-2. **Growth Investments:**
-
-   - Market making and liquidity incentives
-   - User acquisition and education
-   - Ecosystem integration and partnerships
-   - Feature development and expansion
-
-3. **Risk Management:**
-   - Insurance fund capitalization
-   - Contingency reserves
-   - Black swan event preparedness
-
-Based on comparable DeFi protocols, a sustainable revenue model would require capturing approximately 0.1-0.3% of total protection value as protocol revenue, which the proposed fee structure should achieve.
-
-### 2. Equilibrium Analysis
-
-Protocol sustainability depends on maintaining equilibrium between:
-
-1. **Protection Demand and Supply:**
-
-   - Premiums must be attractive enough for buyers while profitable for sellers
-   - Market size must support adequate participation on both sides
-   - Temporal matching of protection needs and provision capacity
-
-2. **Protocol Revenue and Expenses:**
-
-   - Fee generation must exceed operational costs
-   - Growth investments should yield positive ROI through increased usage
-   - Risk management costs must be proportional to protocol TVL
-
-3. **Risk and Security:**
-   - Collateralization requirements must ensure solvency without excessive capital inefficiency
-   - Insurance mechanisms must be adequately funded without overcharging participants
-   - Technical security must be proportional to value secured
-
-The proposed hybrid model creates the most robust path to achieving this equilibrium by allowing dynamic adaptation to market conditions.
-
 ## Technical Implementation Requirements
 
 Implementing the proposed asset flow model requires specific technical components:
 
-### 1. Smart Contract Architecture
+### 1. MVP Smart Contract Architecture
 
-1. **Core Registry Contract:**
+1. **Policy Registry Contract:**
 
    - Tracks all protection policies, their parameters, and status
    - Manages policy lifecycle from creation through expiration or activation
+   - Maintains mapping of policy ID to owner, terms, and status
 
-2. **Collateral Management Contract:**
+2. **Liquidity Pool Vault Contract:**
+   - Locks, tracks, and releases seller collateral (STX)
+   - Enforces collateralization requirements
+   - Processes settlements and premium payments
+   - Manages available and locked liquidity
 
-   - Locks, tracks, and releases seller collateral
-   - Enforces collateralization requirements and ratios
-   - Processes collateral adjustments and settlements
+### 2. Future Extensions (Post-MVP)
 
-3. **Liquidity Pool Contract:**
+1. **Enhanced Collateral Management:**
 
-   - Manages collective capital in the assisted counterparty model
-   - Implements algorithmic pricing and risk management
-   - Distributes yield to liquidity providers
+   - Support for multiple collateral types (sBTC, STX) with different ratios
+   - Dynamic collateralization ratio requirements based on volatility
+   - Liquidation mechanisms for undercollateralized positions
 
-4. **P2P Order Book Contract:**
-   - Facilitates direct matching between protection buyers and sellers
-   - Manages bid-ask listings and matchmaking
-   - Enforces trade execution and settlement
+2. **CALL Option Support:**
 
-### 2. Off-Chain Components
+   - Additional contract logic for CALL option creation and settlement
+   - sBTC collateral management for CALL options
+   - Distinct pricing models for CALL options
+
+3. **Advanced P2P Marketplace:**
+   - Order book functionality for direct peer matching
+   - Secondary market for protection policy trading
+   - Advanced portfolio management tools
+
+### 3. Off-Chain Components
 
 1. **Price Oracle System:**
 
@@ -425,25 +389,6 @@ Implementing the proposed asset flow model requires specific technical component
    - Presents appropriate information based on user persona
    - Hides unnecessary complexity while maintaining transparency
 
-### 3. Governance Mechanism
-
-1. **Parameter Adjustment System:**
-
-   - Manages fee percentages and distribution
-   - Controls collateralization requirements
-   - Sets insurance fund parameters
-
-2. **Protocol Upgrade Process:**
-
-   - Facilitates smart contract improvements
-   - Manages transition between contract versions
-   - Ensures backward compatibility where possible
-
-3. **Emergency Response Framework:**
-   - Defines procedures for extreme market conditions
-   - Implements circuit breakers and pause mechanisms
-   - Protects user funds during unexpected events
-
 ## Conclusion: The Path to Economic Sustainability
 
 The BitHedge protocol can achieve long-term economic sustainability through its carefully designed asset flow model that:
@@ -458,9 +403,9 @@ The BitHedge protocol can achieve long-term economic sustainability through its 
 2. **Manages Risk Effectively:**
 
    - Collateralization requirements ensure protection fulfillment
-   - Multi-layer security prevents catastrophic failure
-   - Dynamic parameters adapt to changing market conditions
-   - Insurance mechanisms protect against edge cases
+   - Simple, robust implementation in MVP reduces technical risk
+   - Future enhancements will add sophisticated risk management features
+   - Progressive approach builds confidence in the platform
 
 3. **Creates Technical Efficiency:**
    - Smart contract architecture minimizes unnecessary transactions
@@ -468,16 +413,16 @@ The BitHedge protocol can achieve long-term economic sustainability through its 
    - Progressive implementation reduces development risk
    - Modular design enables continuous improvement
 
-The hybrid implementation model represents the most promising path forward, combining the user experience benefits of an assisted counterparty approach with the long-term efficiency of peer-to-peer markets. By carefully managing the transition between these models, BitHedge can maintain reliability while progressively increasing decentralization and capital efficiency.
+The MVP implementation provides a solid foundation with its simplified asset model focusing exclusively on STX-collateralized PUT options. This approach allows for rapid deployment and testing while addressing the most pressing need in the Bitcoin ecosystem: downside protection for BTC holders.
 
-This approach positions BitHedge as a sustainable financial primitive in the Bitcoin ecosystem, providing essential risk management capabilities while generating sufficient value to ensure its long-term operation and growth.
+Future versions will expand the protocol capabilities to include multiple collateral types, more sophisticated risk management, and additional option structures, creating a comprehensive financial primitive for the Bitcoin ecosystem.
 
 ## Next Steps
 
-1. Develop detailed economic models with specific fee percentages based on market research
-2. Create simulation tools to test asset flow under various market conditions
-3. Design technical specifications for the smart contract architecture
-4. Establish parameters for initial liquidity pool capitalization
-5. Develop analytics dashboard for monitoring economic health metrics
+1. Validate the MVP asset flow model through user testing and feedback
+2. Develop simulation tools to test the system under various market conditions
+3. Create detailed specifications for post-MVP enhancements
+4. Establish metrics for monitoring ecosystem health
+5. Design governance mechanisms for future parameter adjustments
 
-By addressing both the immediate economic functioning and long-term sustainability questions, BitHedge can build a robust foundation for Bitcoin-native risk management that serves the needs of all participants while maintaining the core principles of Bitcoin's trustless, self-sovereign ecosystem.
+By addressing both the immediate functional requirements and long-term sustainability considerations, BitHedge can build a robust foundation for Bitcoin-native risk management that serves the needs of all participants while maintaining the core principles of Bitcoin's trustless, self-sovereign ecosystem.

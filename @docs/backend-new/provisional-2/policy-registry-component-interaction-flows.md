@@ -27,41 +27,47 @@ This document details the interaction flows between components in the BitHedge p
        │                        │  3. Calculate Premium  │                          │
        │                        │ ◄──────────────────────│                          │
        │                        │                        │                          │
-       │                        │  4. Check Pool Liquidity                          │
+       │                        │  4. Determine Position │                          │
+       │                        │    Type and Counterparty                          │
        │                        │ ◄──────────────────────│                          │
        │                        │                        │                          │
-       │                        │  5. Prepare Transaction│                          │
+       │                        │  5. Check Pool Liquidity                          │
        │                        │ ◄──────────────────────│                          │
        │                        │                        │                          │
-       │  6. Return Transaction │                        │                          │
+       │                        │  6. Prepare Transaction│                          │
+       │                        │ ◄──────────────────────│                          │
+       │                        │                        │                          │
+       │  7. Return Transaction │                        │                          │
        │     for Signing        │                        │                          │
        │ ◄─────────────────────┐│                        │                          │
        │                        │                        │                          │
-       │  7. User Signs and     │                        │                          │
+       │  8. User Signs and     │                        │                          │
        │     Submits Transaction│                        │                          │
        │ ───────────────────────────────────────────────►│                          │
        │                        │                        │                          │
-       │                        │                        │  8. Execute Contract Call│
+       │                        │                        │  9. Execute Contract Call│
        │                        │                        │ ─────────────────────────►
        │                        │                        │                          │
-       │                        │                        │  9. Premium Payment +    │
-       │                        │                        │     Policy Creation      │
+       │                        │                        │  10. Premium Payment +   │
+       │                        │                        │     Policy Creation +    │
+       │                        │                        │     Position Assignment  │
        │                        │                        │ ◄─────────────────────────
        │                        │                        │                          │
-       │                        │                        │  10. Events Emitted      │
+       │                        │                        │  11. Events Emitted      │
        │                        │                        │ ◄─────────────────────────
        │                        │                        │                          │
-       │                        │  11. Process Events    │                          │
+       │                        │  12. Process Events    │                          │
        │                        │ ◄──────────────────────│                          │
        │                        │                        │                          │
-       │                        │  12. Update Off-Chain  │                          │
-       │                        │      State             │                          │
+       │                        │  13. Update Off-Chain  │                          │
+       │                        │      State with Position│                         │
+       │                        │      and Counterparty  │                          │
        │                        │ ◄──────────────────────│                          │
        │                        │                        │                          │
-       │  13. Confirmation      │                        │                          │
+       │  14. Confirmation      │                        │                          │
        │ ◄─────────────────────┐│                        │                          │
        │                        │                        │                          │
-       │  14. Update UI         │                        │                          │
+       │  15. Update UI         │                        │                          │
        │ ◄──────────────────────│                        │                          │
        │                        │                        │                          │
 ```
@@ -87,68 +93,82 @@ This document details the interaction flows between components in the BitHedge p
    - Applies parameter-based pricing algorithm
    - Returns estimated premium in USD
 
-4. **Liquidity Verification (Convex → Liquidity Pool Service)**
+4. **Position Type and Counterparty Determination (Convex)**
+
+   - Assigns position type based on policy type and user role:
+     - User buying protection: "LONG_PUT" for PUT options
+     - Liquidity pool selling protection: "SHORT_PUT" for PUT options
+   - Records counterparty information (typically liquidity pool address for buyer policies)
+   - Determines collateral token and settlement asset based on position type
+
+5. **Liquidity Verification (Convex → Liquidity Pool Service)**
 
    - Convex checks if the Liquidity Pool has sufficient collateral
    - Verifies if risk tiers can accommodate the new policy
    - Confirms capacity for the requested policy terms
 
-5. **Transaction Preparation (Convex)**
+6. **Transaction Preparation (Convex)**
 
    - Convex converts parameters to on-chain format (e.g., USD to satoshis)
    - Builds transaction to call Policy Registry contract
+   - Includes position type and counterparty information
    - Creates pending transaction record in Convex database
 
-6. **Return Transaction Details (Convex → Frontend)**
+7. **Return Transaction Details (Convex → Frontend)**
 
    - Convex returns transaction details and pending transaction ID
    - Includes premium amount and estimated gas
    - Frontend displays confirmation dialog with details
 
-7. **User Signs and Submits (Frontend → Blockchain)**
+8. **User Signs and Submits (Frontend → Blockchain)**
 
    - User reviews and approves the transaction
    - Frontend uses Stacks wallet to sign the transaction
    - Signed transaction is submitted to Stacks blockchain
 
-8. **Transaction Processing (Blockchain → Contract)**
+9. **Transaction Processing (Blockchain → Contract)**
 
    - Blockchain processes the transaction
    - Policy Registry contract function is called with policy parameters
 
-9. **On-Chain Processing (Policy Registry Contract)**
+10. **On-Chain Processing (Policy Registry Contract)**
 
-   - Contract validates parameters
-   - Creates new policy entry with unique ID
-   - Sets status to "Active"
-   - Updates policy ownership index
+    - Contract validates parameters
+    - Creates new policy entry with unique ID
+    - Assigns position type (LONG_PUT/SHORT_PUT)
+    - Records counterparty information
+    - Sets status to "Active"
+    - Updates policy ownership and counterparty indices
 
-10. **Event Emission (Contract → Blockchain)**
+11. **Event Emission (Contract → Blockchain)**
 
     - Contract emits "policy-created" event
-    - Event includes policy ID and core parameters
+    - Event includes policy ID, position type, counterparty, and core parameters
     - Blockchain records events in transaction receipt
 
-11. **Event Processing (Blockchain → Convex)**
+12. **Event Processing (Blockchain → Convex)**
 
     - Convex monitors blockchain for relevant events
     - Detects "policy-created" event
     - Extracts policy details from event data
 
-12. **Off-Chain State Update (Convex)**
+13. **Off-Chain State Update (Convex)**
 
     - Convex updates pending transaction status to "Confirmed"
     - Creates comprehensive policy record with extended metadata
-    - Updates indices for efficient querying
+    - Records position type and counterparty information
+    - Updates indices for efficient querying (by owner, by counterparty)
     - Records policy creation event in history
+    - Flags premium as not yet distributed for future tracking
 
-13. **Confirmation (Convex → Frontend)**
+14. **Confirmation (Convex → Frontend)**
 
     - Convex notifies frontend of successful policy creation
-    - Includes policy ID and core details
+    - Includes policy ID, position type, and core details
 
-14. **UI Update (Frontend)**
+15. **UI Update (Frontend)**
     - Frontend updates display to show policy status
+    - Shows position type (LONG_PUT/SHORT_PUT) appropriate to user role
     - Adds policy to user's active policies list
     - Shows success notification to user
 
@@ -342,37 +362,49 @@ This document details the interaction flows between components in the BitHedge p
         │                        │                          │
         │ 3. Sign Transaction with│                         │
         │    Backend Key and Submit                         │
-        │ ───────────────────────────────────────────────────►
+        │ ───────────────────────────────────────────────────►                         │
         │                        │                          │
         │                        │                          │
         │                        │ 4. Execute Contract Call │
-        │                        │ ─────────────────────────►
+        │                        │ ─────────────────────────►                          │
         │                        │                          │
         │                        │ 5. Expire Policies in    │
         │                        │    Batch                 │
-        │                        │ ◄─────────────────────────
+        │                        │ ◄─────────────────────────                          │
         │                        │                          │
         │                        │ 6. Notify Liquidity Pool │
         │                        │    for each Policy       │
         │                        │ ─────────────────────────────────────────────────────►
         │                        │                          │
+        │                        │                          │ 7. Release Collateral    │
+        │                        │                          │    for Expired Policies  │
         │                        │                          │
-        │                        │ 7. Release Collateral   │
-        │                        │    for Expired Policies  │
+        │                        │                          │ ◄─────────────────────────
         │                        │                          │
-        │                        │ ◄─────────────────────────
+        │                        │                          │ 8. Process Premium       │
+        │                        │                          │    Distribution          │
+        │                        │                          │ ─────────────────────────►
         │                        │                          │
-        │                        │ 8. Events Emitted        │
-        │                        │ ◄─────────────────────────
+        │                        │                          │ 9. Distribute Premium to │
+        │                        │                          │    Providers             │
+        │                        │                          │ ◄─────────────────────────
         │                        │                          │
-        │                        │ 9. Events Emitted        │
+        │                        │ 10. Events Emitted       │
+        │                        │ ◄─────────────────────────                          │
+        │                        │                          │
+        │                        │ 11. Events Emitted       │
         │                        │ ◄─────────────────────────────────────────────────────
         │                        │                          │
-        │ 10. Process Events     │                          │
+        │ 12. Process Events     │                          │
         │ ◄──────────────────────│                          │
         │                        │                          │
-        │ 11. Update Off-Chain   │                          │
-        │     State              │                          │
+        │ 13. Update Off-Chain   │                          │
+        │     State with Premium │                          │
+        │     Distribution Data  │                          │
+        │ ◄──────────────────────│                          │
+        │                        │                          │
+        │ 14. Notify Counterparty│                          │
+        │     of Premium         │                          │
         │ ◄──────────────────────│                          │
         │                        │                          │
 ```
@@ -409,6 +441,7 @@ This document details the interaction flows between components in the BitHedge p
    - For each policy in batch:
      - Verifies it's active and past expiration
      - Updates status from "Active" to "Expired"
+     - Marks premium as available for distribution
      - Emits "policy-status-updated" event
 
 6. **Collateral Release Request (Policy Registry → Liquidity Pool)**
@@ -423,28 +456,61 @@ This document details the interaction flows between components in the BitHedge p
    - Returns collateral to available pool capacity
    - Emits "collateral-released" event
 
-8. **Policy Registry Events (Contract → Blockchain)**
+8. **Premium Distribution Request (Policy Registry → Liquidity Pool)**
 
-   - "policy-status-updated" events for each expired policy
-   - Includes policy ID, status change details
+   - For each expired policy, initiates premium distribution
+   - Passes premium amount, counterparty, and policy ID to Liquidity Pool
 
-9. **Liquidity Pool Events (Contract → Blockchain)**
+9. **Premium Distribution Processing (Liquidity Pool Contract)**
 
-   - "collateral-released" events for each expired policy
-   - Includes amount released and policy reference
+   - Records premium amount for distribution to providers
+   - Updates provider-specific premium balances based on policy allocation
+   - Tracks premium distribution by provider
+   - Emits "premium-distributed" event
 
-10. **Event Processing (Blockchain → Convex)**
+10. **Policy Registry Events (Contract → Blockchain)**
+
+    - "policy-status-updated" events for each expired policy
+    - "premium-distribution-initiated" events for each policy
+    - Includes policy ID, status change details, premium amounts
+
+11. **Liquidity Pool Events (Contract → Blockchain)**
+
+    - "collateral-released" events for each expired policy
+    - "premium-distributed" events with distribution details
+    - Includes amount released, premium amounts, and policy reference
+
+12. **Event Processing (Blockchain → Convex)**
 
     - Convex monitors blockchain for relevant events
-    - Detects policy expiration and collateral release events
+    - Detects policy expiration, collateral release, and premium distribution events
     - Extracts details from event data
 
-11. **Off-Chain State Update (Convex)**
+13. **Off-Chain State Update (Convex)**
+
     - Updates pending transaction status to "Confirmed"
     - Updates each policy status to "Expired"
-    - Updates Liquidity Pool state (released collateral)
+    - Records premium distribution details
+    - Updates Liquidity Pool state (released collateral, distributed premiums)
+    - Updates provider records with premium earnings
     - Records events in policy history
     - Updates indices and aggregated metrics
+
+14. **Counterparty Notification (Convex)**
+
+    - Convex notifies policy counterparty of premium distribution
+    - Updates counterparty dashboard with premium earnings
+    - Prepares premium data for display in provider dashboard
+
+15. **Confirmation (Convex → Frontend)**
+
+    - Convex notifies frontend of successful policy expiration
+    - Includes policy ID and updated policy details
+
+16. **UI Update (Frontend)**
+    - Frontend updates policy display to show "Expired" status
+    - Shows expiration date and updated policy details
+    - Displays success notification to user
 
 ## 5. Policy Query Flow
 
@@ -460,32 +526,46 @@ This document details the interaction flows between components in the BitHedge p
 └──────┬──────┘         └───────┬───────┘         └────────┬─────────┘
        │                        │                          │
        │ 1. Request User's      │                          │
-       │    Policies            │                          │
+       │    Policies with Filters│                         │
        │ ─────────────────────► │                          │
        │                        │                          │
        │                        │ 2. Authenticate User     │
        │                        │ ◄──────────────────────  │
        │                        │                          │
-       │                        │ 3. Query Database with   │
-       │                        │    Filters               │
+       │                        │ 3. Determine User Role   │
+       │                        │    (Buyer/Counterparty)  │
        │                        │ ◄──────────────────────  │
        │                        │                          │
-       │                        │ 4. (If needed) Verify    │
+       │                        │ 4. Query Database with   │
+       │                        │    Filters (Position Type,│
+       │                        │    Status, Date Range)   │
+       │                        │ ◄──────────────────────  │
+       │                        │                          │
+       │                        │ 5. (If needed) Verify    │
        │                        │    On-Chain State        │
        │                        │ ─────────────────────────►
        │                        │                          │
-       │                        │ 5. Return Policy Data    │
+       │                        │ 6. Return Policy Data    │
        │                        │ ◄─────────────────────────
        │                        │                          │
-       │                        │ 6. Assemble Response with│
+       │                        │ 7. Apply User-Specific   │
+       │                        │    View Logic (LONG/SHORT)│
+       │                        │ ◄─────────────────────── │
+       │                        │                          │
+       │                        │ 8. Calculate Premium     │
+       │                        │    Distribution Status   │
+       │                        │ ◄─────────────────────── │
+       │                        │                          │
+       │                        │ 9. Assemble Response with│
        │                        │    Full Metadata         │
        │                        │ ◄─────────────────────── │
        │                        │                          │
-       │ 7. Return Policies with│                          │
+       │ 10. Return Policies with│                         │
        │    Metadata & Analytics│                          │
        │ ◄─────────────────────┐│                          │
        │                        │                          │
-       │ 8. Display Policies    │                          │
+       │ 11. Display Policies   │                          │
+       │    Based on User Role  │                          │
        │ ◄──────────────────── │                          │
        │                        │                          │
 ```
@@ -495,48 +575,76 @@ This document details the interaction flows between components in the BitHedge p
 1. **User Requests Policies (Frontend → Convex)**
 
    - User navigates to policy list view
-   - Frontend calls Convex query `getPoliciesForUser` with filters
-   - Filters may include status, policy type, date range, etc.
+   - Frontend calls Convex query `getPoliciesForUser` or `getPoliciesForCounterparty` with filters
+   - Filters may include status, policy type, position type, collateral token, date range, etc.
 
 2. **User Authentication (Convex)**
 
    - Convex verifies user is authenticated
    - Extracts user principal from authentication context
 
-3. **Database Query (Convex)**
+3. **User Role Determination (Convex)**
 
-   - Convex queries off-chain database for policies owned by user
-   - Applies specified filters
+   - Convex determines if user is querying as policy buyer or counterparty (liquidity provider)
+   - Selects appropriate query method based on role
+   - For buyers: uses owner index to find policies
+   - For counterparties: uses counterparty index to find policies
+
+4. **Database Query (Convex)**
+
+   - Convex queries off-chain database for policies matching user role
+   - Applies specified filters including position type (LONG_PUT, SHORT_PUT)
    - Uses indices for efficient retrieval
    - Handles pagination if needed
+   - Includes premium distribution status in query
 
-4. **Optional On-Chain Verification (Convex → Policy Registry)**
+5. **Optional On-Chain Verification (Convex → Policy Registry)**
 
    - For critical data or reconciliation, Convex may verify key fields
    - Calls read-only contract functions to check current status
    - This step is optional and typically only done for reconciliation
 
-5. **On-Chain Data Return (Policy Registry → Convex)**
+6. **On-Chain Data Return (Policy Registry → Convex)**
 
    - Contract returns requested policy data
    - Includes current on-chain status and essential fields
 
-6. **Response Assembly (Convex)**
+7. **User-Specific View Logic (Convex)**
+
+   - For buyers: focuses on policy protection details, exercise eligibility
+   - For counterparties: focuses on premium income, exposure, yield metrics
+   - Filters interface elements based on position type (LONG_PUT vs SHORT_PUT)
+
+8. **Premium Distribution Status Calculation (Convex)**
+
+   - For expired policies, checks if premium has been distributed
+   - For counterparties, calculates potential premium income
+   - Determines if premium distribution action is available
+
+9. **Response Assembly (Convex)**
 
    - Combines on-chain verified data with rich off-chain metadata
    - Calculates derived metrics (e.g., current policy value)
+   - Includes position-specific data based on user role
+   - Adds premium distribution status information
    - Formats data for UI consumption
 
-7. **Return Policy Data (Convex → Frontend)**
+10. **Return Policy Data (Convex → Frontend)**
 
-   - Convex returns comprehensive policy data
-   - Includes core terms, status, and extended metadata
-   - May include analytics (e.g., performance metrics)
+    - Convex returns comprehensive policy data
+    - Includes core terms, status, and extended metadata
+    - Includes position type and counterparty information
+    - Returns premium distribution status where applicable
+    - May include analytics (e.g., performance metrics)
 
-8. **UI Display (Frontend)**
-   - Frontend renders policy list with rich information
-   - Highlights actionable policies (e.g., eligible for exercise)
-   - Provides filtering and sorting options
+11. **UI Display (Frontend)**
+    - Frontend renders policy list with rich information
+    - Shows different views based on user role:
+      - For buyers (LONG positions): emphasizes protection and exercise options
+      - For counterparties (SHORT positions): emphasizes premium income and yield
+    - Highlights actionable policies (e.g., eligible for exercise or premium distribution)
+    - Provides filtering by position type, counterparty, and other criteria
+    - Provides sorting options appropriate to user role
 
 ## 6. Error Handling and Recovery Flows
 

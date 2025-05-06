@@ -17,6 +17,7 @@
 (define-constant ERR-EXPIRATION-IN-PAST (err u1004))
 (define-constant ERR-NOT-YET-EXPIRED (err u1006))
 (define-constant ERR-INSUFFICIENT-LIQUIDITY (err u502))
+(define-constant ERR-PREMIUM-ALREADY-DISTRIBUTED (err u1007))
 
 ;; Status constants
 (define-constant STATUS-ACTIVE "Active")
@@ -27,21 +28,29 @@
 (define-constant POLICY-TYPE-PUT "PUT")
 (define-constant POLICY-TYPE-CALL "CALL")
 
+;; Position type constants
+(define-constant POSITION-LONG-PUT "LONG_PUT")
+(define-constant POSITION-SHORT-PUT "SHORT_PUT")
+(define-constant POSITION-LONG-CALL "LONG_CALL")
+(define-constant POSITION-SHORT-CALL "SHORT_CALL")
+
 ;; --- Data Structures ---
 
 ;; Policy entry - the core data structure
 (define-map policies
   { id: uint }                              ;; Key: unique policy ID
   {
-    owner: principal,                       ;; Policy owner (buyer)
-    counterparty: principal,                ;; Counterparty (typically the pool)
+    owner: principal,                       ;; Policy owner (buyer) - Protective Peter for LONG_PUT
+    counterparty: principal,                ;; Counterparty (typically the pool) - Income Irene for SHORT_PUT
     protected-value: uint,                  ;; Strike price in base units (e.g., satoshis for BTC)
     protection-amount: uint,                ;; Amount being protected in base units
     expiration-height: uint,                ;; Block height when policy expires
     premium: uint,                          ;; Premium amount paid in base units
     policy-type: (string-ascii 4),          ;; "PUT" or "CALL"
+    position-type: (string-ascii 9),        ;; "LONG_PUT", "SHORT_PUT", "LONG_CALL", or "SHORT_CALL"
     status: (string-ascii 10),              ;; "Active", "Exercised", "Expired"
-    creation-height: uint                   ;; Block height when policy was created
+    creation-height: uint,                  ;; Block height when policy was created
+    premium-distributed: bool               ;; Whether premium has been distributed to counterparty
   }
 )
 
@@ -49,6 +58,12 @@
 (define-map policies-by-owner
   { owner: principal }
   { policy-ids: (list 50 uint) } ;; Max 50 policies indexed per owner
+)
+
+;; Index of policies by counterparty (for Income Irenes)
+(define-map policies-by-counterparty
+  { counterparty: principal }
+  { policy-ids: (list 50 uint) } ;; Max 50 policies indexed per counterparty
 )
 
 ;; --- Data Variables ---
@@ -116,6 +131,13 @@
       ;; Get next policy ID and increment counter
       (policy-id (var-get policy-id-counter))
       (next-id (+ policy-id u1))
+      ;; Determine position type based on policy type
+      (owner-position-type (if (is-eq policy-type POLICY-TYPE-PUT) 
+                              POSITION-LONG-PUT 
+                              POSITION-LONG-CALL))
+      (counterparty-position-type (if (is-eq policy-type POLICY-TYPE-PUT) 
+                                    POSITION-SHORT-PUT 
+                                    POSITION-SHORT-CALL))
     )
     (begin
       ;; Basic validation
@@ -143,8 +165,10 @@
           expiration-height: expiration-height,
           premium: premium,
           policy-type: policy-type,
+          position-type: owner-position-type,  ;; Set position type for the owner (buyer)
           status: STATUS-ACTIVE,
-          creation-height: burn-block-height
+          creation-height: burn-block-height,
+          premium-distributed: false
         }
       )
 
@@ -169,6 +193,27 @@
         )
       )
 
+      ;; Update counterparty index
+      (match (map-get? policies-by-counterparty { counterparty: counterparty })
+        existing-entry
+        (let
+          (
+            (existing-ids (get policy-ids existing-entry))
+            (new-list (append existing-ids policy-id))
+            (checked-list (unwrap! (as-max-len? new-list u50) ERR-POLICY-LIMIT-REACHED))
+          )
+          (map-set policies-by-counterparty
+            { counterparty: counterparty }
+            { policy-ids: checked-list }
+          )
+        )
+        ;; No existing policies, create new list
+        (map-set policies-by-counterparty
+          { counterparty: counterparty }
+          { policy-ids: (list policy-id) }
+        )
+      )
+
       ;; Update counter
       (var-set policy-id-counter next-id)
 
@@ -182,6 +227,7 @@
         protected-value: protected-value,
         protection-amount: protection-amount,
         policy-type: policy-type,
+        position-type: owner-position-type,
         premium: premium
       })
 
@@ -239,6 +285,46 @@
         block-height: burn-block-height
       })
 
+      (ok true)
+    )
+  )
+)
+
+;; Process premium distribution for an expired policy
+;; Can be called by the backend authorized principal or the counterparty
+(define-public (process-expired-policy-premium (policy-id uint))
+  (let
+    (
+      ;; Get the policy entry
+      (policy (unwrap! (map-get? policies { id: policy-id }) ERR-NOT-FOUND))
+      (policy-status (get status policy))
+      (counterparty-principal (get counterparty policy))
+      (premium-already-distributed (get premium-distributed policy))
+    )
+    (begin
+      ;; Verify caller authorization
+      (asserts! (or (is-eq tx-sender (var-get backend-authorized-principal))
+                   (is-eq tx-sender counterparty-principal))
+                ERR-UNAUTHORIZED)
+      
+      ;; Verify policy is expired and premium not yet distributed
+      (asserts! (is-eq policy-status STATUS-EXPIRED) ERR-NOT-ACTIVE)
+      (asserts! (not premium-already-distributed) ERR-PREMIUM-ALREADY-DISTRIBUTED)
+      
+      ;; Mark premium as distributed
+      (map-set policies
+        { id: policy-id }
+        (merge policy { premium-distributed: true })
+      )
+      
+      ;; Emit event for premium distribution
+      (print {
+        event: "premium-distributed",
+        policy-id: policy-id,
+        counterparty: counterparty-principal,
+        premium-amount: (get premium policy)
+      })
+      
       (ok true)
     )
   )
@@ -314,6 +400,11 @@
 (define-read-only (get-policy-ids-by-owner (owner principal))
   (default-to { policy-ids: (list) }
               (map-get? policies-by-owner { owner: owner })))
+
+;; Get policy IDs for a counterparty (Income Irene)
+(define-read-only (get-policy-ids-by-counterparty (counterparty principal))
+  (default-to { policy-ids: (list) }
+              (map-get? policies-by-counterparty { counterparty: counterparty })))
 
 ;; Check if a policy is active
 (define-read-only (is-policy-active (policy-id uint))
@@ -435,7 +526,8 @@
 
 ;; Determine the required token ID based on policy type (placeholder)
 (define-private (get-token-id-for-policy (policy-type (string-ascii 4)))
-  ;; Placeholder: Assume STX is used for PUT, sBTC for CALL - adjust as needed
+  ;; For PUT options, collateral is STX (to pay out if BTC price drops)
+  ;; For CALL options, collateral is sBTC (to deliver if BTC price rises)
   (if (is-eq policy-type POLICY-TYPE-PUT)
     "STX"
     "SBTC"

@@ -13,6 +13,9 @@ The Policy Registry contract serves as the official on-chain record of all BitHe
 3. Validate policy operations (activation, expiration)
 4. Emit events for off-chain synchronization
 5. Provide controlled access to policy data
+6. Track position types (LONG vs SHORT) for clear financial roles
+7. Manage premium distribution to policy counterparties
+8. Track collateral token types and settlement asset information
 
 ## 3. Data Structures
 
@@ -30,8 +33,14 @@ The Policy Registry contract serves as the official on-chain record of all BitHe
     expiration-height: uint,                ;; Block height when policy expires
     premium: uint,                          ;; Premium amount paid in base units
     policy-type: (string-ascii 4),          ;; "PUT" or "CALL"
+    position-type: (string-ascii 9),        ;; "LONG_PUT", "SHORT_PUT", "LONG_CALL", or "SHORT_CALL"
+    collateral-token: (string-ascii 4),     ;; Token used as collateral ("STX" or "sBTC")
+    protected-asset: (string-ascii 4),      ;; Asset being protected ("BTC")
+    settlement-token: (string-ascii 4),     ;; Token used for settlement if exercised ("STX" or "sBTC")
     status: (string-ascii 10),              ;; "Active", "Exercised", "Expired"
-    creation-height: uint                   ;; Block height when policy was created
+    creation-height: uint,                  ;; Block height when policy was created
+    premium-distributed: bool,              ;; Whether premium has been distributed to counterparty
+    premium-paid: bool                      ;; Whether premium has been paid by owner
   }
 )
 
@@ -50,6 +59,12 @@ The Policy Registry contract serves as the official on-chain record of all BitHe
   { owner: principal }
   { policy-ids: (list 50 uint) }
 )
+
+;; Index of policies by counterparty
+(define-map policies-by-counterparty
+  { counterparty: principal }
+  { policy-ids: (list 50 uint) }
+)
 ```
 
 ### 3.3 Constants and Error Codes
@@ -62,6 +77,8 @@ The Policy Registry contract serves as the official on-chain record of all BitHe
 (define-constant ERR-INVALID-STATUS (err u400))
 (define-constant ERR-NOT-ACTIVE (err u403))
 (define-constant ERR-EXPIRED (err u410))
+(define-constant ERR-PREMIUM-ALREADY-DISTRIBUTED (err u1007))
+(define-constant ERR-PREMIUM-NOT-PAID (err u1008))
 
 ;; Status constants
 (define-constant STATUS-ACTIVE "Active")
@@ -71,6 +88,17 @@ The Policy Registry contract serves as the official on-chain record of all BitHe
 ;; Policy type constants
 (define-constant POLICY-TYPE-PUT "PUT")
 (define-constant POLICY-TYPE-CALL "CALL")
+
+;; Position type constants
+(define-constant POSITION-LONG-PUT "LONG_PUT")
+(define-constant POSITION-SHORT-PUT "SHORT_PUT")
+(define-constant POSITION-LONG-CALL "LONG_CALL")
+(define-constant POSITION-SHORT-CALL "SHORT_CALL")
+
+;; Token constants
+(define-constant TOKEN-STX "STX")
+(define-constant TOKEN-SBTC "sBTC")
+(define-constant ASSET-BTC "BTC")
 ```
 
 ## 4. Core Functions
@@ -106,6 +134,14 @@ The Policy Registry contract serves as the official on-chain record of all BitHe
       ;; Get next policy ID and increment counter
       (policy-id (var-get policy-id-counter))
       (next-id (+ policy-id u1))
+      ;; Determine position type based on policy type
+      (owner-position-type (if (is-eq policy-type POLICY-TYPE-PUT)
+                              POSITION-LONG-PUT
+                              POSITION-LONG-CALL))
+      ;; Determine collateral and settlement tokens based on policy type
+      (collateral-token (if (is-eq policy-type POLICY-TYPE-PUT) TOKEN-STX TOKEN-SBTC))
+      (settlement-token (if (is-eq policy-type POLICY-TYPE-PUT) TOKEN-STX TOKEN-SBTC))
+      (protected-asset ASSET-BTC)
     )
     (begin
       ;; Basic validation
@@ -114,6 +150,10 @@ The Policy Registry contract serves as the official on-chain record of all BitHe
       (asserts! (> protected-value u0) (err u1002)) ;; Protected value must be positive
       (asserts! (> protection-amount u0) (err u1003)) ;; Protection amount must be positive
       (asserts! (> expiration-height block-height) (err u1004)) ;; Expiration must be in future
+
+      ;; Verify premium has been paid
+      (asserts! (unwrap! (verify-premium-paid owner premium) ERR-PREMIUM-NOT-PAID)
+                ERR-PREMIUM-NOT-PAID)
 
       ;; Insert the policy entry
       (map-set policies
@@ -126,8 +166,14 @@ The Policy Registry contract serves as the official on-chain record of all BitHe
           expiration-height: expiration-height,
           premium: premium,
           policy-type: policy-type,
+          position-type: owner-position-type,  ;; Set position type for the owner (buyer)
+          collateral-token: collateral-token,
+          protected-asset: protected-asset,
+          settlement-token: settlement-token,
           status: STATUS-ACTIVE,
-          creation-height: block-height
+          creation-height: block-height,
+          premium-distributed: false,
+          premium-paid: true
         }
       )
 
@@ -146,6 +192,21 @@ The Policy Registry contract serves as the official on-chain record of all BitHe
         )
       )
 
+      ;; Update counterparty index
+      (match (map-get? policies-by-counterparty { counterparty: counterparty })
+        existing-entry (map-set policies-by-counterparty
+                          { counterparty: counterparty }
+                          { policy-ids: (unwrap! (as-max-len?
+                                                  (append (get policy-ids existing-entry) policy-id)
+                                                  u50)
+                                                (err u1005)) }) ;; Too many policies for one counterparty
+        ;; No existing policies, create new list
+        (map-set policies-by-counterparty
+          { counterparty: counterparty }
+          { policy-ids: (list policy-id) }
+        )
+      )
+
       ;; Update counter
       (var-set policy-id-counter next-id)
 
@@ -159,6 +220,10 @@ The Policy Registry contract serves as the official on-chain record of all BitHe
         protected-value: protected-value,
         protected-amount: protection-amount,
         policy-type: policy-type,
+        position-type: owner-position-type,
+        collateral-token: collateral-token,
+        settlement-token: settlement-token,
+        protected-asset: protected-asset,
         premium: premium
       })
 
@@ -166,6 +231,13 @@ The Policy Registry contract serves as the official on-chain record of all BitHe
       (ok policy-id)
     )
   )
+)
+
+;; Verify premium payment (placeholder for integration with Liquidity Pool)
+(define-private (verify-premium-paid (owner principal) (premium uint))
+  ;; In production, this would check with the Liquidity Pool contract
+  ;; For now, we'll assume premium is always paid
+  (ok true)
 )
 
 ;; Update policy status
@@ -214,7 +286,51 @@ The Policy Registry contract serves as the official on-chain record of all BitHe
         policy-id: policy-id,
         new-status: new-status,
         previous-status: previous-status,
-        block-height: block-height
+        block-height: block-height,
+        collateral-token: (get collateral-token policy),
+        settlement-token: (get settlement-token policy)
+      })
+
+      (ok true)
+    )
+  )
+)
+
+;; Process premium distribution for an expired policy
+;; Can be called by the backend authorized principal or the counterparty
+(define-public (process-expired-policy-premium (policy-id uint))
+  (let
+    (
+      ;; Get the policy entry
+      (policy (unwrap! (map-get? policies { id: policy-id }) ERR-NOT-FOUND))
+      (policy-status (get status policy))
+      (counterparty-principal (get counterparty policy))
+      (premium-already-distributed (get premium-distributed policy))
+    )
+    (begin
+      ;; Verify caller authorization
+      (asserts! (or (is-eq tx-sender (var-get backend-authorized-principal))
+                   (is-eq tx-sender counterparty-principal))
+                ERR-UNAUTHORIZED)
+
+      ;; Verify policy is expired and premium not yet distributed
+      (asserts! (is-eq policy-status STATUS-EXPIRED) ERR-NOT-ACTIVE)
+      (asserts! (not premium-already-distributed) ERR-PREMIUM-ALREADY-DISTRIBUTED)
+
+      ;; Mark premium as distributed
+      (map-set policies
+        { id: policy-id }
+        (merge policy { premium-distributed: true })
+      )
+
+      ;; Emit event for premium distribution
+      (print {
+        event: "premium-distributed",
+        policy-id: policy-id,
+        counterparty: counterparty-principal,
+        premium-amount: (get premium policy),
+        policy-type: (get policy-type policy),
+        collateral-token: (get collateral-token policy)
       })
 
       (ok true)
@@ -277,7 +393,9 @@ The Policy Registry contract serves as the official on-chain record of all BitHe
                 policy-id: policy-id,
                 new-status: STATUS-EXPIRED,
                 previous-status: (get status entry),
-                block-height: block-height
+                block-height: block-height,
+                collateral-token: (get collateral-token entry),
+                settlement-token: (get settlement-token entry)
               })
 
               (ok true)
@@ -311,6 +429,11 @@ The Policy Registry contract serves as the official on-chain record of all BitHe
 (define-read-only (get-policy-ids-by-owner (owner principal))
   (default-to { policy-ids: (list) }
               (map-get? policies-by-owner { owner: owner })))
+
+;; Get policy IDs for a counterparty
+(define-read-only (get-policy-ids-by-counterparty (counterparty principal))
+  (default-to { policy-ids: (list) }
+              (map-get? policies-by-counterparty { counterparty: counterparty })))
 
 ;; Check if a policy is active
 (define-read-only (is-policy-active (policy-id uint))
@@ -356,6 +479,24 @@ The Policy Registry contract serves as the official on-chain record of all BitHe
     )
     u0))
 
+;; Check if premium has been distributed for a policy
+(define-read-only (is-premium-distributed (policy-id uint))
+  (match (map-get? policies { id: policy-id })
+    policy (get premium-distributed policy)
+    false))
+
+;; Get the collateral token for a policy
+(define-read-only (get-collateral-token (policy-id uint))
+  (match (map-get? policies { id: policy-id })
+    policy (get collateral-token policy)
+    ""))
+
+;; Get the settlement token for a policy
+(define-read-only (get-settlement-token (policy-id uint))
+  (match (map-get? policies { id: policy-id })
+    policy (get settlement-token policy)
+    ""))
+
 ;; Get the total number of policies
 (define-read-only (get-policy-count)
   (var-get policy-id-counter))
@@ -372,6 +513,11 @@ The Policy Registry contract should be thoroughly tested across the following di
 3. Batch expiration of multiple policies
 4. Authorization checks for all sensitive functions
 5. Edge cases (e.g., policy at expiration boundary)
+6. Position type assignment and verification
+7. Premium distribution functionality for expired policies
+8. Counterparty index updating and querying
+9. Collateral and settlement token assignment based on policy type
+10. Premium payment verification
 
 ### 5.2 Integration Tests
 
@@ -379,6 +525,9 @@ The Policy Registry contract should be thoroughly tested across the following di
 2. Policy exercise with settlement from Liquidity Pool
 3. Multi-contract workflows with Oracle price checks
 4. Event emission and consumption by off-chain components
+5. Premium distribution flow to counterparties
+6. Position type handling across contracts
+7. Collateral tracking and settlement token verification
 
 ## 6. Gas Optimization Considerations
 
@@ -392,7 +541,7 @@ The "On-Chain Light" approach significantly reduces gas costs through several te
 2. **Efficient Indexing**:
 
    - Limited number of indices
-   - Constrained list sizes (e.g., max 50 policies per owner)
+   - Constrained list sizes (e.g., max 50 policies per owner/counterparty)
 
 3. **Batch Operations**:
 
@@ -412,12 +561,18 @@ The "On-Chain Light" approach significantly reduces gas costs through several te
    - Policy owners can exercise their own policies
    - Owners cannot modify policy terms or affect others' policies
 
-2. **Backend Operations**:
+2. **Counterparty Operations**:
+
+   - Counterparties can process premium distribution for their expired policies
+   - Cannot modify policy terms or exercise policies
+
+3. **Backend Operations**:
 
    - Backend can expire policies but only if they're past expiration
+   - Backend can process premium distribution for expired policies
    - Backend cannot exercise policies or modify terms
 
-3. **Contract Owner**:
+4. **Contract Owner**:
    - Can update the backend authorized principal
    - Cannot directly modify policy data
 
@@ -436,6 +591,7 @@ The "On-Chain Light" approach significantly reduces gas costs through several te
 3. **Data Validation**:
    - All inputs validated before processing
    - Explicit checks on critical values (e.g., prices, amounts)
+   - Collateral and settlement token validation
 
 ## 8. Event Emission Standards
 
@@ -452,6 +608,10 @@ For effective off-chain synchronization, the contract emits standardized events:
   protected-value: uint,
   protected-amount: uint,
   policy-type: (string-ascii 4),
+  position-type: (string-ascii 9),
+  collateral-token: (string-ascii 4),
+  settlement-token: (string-ascii 4),
+  protected-asset: (string-ascii 4),
   premium: uint
 })
 
@@ -461,7 +621,19 @@ For effective off-chain synchronization, the contract emits standardized events:
   policy-id: uint,
   new-status: (string-ascii 10),
   previous-status: (string-ascii 10),
-  block-height: uint
+  block-height: uint,
+  collateral-token: (string-ascii 4),
+  settlement-token: (string-ascii 4)
+})
+
+;; Premium Distribution
+(print {
+  event: "premium-distributed",
+  policy-id: uint,
+  counterparty: principal,
+  premium-amount: uint,
+  policy-type: (string-ascii 4),
+  collateral-token: (string-ascii 4)
 })
 ```
 
@@ -471,7 +643,7 @@ To optimize for performance, the contract:
 
 1. Uses simple data structures that minimize lookup costs
 2. Provides batch operations for efficiency
-3. Keeps index updates minimal (one policy list per owner)
+3. Keeps index updates minimal (one policy list per owner and counterparty)
 4. Avoids complex calculations in write operations
 5. Uses appropriate data types to minimize storage needs
 
@@ -502,8 +674,86 @@ This "On-Chain Light" approach differs from the previous implementation:
 - Uses Convex for extensive indexing and queries
 - Performs complex calculations off-chain
 - Splits lifecycle management between on-chain and off-chain
+- Explicitly identifies position types (LONG vs SHORT)
+- Tracks premium distribution to counterparties
+- Adds collateral and settlement token tracking
 
-## 12. Conclusion
+## 12. Financial Roles and Position Types
+
+The contract explicitly models the financial roles in the BitHedge platform:
+
+1. **Protective Peter (LONG PUT Position)**:
+
+   - BTC holder seeking downside protection
+   - Pays premium for protection
+   - Can exercise policy if BTC price falls below strike
+   - Stored as the `owner` with position type `LONG_PUT`
+   - Protected asset is BTC, receives settlement in STX
+
+2. **Income Irene (SHORT PUT Position)**:
+
+   - Liquidity provider seeking premium income
+   - Receives premium income for selling protection
+   - Takes on risk if BTC price falls below strike
+   - Stored as the `counterparty` with position type `SHORT_PUT`
+   - Provides STX as collateral for potential settlement
+
+3. **Position Tracking**:
+   - Position types automatically assigned during policy creation
+   - For PUT options, owner gets `LONG_PUT`, counterparty gets `SHORT_PUT`
+   - For CALL options, owner gets `LONG_CALL`, counterparty gets `SHORT_CALL`
+   - Position type is immutable throughout policy lifecycle
+
+## 13. Premium Distribution
+
+Premium distribution is a key aspect of the BitHedge financial model:
+
+1. **Initial Premium Payment**:
+
+   - When a policy is created, the owner pays a premium
+   - This premium is initially held in the pool
+   - Premium payment must be verified before policy creation
+
+2. **Premium Distribution Process**:
+
+   - When a policy expires (not exercised), the premium can be distributed to the counterparty
+   - Distribution can be triggered by either the backend or the counterparty directly
+   - Distribution is tracked via the `premium-distributed` boolean
+
+3. **Distribution Constraints**:
+
+   - Premium can only be distributed once
+   - Premium can only be distributed for expired (not exercised) policies
+   - Only the counterparty or backend can trigger distribution
+
+4. **Event Emission**:
+   - Premium distribution emits a dedicated event type for off-chain tracking
+   - Contains policy ID, counterparty, premium amount, and token information
+
+## 14. Asset and Token Model
+
+The BitHedge platform uses a specific asset and token model:
+
+1. **PUT Options (MVP Focus)**:
+
+   - Protected Asset: BTC (tracked in policy as `protected-asset`)
+   - Collateral Token: STX (tracked in policy as `collateral-token`)
+   - Settlement Token: STX (tracked in policy as `settlement-token`)
+   - When price drops below strike, buyer receives STX as compensation
+
+2. **CALL Options (Future)**:
+
+   - Protected Asset: BTC (tracked in policy as `protected-asset`)
+   - Collateral Token: sBTC (tracked in policy as `collateral-token`)
+   - Settlement Token: sBTC (tracked in policy as `settlement-token`)
+   - When price rises above strike, buyer receives sBTC
+
+3. **Token Assignment**:
+   - Tokens are automatically assigned based on policy type during creation
+   - This ensures consistent collateral and settlement across the platform
+   - Simplifies integration with the Liquidity Pool
+
+## 15. Conclusion
 
 The Policy Registry contract specification embodies the "On-Chain Light" architectural approach by focusing on:
 
@@ -512,5 +762,8 @@ The Policy Registry contract specification embodies the "On-Chain Light" archite
 3. Minimal but sufficient event emission
 4. Gas-efficient operations
 5. Integration with the broader hybrid architecture
+6. Explicit position type identification
+7. Premium distribution tracking and processing
+8. Collateral and settlement token tracking
 
 By keeping the on-chain footprint small while providing the necessary trust guarantees, this design balances security, scalability, and cost efficiency for the BitHedge platform.

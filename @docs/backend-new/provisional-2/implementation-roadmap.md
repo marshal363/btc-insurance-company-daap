@@ -71,34 +71,64 @@ The implementation covers these core components:
 | PR-110  | Create helper functions for policy index management                   | 6          | 🟢     | PR-102         |          |
 | PR-111  | Create integration points with Liquidity Pool contract                | 6          | 🟢     | PR-104, LP-110 |          |
 | PR-112  | Implement Oracle integration for price checking                       | 6          | 🟢     | PR-105         |          |
+| PR-113  | Add explicit position type field to policy data structure             | 4          | 🟢     | PR-102         |          |
+| PR-114  | Implement policy-by-counterparty index                                | 4          | 🟢     | PR-102         |          |
+| PR-115  | Add premium distribution tracking and processing                      | 8          | 🟢     | PR-105, LP-107 |          |
+| PR-116  | Add collateral type tracking for different policy types               | 6          | ⬜     | PR-113         |          |
+| PR-117  | Implement multiple settlement asset support                           | 8          | ⬜     | PR-116         |          |
+| PR-118  | Enhance premium distribution logic with provider-specific tracking    | 10         | ⬜     | PR-115, LP-112 |          |
+| PR-119  | Implement premium-distribution-initiated event emission               | 4          | ⬜     | PR-115         |          |
+| PR-120  | Add counterparty notification for premium distribution                | 6          | ⬜     | PR-119         |          |
+| PR-121  | Enhance policy creation to handle position type assignment            | 6          | ⬜     | PR-113         |          |
+| PR-122  | Create process-expired-policy-premium function                        | 8          | ⬜     | PR-115, PR-119 |          |
 
 #### B. Liquidity Pool Vault Contract
 
-| Task ID | Description                                                           | Est. Hours | Status | Dependencies   | Assignee |
-| ------- | --------------------------------------------------------------------- | ---------- | ------ | -------------- | -------- |
-| LP-101  | Create basic contract structure with data types and error codes       | 6          | 🟢     |                |          |
-| LP-102  | Implement core data structures (token-balances, locked-collateral)    | 8          | 🟢     | LP-101         |          |
-| LP-103  | Implement administrative functions (set principals, initialize-token) | 6          | 🟢     | LP-101         |          |
-| LP-104  | Implement deposit functions (deposit-stx, deposit-sbtc)               | 8          | 🟢     | LP-102, LP-103 |          |
-| LP-105  | Implement withdrawal functions with balance checking                  | 10         | 🟢     | LP-104         |          |
-| LP-106  | Implement collateral management (lock-collateral, release-collateral) | 8          | 🟢     | LP-102         |          |
-| LP-107  | Implement settlement function (pay-settlement)                        | 8          | 🟢     | LP-106         |          |
-| LP-108  | Implement read-only functions (get balances, availability)            | 4          | 🟢     | LP-102         |          |
-| LP-109  | Add event emission for all state-changing functions                   | 4          | 🟢     | LP-104, LP-105 |          |
-| LP-110  | Create integration points with Policy Registry contract               | 6          | 🟢     | LP-107         |          |
-| LP-111  | Implement SIP-010 token handling logic                                | 8          | 🟢     | LP-104         |          |
+| Task ID | Description                                                            | Est. Hours | Status | Dependencies   | Assignee |
+| ------- | ---------------------------------------------------------------------- | ---------- | ------ | -------------- | -------- |
+| LP-101  | Create basic contract structure with data types and error codes        | 6          | 🟢     |                |          |
+| LP-102  | Implement core data structures (token-balances, locked-collateral)     | 8          | 🟢     | LP-101         |          |
+| LP-103  | Implement administrative functions (set principals, initialize-token)  | 6          | 🟢     | LP-101         |          |
+| LP-104  | Implement deposit functions (deposit-stx, deposit-sbtc)                | 8          | 🟢     | LP-102, LP-103 |          |
+| LP-105  | Implement withdrawal functions with balance checking                   | 10         | 🟢     | LP-104         |          |
+| LP-106  | Implement collateral management (lock-collateral, release-collateral)  | 8          | 🟢     | LP-102         |          |
+| LP-107  | Implement settlement function (pay-settlement)                         | 8          | 🟢     | LP-106         |          |
+| LP-108  | Implement read-only functions (get balances, availability)             | 4          | 🟢     | LP-102         |          |
+| LP-109  | Add event emission for all state-changing functions                    | 4          | 🟢     | LP-104, LP-105 |          |
+| LP-110  | Create integration points with Policy Registry contract                | 6          | 🟢     | LP-107         |          |
+| LP-111  | Implement SIP-010 token handling logic                                 | 8          | 🟢     | LP-104         |          |
+| LP-112  | Implement provider-specific premium accounting                         | 10         | ⬜     | LP-107         |          |
+| LP-113  | Enhance release-collateral to handle premium distribution              | 6          | ⬜     | LP-107         |          |
+| LP-114  | Add premium-balances map to track premiums                             | 6          | ⬜     | LP-112         |          |
+| LP-115  | Implement record-premium-payment function                              | 8          | ⬜     | LP-114         |          |
+| LP-116  | Implement distribute-premium function                                  | 8          | ⬜     | LP-115         |          |
+| LP-117  | Implement provider-policy-allocations map                              | 6          | ⬜     | LP-112         |          |
+| LP-118  | Add distribute-provider-premium function                               | 8          | ⬜     | LP-117         |          |
+| LP-119  | Implement premium distribution event emissions                         | 4          | ⬜     | LP-116, LP-118 |          |
+| LP-120  | Create functions for premium allocation based on provider contribution | 10         | ⬜     | LP-117         |          |
+| LP-121  | Add premium-earned tracking for provider analytics                     | 6          | ⬜     | LP-112, LP-118 |          |
+| LP-122  | Implement withdrawal functions with premium balance inclusion          | 8          | ⬜     | LP-114, LP-105 |          |
+| LP-123  | Create premium-distributed event hook for provider notifications       | 6          | ⬜     | LP-119         |          |
 
 #### C. Contract Testing & Deployment
 
-| Task ID  | Description                                         | Est. Hours | Status | Dependencies                       | Assignee |
-| -------- | --------------------------------------------------- | ---------- | ------ | ---------------------------------- | -------- |
-| TEST-101 | Create unit tests for Policy Registry contract      | 16         | 🟡     | PR-101 through PR-112              |          |
-| TEST-102 | Create unit tests for Liquidity Pool Vault contract | 16         | 🟡     | LP-101 through LP-111              |          |
-| TEST-103 | Create integration tests for contract interaction   | 10         | ⬜     | PR-111, LP-110, TEST-101, TEST-102 |          |
-| TEST-104 | Test performance and gas optimization               | 8          | ⬜     | TEST-101, TEST-102                 |          |
-| DEP-101  | Deploy Policy Registry contract to Devnet           | 4          | ⬜     | TEST-101, TEST-103                 |          |
-| DEP-102  | Deploy Liquidity Pool Vault contract to Devnet      | 4          | ⬜     | TEST-102, TEST-103                 |          |
-| DEP-103  | Configure contract integration on Devnet            | 6          | ⬜     | DEP-101, DEP-102                   |          |
+| Task ID  | Description                                                  | Est. Hours | Status | Dependencies                       | Assignee |
+| -------- | ------------------------------------------------------------ | ---------- | ------ | ---------------------------------- | -------- |
+| TEST-101 | Create unit tests for Policy Registry contract               | 16         | 🟡     | PR-101 through PR-112              |          |
+| TEST-102 | Create unit tests for Liquidity Pool Vault contract          | 16         | 🟡     | LP-101 through LP-111              |          |
+| TEST-103 | Create integration tests for contract interaction            | 10         | ⬜     | PR-111, LP-110, TEST-101, TEST-102 |          |
+| TEST-104 | Test performance and gas optimization                        | 8          | ⬜     | TEST-101, TEST-102                 |          |
+| TEST-105 | Test position type and premium distribution                  | 8          | ⬜     | PR-113, PR-115, LP-112, LP-113     |          |
+| TEST-106 | Test premium distribution and provider allocation system     | 12         | ⬜     | PR-115, PR-118, LP-116, LP-118     |          |
+| TEST-107 | Test collateral type tracking and multiple settlement assets | 10         | ⬜     | PR-116, PR-117                     |          |
+| TEST-108 | Test premium-distribution-initiated event handling           | 6          | ⬜     | PR-119, PR-120                     |          |
+| TEST-109 | Test process-expired-policy-premium function                 | 8          | ⬜     | PR-122                             |          |
+| TEST-110 | Test provider-specific premium accounting                    | 10         | ⬜     | LP-112, LP-114, LP-115             |          |
+| TEST-111 | Test premium distribution across provider allocations        | 12         | ⬜     | LP-117, LP-118, LP-120             |          |
+| TEST-112 | Test withdrawal with premium balance inclusion               | 8          | ⬜     | LP-122                             |          |
+| DEP-101  | Deploy Policy Registry contract to Devnet                    | 4          | ⬜     | TEST-101, TEST-103                 |          |
+| DEP-102  | Deploy Liquidity Pool Vault contract to Devnet               | 4          | ⬜     | TEST-102, TEST-103                 |          |
+| DEP-103  | Configure contract integration on Devnet                     | 6          | ⬜     | DEP-101, DEP-102                   |          |
 
 **Phase 1 Progress Summary:**
 We have successfully implemented the core components of both the Policy Registry and Liquidity Pool Vault contracts following the "On-Chain Light" architectural approach. Key achievements include:
@@ -112,6 +142,9 @@ We have successfully implemented the core components of both the Policy Registry
     - Simplified batch expiration functionality to ensure contract compatibility
     - **Completed Oracle integration (`get-current-btc-price`, `is-policy-exercisable`) using placeholder functions (PR-112).**
     - **Completed integration points with Liquidity Pool Vault (`check-liquidity-for-policy`, `lock-policy-collateral`) using placeholder functions (PR-111).**
+    - **Added explicit position type field to distinguish between LONG_PUT (Protective Peter) and SHORT_PUT (Income Irene) positions (PR-113).**
+    - **Implemented counterparty indexing to efficiently track policies by seller (PR-114).**
+    - **Added premium distribution tracking and processing with explicit function to handle expired policy premium allocation (PR-115).**
 
 2.  **Liquidity Pool Vault Contract**:
 
@@ -123,6 +156,8 @@ We have successfully implemented the core components of both the Policy Registry
     - **Completed integration points with Policy Registry (`verify-policy-active`, `get-policy-settlement-details`) using placeholder functions (LP-110).**
     - **Added `has-sufficient-collateral` function for policy creation checks.**
     - **Refined `pay-settlement` logic to clarify separate handling of collateral release.**
+    - **Enhanced premium distribution mechanism to track and allocate premium payments to specific providers (LP-112).**
+    - **Improved collateral release to properly handle premium distribution for expired policies (LP-113).**
 
 3.  **Debugging and Optimizations**:
     - Fixed multiple syntax errors related to SIP-010 trait definition
@@ -131,6 +166,7 @@ We have successfully implemented the core components of both the Policy Registry
     - Simplified batch operations to ensure contract compatibility and stability
     - Ensured proper owner authorization using CONTRACT-OWNER constant
     - **Resolved `clarinet check` errors, including circular dependency issues, by implementing placeholder functions for cross-contract calls. The contracts now compile successfully.**
+    - **Enhanced contract structures to explicitly identify policy positions (LONG_PUT vs SHORT_PUT) and track premium distribution.**
 
 The implemented contracts maintain the minimal on-chain footprint design while providing all essential functionality for the BitHedge platform. The placeholder functions resolve the compilation issues and allow deployment, but the unit tests (`TEST-101`, `TEST-102`) are currently failing and need to be updated to reflect the contract changes and mock the placeholder behavior.
 
@@ -157,6 +193,18 @@ The implemented contracts maintain the minimal on-chain footprint design while p
 | CV-PR-213 | Implement scheduled job for checking expired policies                    | 8          | ⬜     | CV-PR-201, CV-PR-204            |          |
 | CV-PR-214 | Implement event processing for policy status updates                     | 8          | ⬜     | CV-PR-202, BI-202               |          |
 | CV-PR-215 | Implement state reconciliation between on-chain and off-chain            | 12         | ⬜     | CV-PR-214, BI-204               |          |
+| CV-PR-216 | Implement position type filtering and display                            | 6          | ⬜     | CV-PR-201, PR-113               |          |
+| CV-PR-217 | Implement provider views for Income Irenes                               | 10         | ⬜     | CV-PR-201, PR-114               |          |
+| CV-PR-218 | Implement premium distribution tracking                                  | 12         | ⬜     | CV-PR-201, PR-115, LP-112       |          |
+| CV-PR-219 | Define schema for counterparty premium tracking                          | 6          | ⬜     | CV-PR-201, PR-115               |          |
+| CV-PR-220 | Implement collateral type tracking in policy creation                    | 8          | ⬜     | CV-PR-209, PR-116               |          |
+| CV-PR-221 | Implement settlement asset selection based on policy type                | 6          | ⬜     | CV-PR-220, PR-117               |          |
+| CV-PR-222 | Implement requestPremiumDistribution action                              | 8          | ⬜     | CV-PR-218, PR-122               |          |
+| CV-PR-223 | Add processPremiumDistributionEvent handler                              | 6          | ⬜     | CV-PR-202, PR-119               |          |
+| CV-PR-224 | Create distributePolicyPremium automated action                          | 8          | ⬜     | CV-PR-218, CV-PR-223            |          |
+| CV-PR-225 | Implement notifyLiquidityPoolOfPremiumDistribution helper                | 6          | ⬜     | CV-PR-223, CV-LP-219            |          |
+| CV-PR-226 | Create checkPremiumDistributionEligibility query function                | 4          | ⬜     | CV-PR-201, PR-115               |          |
+| CV-PR-227 | Update policy creation to assign position type and counterparty          | 6          | ⬜     | CV-PR-209, PR-121               |          |
 
 #### B. Liquidity Pool Service - Convex Implementation
 
@@ -180,17 +228,38 @@ The implemented contracts maintain the minimal on-chain footprint design while p
 | CV-LP-216 | Implement settlement processing                                        | 12         | ⬜     | CV-LP-203, CV-LP-201            |          |
 | CV-LP-217 | Implement premium distribution                                         | 10         | ⬜     | CV-LP-203, CV-LP-201            |          |
 | CV-LP-218 | Implement pool state reconciliation                                    | 10         | ⬜     | CV-LP-201, BI-204               |          |
+| CV-LP-219 | Enhance premium tracking for provider-specific accounting              | 10         | ⬜     | CV-LP-201, LP-112               |          |
+| CV-LP-220 | Implement yield reporting for Income Irenes                            | 12         | ⬜     | CV-LP-201, CV-PR-218            |          |
+| CV-LP-221 | Define schema for premium_balances table                               | 4          | ⬜     | CV-LP-201, LP-114               |          |
+| CV-LP-222 | Implement premium recording and tracking                               | 8          | ⬜     | CV-LP-221, LP-115               |          |
+| CV-LP-223 | Define schema for provider_premium_distributions table                 | 6          | ⬜     | CV-LP-201, LP-117               |          |
+| CV-LP-224 | Implement provider-specific premium allocation                         | 10         | ⬜     | CV-LP-223, LP-118               |          |
+| CV-LP-225 | Create premium distribution dashboard for providers                    | 12         | ⬜     | CV-LP-222, CV-LP-224            |          |
+| CV-LP-226 | Implement recordPolicyPremium handler for policy registry events       | 8          | ⬜     | CV-LP-221, CV-LP-223, CV-PR-225 |          |
+| CV-LP-227 | Create processProviderPremiumDistributions scheduled job               | 6          | ⬜     | CV-LP-224                       |          |
+| CV-LP-228 | Implement distributeProviderPremium function                           | 8          | ⬜     | CV-LP-224                       |          |
+| CV-LP-229 | Create getPendingPremiumDistributions query                            | 6          | ⬜     | CV-LP-223                       |          |
+| CV-LP-230 | Implement claimPendingPremiums user action                             | 8          | ⬜     | CV-LP-229, CV-LP-228            |          |
+| CV-LP-231 | Create processBatchPremiumClaim function                               | 6          | ⬜     | CV-LP-230, CV-LP-228            |          |
+| CV-LP-232 | Add premium balance to provider withdrawal calculations                | 4          | ⬜     | CV-LP-211, CV-LP-222            |          |
 
 #### C. Convex Testing
 
-| Task ID     | Description                                           | Est. Hours | Status | Dependencies                               | Assignee |
-| ----------- | ----------------------------------------------------- | ---------- | ------ | ------------------------------------------ | -------- |
-| CV-TEST-201 | Create unit tests for Policy Registry service queries | 8          | ⬜     | CV-PR-204, CV-PR-205, CV-PR-206            |          |
-| CV-TEST-202 | Create unit tests for Policy Registry service actions | 10         | ⬜     | CV-PR-209, CV-PR-210                       |          |
-| CV-TEST-203 | Create unit tests for Liquidity Pool service queries  | 8          | ⬜     | CV-LP-206, CV-LP-207, CV-LP-208, CV-LP-209 |          |
-| CV-TEST-204 | Create unit tests for Liquidity Pool service actions  | 10         | ⬜     | CV-LP-210, CV-LP-211                       |          |
-| CV-TEST-205 | Create integration tests for policy creation flow     | 8          | ⬜     | CV-PR-209, CV-LP-215                       |          |
-| CV-TEST-206 | Create integration tests for policy activation flow   | 8          | ⬜     | CV-PR-210, CV-LP-216                       |          |
+| Task ID     | Description                                                       | Est. Hours | Status | Dependencies                               | Assignee |
+| ----------- | ----------------------------------------------------------------- | ---------- | ------ | ------------------------------------------ | -------- |
+| CV-TEST-201 | Create unit tests for Policy Registry service queries             | 8          | ⬜     | CV-PR-204, CV-PR-205, CV-PR-206            |          |
+| CV-TEST-202 | Create unit tests for Policy Registry service actions             | 10         | ⬜     | CV-PR-209, CV-PR-210                       |          |
+| CV-TEST-203 | Create unit tests for Liquidity Pool service queries              | 8          | ⬜     | CV-LP-206, CV-LP-207, CV-LP-208, CV-LP-209 |          |
+| CV-TEST-204 | Create unit tests for Liquidity Pool service actions              | 10         | ⬜     | CV-LP-210, CV-LP-211                       |          |
+| CV-TEST-205 | Create integration tests for policy creation flow                 | 8          | ⬜     | CV-PR-209, CV-LP-215                       |          |
+| CV-TEST-206 | Create integration tests for policy activation flow               | 8          | ⬜     | CV-PR-210, CV-LP-216                       |          |
+| CV-TEST-207 | Create integration tests for position type handling and filtering | 6          | ⬜     | CV-PR-216, CV-PR-217                       |          |
+| CV-TEST-208 | Create integration tests for premium distribution and tracking    | 8          | ⬜     | CV-PR-218, CV-LP-219, CV-LP-220            |          |
+| CV-TEST-209 | Test requestPremiumDistribution action                            | 6          | ⬜     | CV-PR-222, CV-PR-226                       |          |
+| CV-TEST-210 | Test premium distribution event handling                          | 6          | ⬜     | CV-PR-223, CV-LP-226                       |          |
+| CV-TEST-211 | Test provider premium allocation                                  | 8          | ⬜     | CV-LP-224, CV-LP-228                       |          |
+| CV-TEST-212 | Test user-initiated premium claims                                | 8          | ⬜     | CV-LP-230, CV-LP-231                       |          |
+| CV-TEST-213 | Test premium inclusion in withdrawal calculations                 | 6          | ⬜     | CV-LP-232                                  |          |
 
 **Phase 2 Deliverables:**
 
@@ -199,6 +268,8 @@ The implemented contracts maintain the minimal on-chain footprint design while p
 - Implemented Liquidity Pool service with risk management and allocation
 - Test suite for Convex backend logic
 - Integration points between Policy Registry and Liquidity Pool services
+- Enhanced position type handling and provider-specific views
+- Comprehensive premium distribution and yield tracking
 
 ### Phase 3: Blockchain Integration Layer (Duration: Est. 3 weeks)
 
@@ -234,6 +305,10 @@ The implemented contracts maintain the minimal on-chain footprint design while p
 | BI-PR-308 | Integrate with Convex actions for policy creation           | 8          | ⬜     | BI-PR-301, CV-PR-209 |          |
 | BI-PR-309 | Integrate with Convex actions for policy activation         | 8          | ⬜     | BI-PR-302, CV-PR-210 |          |
 | BI-PR-310 | Integrate with Convex jobs for policy expiration            | 8          | ⬜     | BI-PR-303, CV-PR-213 |          |
+| BI-PR-311 | Implement transaction building for premium distribution     | 8          | ⬜     | BI-205, PR-122       |          |
+| BI-PR-312 | Implement event listeners for premium distribution events   | 6          | ⬜     | BI-210, PR-119       |          |
+| BI-PR-313 | Update create-policy transaction to include position type   | 4          | ⬜     | BI-PR-301, PR-121    |          |
+| BI-PR-314 | Handle counterparty communication for premium distribution  | 8          | ⬜     | BI-PR-312, PR-120    |          |
 
 #### C. Liquidity Pool Blockchain Integration
 
@@ -253,14 +328,18 @@ The implemented contracts maintain the minimal on-chain footprint design while p
 | BI-LP-312 | Implement read functions for checking locked amounts     | 4          | ⬜     | BI-204, DEP-102      |          |
 | BI-LP-313 | Integrate with Convex actions for deposit                | 8          | ⬜     | BI-LP-301, CV-LP-210 |          |
 | BI-LP-314 | Integrate with Convex actions for withdrawal             | 8          | ⬜     | BI-LP-302, CV-LP-211 |          |
+| BI-LP-315 | Implement event listeners for premium-distributed events | 6          | ⬜     | BI-210, LP-119       |          |
+| BI-LP-316 | Implement transaction building for premium distribution  | 6          | ⬜     | BI-205, LP-116       |          |
+| BI-LP-317 | Create provider premium allocation transaction builder   | 8          | ⬜     | BI-205, LP-118       |          |
+| BI-LP-318 | Handle premium inclusion in withdrawal transactions      | 6          | ⬜     | BI-LP-302, LP-122    |          |
 
 #### D. Blockchain Integration Testing
 
 | Task ID     | Description                                                   | Est. Hours | Status | Dependencies                                              | Assignee |
 | ----------- | ------------------------------------------------------------- | ---------- | ------ | --------------------------------------------------------- | -------- |
 | BI-TEST-301 | Create unit tests for common blockchain integration utilities | 8          | ⬜     | BI-201 through BI-211                                     |          |
-| BI-TEST-302 | Create integration tests for Policy Registry transactions     | 10         | ⬜     | BI-PR-301 through BI-PR-310                               |          |
-| BI-TEST-303 | Create integration tests for Liquidity Pool transactions      | 10         | ⬜     | BI-LP-301 through BI-LP-314                               |          |
+| BI-TEST-302 | Create integration tests for Policy Registry transactions     | 10         | ⬜     | BI-PR-301 through BI-PR-314                               |          |
+| BI-TEST-303 | Create integration tests for Liquidity Pool transactions      | 10         | ⬜     | BI-LP-301 through BI-LP-318                               |          |
 | BI-TEST-304 | Create event monitoring and processing tests                  | 8          | ⬜     | BI-210, BI-PR-304, BI-PR-305, BI-LP-306 through BI-LP-310 |          |
 | BI-TEST-305 | Test error handling and recovery procedures                   | 8          | ⬜     | BI-211                                                    |          |
 
@@ -304,6 +383,10 @@ The implemented contracts maintain the minimal on-chain footprint design while p
 | FE-PR-509 | Create usePolicyActivation hook for policy activation flow | 8          | ⬜     | FE-401, FE-405, CV-PR-210    |          |
 | FE-PR-510 | Implement UI for premium calculation                       | 10         | ⬜     | FE-403, CV-PR-207            |          |
 | FE-PR-511 | Create PolicyCenter main view integrating all components   | 12         | ⬜     | FE-PR-501 through FE-PR-510  |          |
+| FE-PR-512 | Update PolicyCreationForm to include position type display | 8          | ⬜     | FE-PR-503, CV-PR-227         |          |
+| FE-PR-513 | Add counterparty information to PolicyDetail component     | 6          | ⬜     | FE-PR-502, CV-PR-217         |          |
+| FE-PR-514 | Create PremiumDistributionStatus component                 | 10         | ⬜     | FE-PR-506, CV-PR-218         |          |
+| FE-PR-515 | Implement PolicyTypeFilter for view filtering              | 6          | ⬜     | FE-PR-501, CV-PR-216         |          |
 
 #### C. Income Provider Center Frontend
 
@@ -321,17 +404,29 @@ The implemented contracts maintain the minimal on-chain footprint design while p
 | FE-LP-510 | Create useCapitalWithdrawal hook for withdrawal flow             | 8          | ⬜     | FE-401, FE-405, CV-LP-211   |          |
 | FE-LP-511 | Implement UI for yield estimation                                | 10         | ⬜     | FE-403, CV-LP-207           |          |
 | FE-LP-512 | Create IncomeProviderCenter main view integrating all components | 12         | ⬜     | FE-LP-501 through FE-LP-511 |          |
+| FE-LP-513 | Implement PremiumDistributions component                         | 12         | ⬜     | FE-LP-502, CV-LP-229        |          |
+| FE-LP-514 | Create PremiumClaimButton for user-initiated premium collection  | 8          | ⬜     | FE-LP-513, CV-LP-230        |          |
+| FE-LP-515 | Implement PremiumEarningsSummary component                       | 10         | ⬜     | FE-LP-502, CV-LP-220        |          |
+| FE-LP-516 | Add premium earnings to ProviderDashboard metrics                | 6          | ⬜     | FE-LP-502, CV-LP-220        |          |
+| FE-LP-517 | Include premium balances in WithdrawalForm component             | 6          | ⬜     | FE-LP-504, CV-LP-232        |          |
+| FE-LP-518 | Create TokenSummary component for premium grouping               | 8          | ⬜     | FE-LP-513                   |          |
 
 #### D. Frontend Testing
 
-| Task ID     | Description                                               | Est. Hours | Status | Dependencies                | Assignee |
-| ----------- | --------------------------------------------------------- | ---------- | ------ | --------------------------- | -------- |
-| FE-TEST-601 | Create unit tests for common components and hooks         | 10         | ⬜     | FE-401 through FE-408       |          |
-| FE-TEST-602 | Create unit tests for Policy Center components            | 12         | ⬜     | FE-PR-501 through FE-PR-511 |          |
-| FE-TEST-603 | Create unit tests for Income Provider Center components   | 12         | ⬜     | FE-LP-501 through FE-LP-512 |          |
-| FE-TEST-604 | Create integration tests for Policy Center flows          | 12         | ⬜     | FE-PR-511                   |          |
-| FE-TEST-605 | Create integration tests for Income Provider Center flows | 12         | ⬜     | FE-LP-512                   |          |
-| FE-TEST-606 | Create usability tests with mock users                    | 8          | ⬜     | FE-PR-511, FE-LP-512        |          |
+| Task ID     | Description                                                | Est. Hours | Status | Dependencies                    | Assignee |
+| ----------- | ---------------------------------------------------------- | ---------- | ------ | ------------------------------- | -------- |
+| FE-TEST-601 | Create unit tests for common components and hooks          | 10         | ⬜     | FE-401 through FE-408           |          |
+| FE-TEST-602 | Create unit tests for Policy Center components             | 12         | ⬜     | FE-PR-501 through FE-PR-515     |          |
+| FE-TEST-603 | Create unit tests for Income Provider Center components    | 12         | ⬜     | FE-LP-501 through FE-LP-518     |          |
+| FE-TEST-604 | Create integration tests for Policy Center flows           | 12         | ⬜     | FE-PR-511                       |          |
+| FE-TEST-605 | Create integration tests for Income Provider Center flows  | 12         | ⬜     | FE-LP-512                       |          |
+| FE-TEST-606 | Create usability tests with mock users                     | 8          | ⬜     | FE-PR-511, FE-LP-518            |          |
+| FE-TEST-607 | Create unit tests for premium distribution dashboard       | 8          | ⬜     | CV-LP-225                       |          |
+| FE-TEST-608 | Create integration tests for premium distribution workflow | 10         | ⬜     | CV-LP-222, CV-LP-224, CV-LP-225 |          |
+| FE-TEST-609 | Test position type display and filtering in Policy Center  | 6          | ⬜     | FE-PR-512, FE-PR-515            |          |
+| FE-TEST-610 | Test premium distribution components                       | 8          | ⬜     | FE-LP-513, FE-LP-514            |          |
+| FE-TEST-611 | Test premium earnings reporting components                 | 8          | ⬜     | FE-LP-515, FE-LP-516            |          |
+| FE-TEST-612 | Test premium balance inclusion in withdrawals              | 6          | ⬜     | FE-LP-517                       |          |
 
 **Phase 4 Deliverables:**
 
@@ -356,6 +451,9 @@ The implemented contracts maintain the minimal on-chain footprint design while p
 | INT-705 | Integrate Settlement flow across all layers                      | 12         | ⬜     | CV-LP-216, BI-LP-305, BI-PR-309, DEP-101, DEP-102 |          |
 | INT-706 | Implement and test event-driven communication between components | 10         | ⬜     | BI-210, CV-PR-214, CV-LP-218                      |          |
 | INT-707 | Validate data consistency across all layers                      | 8          | ⬜     | INT-701 through INT-706                           |          |
+| INT-708 | Integrate Premium Distribution flow across all layers            | 12         | ⬜     | FE-PR-514, CV-PR-222, BI-PR-311, DEP-101          |          |
+| INT-709 | Integrate Provider Premium Allocation flow across all layers     | 12         | ⬜     | FE-LP-513, CV-LP-224, BI-LP-316, DEP-102          |          |
+| INT-710 | Test Position Type assignment and filtering across all layers    | 10         | ⬜     | FE-PR-512, CV-PR-216, BI-PR-313, DEP-101          |          |
 
 #### B. System Testing
 
@@ -375,7 +473,7 @@ The implemented contracts maintain the minimal on-chain footprint design while p
 | ------- | ----------------------------------------------------------- | ---------- | ------ | -------------------------------------------------------- | -------- |
 | DOC-701 | Create comprehensive API documentation for Convex endpoints | 16         | ⬜     | CV-PR-201 through CV-PR-215, CV-LP-201 through CV-LP-218 |          |
 | DOC-702 | Document contract interfaces and integration points         | 12         | ⬜     | PR-101 through PR-112, LP-101 through LP-111             |          |
-| DOC-703 | Create user flow documentation                              | 10         | ⬜     | FE-PR-511, FE-LP-512                                     |          |
+| DOC-703 | Create user flow documentation                              | 10         | ⬜     | FE-PR-511, FE-LP-518                                     |          |
 | DOC-704 | Document system architecture and data flows                 | 12         | ⬜     | INT-701 through INT-707                                  |          |
 | DOC-705 | Create operational runbooks for maintenance                 | 16         | ⬜     | TEST-701 through TEST-707                                |          |
 | DOC-706 | Document security considerations and best practices         | 8          | ⬜     | TEST-705                                                 |          |
@@ -448,13 +546,13 @@ The progress of each phase will be tracked using the following metrics:
 
 | Phase                            | Total Tasks | Not Started | In Progress | Completed | Completion % |
 | -------------------------------- | ----------- | ----------- | ----------- | --------- | ------------ |
-| Phase 1: Foundation & On-Chain   | 37          | 37          | 0           | 0         | 0%           |
-| Phase 2: Convex Backend          | 39          | 39          | 0           | 0         | 0%           |
-| Phase 3: Blockchain Integration  | 41          | 41          | 0           | 0         | 0%           |
-| Phase 4: Frontend Implementation | 39          | 39          | 0           | 0         | 0%           |
-| Phase 5: Integration & Testing   | 20          | 20          | 0           | 0         | 0%           |
+| Phase 1: Foundation & On-Chain   | 43          | 26          | 2           | 15        | 35%          |
+| Phase 2: Convex Backend          | 52          | 52          | 0           | 0         | 0%           |
+| Phase 3: Blockchain Integration  | 49          | 49          | 0           | 0         | 0%           |
+| Phase 4: Frontend Implementation | 51          | 51          | 0           | 0         | 0%           |
+| Phase 5: Integration & Testing   | 23          | 23          | 0           | 0         | 0%           |
 | Phase 6: Deployment & Operations | 26          | 26          | 0           | 0         | 0%           |
-| Overall Project                  | 202         | 202         | 0           | 0         | 0%           |
+| Overall Project                  | 244         | 227         | 2           | 15        | 6%           |
 
 ## 5. Risk and Mitigation Plan
 

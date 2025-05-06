@@ -46,7 +46,13 @@ defineTable({
     expirationHeight: v.number(), // Block height when policy expires
     premium: v.number(), // Premium amount in base units
     policyType: v.string(), // "PUT" or "CALL"
+    positionType: v.string(), // "LONG_PUT", "SHORT_PUT", "LONG_CALL", or "SHORT_CALL"
+    collateralToken: v.string(), // Token used as collateral ("STX" or "sBTC")
+    protectedAsset: v.string(), // Asset being protected ("BTC")
+    settlementToken: v.string(), // Token used for settlement if exercised ("STX" or "sBTC")
     status: v.string(), // "Active", "Exercised", "Expired"
+    premiumDistributed: v.boolean(), // Whether premium has been distributed
+    premiumPaid: v.boolean(), // Whether premium has been paid
 
     // Extended off-chain metadata
     creationTimestamp: v.number(), // Creation time (ms since epoch)
@@ -73,12 +79,18 @@ defineTable({
   indexes: [
     // Efficiently find policies by owner
     { field: "owner" },
+    // Efficiently find policies by counterparty
+    { field: "counterparty" },
     // Efficiently find policies by status
     { field: "status" },
     // Efficiently find policies by expiration (for automated expiry)
     { field: "expirationHeight" },
     // Efficiently find policies by policy type
     { field: "policyType" },
+    // Efficiently find policies by position type
+    { field: "positionType" },
+    // Efficiently find policies by collateral token
+    { field: "collateralToken" },
     // Efficiently find policies by creation time (for reporting)
     { field: "creationTimestamp" },
   ],
@@ -89,12 +101,16 @@ defineTable({
   name: "policyEvents",
   schema: {
     policyId: v.number(), // Reference to policy
-    eventType: v.string(), // "Created", "Activated", "Expired", etc.
+    eventType: v.string(), // "Created", "Activated", "Expired", "PremiumDistributed", etc.
     timestamp: v.number(), // Event time
     blockHeight: v.optional(v.number()), // Block height if on-chain event
     transactionId: v.optional(v.string()), // Stacks txid if applicable
     previousStatus: v.optional(v.string()), // Previous policy status
     newStatus: v.optional(v.string()), // New policy status
+    collateralToken: v.optional(v.string()), // Collateral token involved
+    settlementToken: v.optional(v.string()), // Settlement token involved
+    premiumAmount: v.optional(v.number()), // Premium amount for distribution events
+    counterparty: v.optional(v.string()), // Counterparty for premium distribution
     data: v.any(), // Additional event-specific data
   },
   indexes: [
@@ -152,6 +168,21 @@ export enum PolicyType {
   CALL = "CALL",
 }
 
+// Position type enum
+export enum PositionType {
+  LONG_PUT = "LONG_PUT",
+  SHORT_PUT = "SHORT_PUT",
+  LONG_CALL = "LONG_CALL",
+  SHORT_CALL = "SHORT_CALL",
+}
+
+// Token type enum
+export enum TokenType {
+  STX = "STX",
+  SBTC = "sBTC",
+  BTC = "BTC",
+}
+
 // Policy event type enum
 export enum PolicyEventType {
   CREATED = "Created",
@@ -160,11 +191,13 @@ export enum PolicyEventType {
   CANCELLED = "Cancelled",
   UPDATED = "Updated",
   SETTLEMENT_COMPLETED = "SettlementCompleted",
+  PREMIUM_DISTRIBUTED = "PremiumDistributed",
 }
 
 // Policy creation parameters interface
 export interface PolicyCreationParams {
   owner: string; // Principal of policy owner
+  counterparty: string; // Principal of counterparty (generally pool address)
   protectedValueUSD: number; // Protected value in USD
   protectionAmountBTC: number; // Amount to protect in BTC
   policyType: PolicyType; // PUT or CALL
@@ -176,6 +209,12 @@ export interface PolicyCreationParams {
 export interface PolicyActivationParams {
   policyId: number; // ID of policy to activate
   currentPriceUSD: number; // Current price from Oracle
+}
+
+// Premium distribution parameters interface
+export interface PremiumDistributionParams {
+  policyId: number; // ID of policy for premium distribution
+  counterparty: string; // Principal of counterparty to receive premium
 }
 ```
 
@@ -294,6 +333,168 @@ export const checkPolicyActivationEligibility = query(
     };
   }
 );
+
+// Get policies for a specific counterparty
+export const getPoliciesForCounterparty = query(
+  async (
+    { db, auth },
+    filters?: {
+      status?: PolicyStatus[];
+      policyType?: PolicyType;
+      positionType?: PositionType;
+      collateralToken?: TokenType;
+      from?: number;
+      to?: number;
+      limit?: number;
+      offset?: number;
+    }
+  ) => {
+    // Check authentication
+    const identity = auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    const counterparty = identity.tokenIdentifier;
+
+    // Build query based on filters
+    let policyQuery = db
+      .query("policies")
+      .withIndex("counterparty", (q) => q.eq("counterparty", counterparty));
+
+    // Apply status filter if provided
+    if (filters?.status && filters.status.length > 0) {
+      policyQuery = policyQuery.filter((q) =>
+        q.and(...filters.status.map((s) => q.eq((p) => p.status, s)))
+      );
+    }
+
+    // Apply policy type filter if provided
+    if (filters?.policyType) {
+      policyQuery = policyQuery.filter((q) =>
+        q.eq((p) => p.policyType, filters.policyType)
+      );
+    }
+
+    // Apply position type filter if provided
+    if (filters?.positionType) {
+      policyQuery = policyQuery.filter((q) =>
+        q.eq((p) => p.positionType, filters.positionType)
+      );
+    }
+
+    // Apply collateral token filter if provided
+    if (filters?.collateralToken) {
+      policyQuery = policyQuery.filter((q) =>
+        q.eq((p) => p.collateralToken, filters.collateralToken)
+      );
+    }
+
+    // Execute query with pagination
+    const limit = filters?.limit || 20;
+    const offset = filters?.offset || 0;
+
+    return await policyQuery.take(limit, offset);
+  }
+);
+
+// Check if a policy is eligible for premium distribution
+export const checkPremiumDistributionEligibility = query(
+  async ({ db }, policyId: number) => {
+    // Get policy
+    const policy = await db.get("policies", policyId);
+    if (!policy) throw new Error("Policy not found");
+
+    // Check status
+    if (policy.status !== PolicyStatus.EXPIRED) {
+      return {
+        eligible: false,
+        reason: `Policy is ${policy.status}, not Expired`,
+      };
+    }
+
+    // Check if premium already distributed
+    if (policy.premiumDistributed) {
+      return { eligible: false, reason: "Premium already distributed" };
+    }
+
+    // All checks passed
+    return {
+      eligible: true,
+      premiumAmount: policy.premium,
+      counterparty: policy.counterparty,
+      collateralToken: policy.collateralToken,
+    };
+  }
+);
+
+// Get income statistics for counterparty
+export const getCounterpartyIncomeStats = query(async ({ db, auth }) => {
+  // Check authentication
+  const identity = auth.getUserIdentity();
+  if (!identity) throw new Error("Not authenticated");
+
+  const counterparty = identity.tokenIdentifier;
+
+  // Get all policies where user is counterparty
+  const policies = await db
+    .query("policies")
+    .withIndex("counterparty", (q) => q.eq("counterparty", counterparty))
+    .collect();
+
+  // Calculate income statistics
+  const stats = {
+    totalPolicies: policies.length,
+    activePolicies: policies.filter((p) => p.status === PolicyStatus.ACTIVE)
+      .length,
+    expiredPolicies: policies.filter((p) => p.status === PolicyStatus.EXPIRED)
+      .length,
+    exercisedPolicies: policies.filter(
+      (p) => p.status === PolicyStatus.EXERCISED
+    ).length,
+
+    totalPremiumEarned: policies
+      .filter((p) => p.premiumDistributed)
+      .reduce((sum, p) => sum + p.premium, 0),
+
+    pendingPremiums: policies
+      .filter((p) => p.status === PolicyStatus.EXPIRED && !p.premiumDistributed)
+      .reduce((sum, p) => sum + p.premium, 0),
+
+    activeExposure: policies
+      .filter((p) => p.status === PolicyStatus.ACTIVE)
+      .reduce((sum, p) => sum + p.protectionAmount, 0),
+
+    // Group by collateral token
+    tokenBreakdown: policies.reduce((acc, policy) => {
+      const token = policy.collateralToken;
+      if (!acc[token]) {
+        acc[token] = {
+          totalPolicies: 0,
+          activePolicies: 0,
+          earnedPremium: 0,
+          pendingPremium: 0,
+          activeExposure: 0,
+        };
+      }
+
+      acc[token].totalPolicies++;
+
+      if (policy.status === PolicyStatus.ACTIVE) {
+        acc[token].activePolicies++;
+        acc[token].activeExposure += policy.protectionAmount;
+      }
+
+      if (policy.premiumDistributed) {
+        acc[token].earnedPremium += policy.premium;
+      } else if (policy.status === PolicyStatus.EXPIRED) {
+        acc[token].pendingPremium += policy.premium;
+      }
+
+      return acc;
+    }, {}),
+  };
+
+  return stats;
+});
 ```
 
 #### Mutations and Actions (Write Operations)
@@ -414,6 +615,59 @@ export const updateTransactionStatus = mutation(
     });
 
     return { success: true };
+  }
+);
+
+// Request premium distribution for an expired policy
+export const requestPremiumDistribution = action(
+  async ({ db, scheduler }, params: PremiumDistributionParams) => {
+    // 1. Check eligibility
+    const eligibility = await checkPremiumDistributionEligibility(
+      params.policyId
+    );
+
+    if (!eligibility.eligible) {
+      throw new Error(
+        `Policy not eligible for premium distribution: ${eligibility.reason}`
+      );
+    }
+
+    // 2. Verify the counterparty is correct
+    if (params.counterparty !== eligibility.counterparty) {
+      throw new Error(
+        "Unauthorized: Only the policy counterparty can request premium distribution"
+      );
+    }
+
+    // 3. Prepare transaction
+    const distributionTx = await preparePremiumDistributionTransaction({
+      policyId: params.policyId,
+      counterparty: params.counterparty,
+      premiumAmount: eligibility.premiumAmount,
+      collateralToken: eligibility.collateralToken,
+    });
+
+    // 4. Create pending transaction record
+    const pendingTxId = await db.insert("pendingPolicyTransactions", {
+      policyId: params.policyId,
+      actionType: "PremiumDistribution",
+      status: "Pending",
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      payload: {
+        params,
+        transaction: distributionTx,
+      },
+      retryCount: 0,
+      userId: params.counterparty,
+    });
+
+    // 5. Return transaction data for counterparty to sign
+    return {
+      pendingTxId,
+      transaction: distributionTx.txOptions,
+      premiumAmount: eligibility.premiumAmount,
+    };
   }
 );
 ```
@@ -553,6 +807,77 @@ export const processPolicyStatusEvent = mutation(
     return { success: true };
   }
 );
+
+// Process premium distribution
+export const handlePremiumDistributionSuccess = async (
+  db,
+  pendingTx,
+  txStatus
+) => {
+  const { policyId, userId: counterparty } = pendingTx;
+  const { premiumAmount, collateralToken } = pendingTx.payload.params;
+
+  // Update policy premium distribution status
+  await db.patch("policies", policyId, {
+    premiumDistributed: true,
+    lastUpdatedTimestamp: Date.now(),
+  });
+
+  // Add event to history
+  await db.insert("policyEvents", {
+    policyId,
+    eventType: PolicyEventType.PREMIUM_DISTRIBUTED,
+    timestamp: Date.now(),
+    blockHeight: txStatus.blockHeight,
+    transactionId: pendingTx.transactionId,
+    premiumAmount,
+    counterparty,
+    collateralToken,
+    data: {
+      transactionDetails: txStatus,
+    },
+  });
+
+  // Also update liquidity pool records about premium distribution
+  // This will likely involve calling a function from the Liquidity Pool service
+  await distributePremiumToPool(
+    policyId,
+    counterparty,
+    premiumAmount,
+    collateralToken
+  );
+
+  return { success: true };
+};
+
+// Helper function for premium distribution blockchain integration
+async function preparePremiumDistributionTransaction(params: {
+  policyId: number;
+  counterparty: string;
+  premiumAmount: number;
+  collateralToken: string;
+}): Promise<{ txOptions: any }> {
+  // Get contract addresses
+  const policyRegistryContract = await getContractAddress("policyRegistry");
+
+  // Construct transaction options
+  return {
+    txOptions: {
+      network: getNetwork(),
+      anchorMode: AnchorMode.Any,
+      fee: calculateFee(1),
+      postConditionMode: PostConditionMode.Deny,
+      txType: "contract_call",
+      contractAddress: policyRegistryContract.address,
+      contractName: policyRegistryContract.name,
+      functionName: "process-expired-policy-premium",
+      functionArgs: [
+        // Convert policyId to Clarity uint
+        uintCV(params.policyId),
+      ],
+    },
+  };
+}
 ```
 
 ### 4.3 Helper Functions
@@ -640,9 +965,18 @@ async function preparePolicyCreationTransaction(params: {
   const policyRegistryContract = await getContractAddress("policyRegistry");
   const liquidityPoolContract = await getContractAddress("liquidityPoolVault");
 
-  // 2. Construct transaction options for a combined transaction:
+  // 2. Determine position type based on policy type
+  const positionType =
+    params.policyType === PolicyType.PUT
+      ? PositionType.LONG_PUT
+      : PositionType.LONG_CALL;
+
+  // 3. Set counterparty to liquidity pool for now (in MVP)
+  const counterparty = liquidityPoolContract.address;
+
+  // 4. Construct transaction options for a combined transaction:
   //    - Premium payment to Liquidity Pool
-  //    - Policy creation in Policy Registry
+  //    - Policy creation in Policy Registry with position type and counterparty
   return {
     txOptions: {
       network: getNetwork(),
@@ -656,8 +990,22 @@ async function preparePolicyCreationTransaction(params: {
       contractName: policyRegistryContract.name,
       functionName: "create-policy-entry",
       functionArgs: [
-        // Convert params to appropriate Clarity types
-        // ...
+        // Owner principal
+        principalCV(params.owner),
+        // Counterparty principal (liquidity pool)
+        principalCV(counterparty),
+        // Protected value in sats
+        uintCV(params.protectedValue),
+        // Protection amount in base units
+        uintCV(params.protectionAmount),
+        // Premium amount
+        uintCV(params.premium),
+        // Expiration height
+        uintCV(params.expirationHeight),
+        // Policy type (PUT/CALL)
+        stringCV(params.policyType),
+        // Position type (LONG_PUT/LONG_CALL)
+        stringCV(positionType),
       ],
     },
   };
@@ -686,7 +1034,41 @@ export function initializeEventListeners() {
     eventName: "policy-created",
     callback: (event) => {
       // Process event data
-      // ...
+      const {
+        policyId,
+        owner,
+        counterparty,
+        protectedValue,
+        protectionAmount,
+        premium,
+        expirationHeight,
+        policyType,
+        positionType,
+      } = event;
+
+      // Create corresponding record in Convex
+      db.insert("policies", {
+        policyId,
+        owner,
+        counterparty,
+        protectedValue,
+        protectionAmount,
+        expirationHeight,
+        premium,
+        policyType,
+        positionType,
+        status: PolicyStatus.ACTIVE,
+        premiumDistributed: false,
+        premiumPaid: true, // Premium is paid at creation
+        creationTimestamp: Date.now(),
+        lastUpdatedTimestamp: Date.now(),
+        collateralToken:
+          policyType === PolicyType.PUT ? TokenType.STX : TokenType.SBTC,
+        protectedAsset: TokenType.BTC,
+        settlementToken:
+          policyType === PolicyType.PUT ? TokenType.STX : TokenType.SBTC,
+        tags: [],
+      });
     },
   });
 
@@ -698,8 +1080,150 @@ export function initializeEventListeners() {
     callback: (event) => {
       // Process event data
       processPolicyStatusEvent(event);
+
+      // If policy expired, check for premium distribution
+      if (event.newStatus === PolicyStatus.EXPIRED) {
+        schedulePremiumDistribution(event.policyId);
+      }
     },
   });
+
+  // Listen for premium distribution events
+  listenForContractEvent({
+    contractAddress: policyRegistryContract.address,
+    contractName: policyRegistryContract.name,
+    eventName: "premium-distribution-initiated",
+    callback: (event) => {
+      // Process premium distribution event
+      processPremiumDistributionEvent(event);
+    },
+  });
+}
+
+// Process premium distribution event
+export const processPremiumDistributionEvent = mutation(
+  async ({ db }, eventData) => {
+    const { policyId, counterparty, premiumAmount, token } = eventData;
+
+    // Update policy record to mark premium as distributed
+    await db.patch("policies", policyId, {
+      premiumDistributed: true,
+      lastUpdatedTimestamp: Date.now(),
+    });
+
+    // Add premium distribution event to history
+    await db.insert("policyEvents", {
+      policyId,
+      eventType: PolicyEventType.PREMIUM_DISTRIBUTED,
+      timestamp: Date.now(),
+      blockHeight: eventData.blockHeight,
+      transactionId: eventData.transactionId,
+      premiumAmount,
+      counterparty,
+      collateralToken: token,
+      data: eventData,
+    });
+
+    // Notify Liquidity Pool service about the premium distribution
+    await notifyLiquidityPoolOfPremiumDistribution({
+      policyId,
+      counterparty,
+      premiumAmount,
+      token,
+      transactionId: eventData.transactionId,
+    });
+
+    return { success: true };
+  }
+);
+
+// Schedule premium distribution for an expired policy
+async function schedulePremiumDistribution(policyId: number) {
+  // Get policy details
+  const policy = await db.get("policies", policyId);
+
+  // Only process if premium hasn't been distributed yet
+  if (!policy || policy.premiumDistributed) {
+    return;
+  }
+
+  // Schedule premium distribution task
+  await scheduler.runAfter(
+    300000, // 5 minutes delay to ensure policy is fully expired on-chain
+    "internal:distributePolicyPremium",
+    { policyId }
+  );
+}
+
+// Distribute premium for an expired policy
+export const distributePolicyPremium = action(
+  async ({ db, scheduler }, { policyId }) => {
+    // Check eligibility
+    const eligibility = await checkPremiumDistributionEligibility(policyId);
+
+    if (!eligibility.eligible) {
+      return { success: false, reason: eligibility.reason };
+    }
+
+    // Prepare premium distribution transaction
+    const distributionTx = await preparePremiumDistributionTransaction({
+      policyId,
+      counterparty: eligibility.counterparty,
+      premiumAmount: eligibility.premiumAmount,
+      collateralToken: eligibility.collateralToken,
+    });
+
+    // Create pending transaction record
+    const pendingTxId = await db.insert("pendingPolicyTransactions", {
+      policyId,
+      actionType: "PremiumDistribution",
+      status: "Pending",
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      payload: {
+        policyId,
+        counterparty: eligibility.counterparty,
+        premiumAmount: eligibility.premiumAmount,
+        collateralToken: eligibility.collateralToken,
+      },
+      retryCount: 0,
+      // System-initiated transaction uses backend principal
+      userId: await getBackendPrincipal(),
+    });
+
+    // Submit transaction using backend key
+    const txid = await submitBackendTransaction(distributionTx.txOptions);
+
+    // Update pending transaction record
+    await db.patch("pendingPolicyTransactions", pendingTxId, {
+      status: "Submitted",
+      transactionId: txid,
+      updatedAt: Date.now(),
+    });
+
+    // Schedule transaction status check
+    await scheduler.runAfter(60000, "internal:checkTransactionStatus", {
+      pendingTxId,
+      transactionId: txid,
+    });
+
+    return { success: true, transactionId: txid };
+  }
+);
+
+// Notify Liquidity Pool service about premium distribution
+async function notifyLiquidityPoolOfPremiumDistribution(params: {
+  policyId: number;
+  counterparty: string;
+  premiumAmount: number;
+  token: string;
+  transactionId: string;
+}) {
+  // Call the Liquidity Pool service to record premium distribution
+  // This will trigger provider-specific premium allocation
+  await callLiquidityPoolService("recordPolicyPremium", params);
+
+  return { success: true };
 }
 ```
 

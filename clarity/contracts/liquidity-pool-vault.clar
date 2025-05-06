@@ -203,29 +203,6 @@
   )
 )
 
-;; ADD THIS TEMPORARY FUNCTION FOR DEBUGGING
-(define-public (deposit-sbtc-direct (amount uint))
-  (begin
-    (asserts! (> amount u0) ERR-AMOUNT-MUST-BE-POSITIVE)
-    ;; Ensure SBTC is initialized first! This check is crucial.
-    (asserts! (is-token-supported "SBTC") ERR-TOKEN-NOT-INITIALIZED)
-    (print {event: "deposit-sbtc-direct called", amount: amount, sender: tx-sender})
-
-    ;; Direct call to the known sBTC contract principal
-    (try! (contract-call? 'SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token transfer
-      amount tx-sender (as-contract tx-sender) none))
-
-    (print {event: "sbtc-transfer successful"})
-
-    ;; Update the total sBTC balance in the vault (same logic as deposit-sip010)
-    (let ((current-balance (default-to u0 (get balance (map-get? token-balances { token: "SBTC" })))))
-      (map-set token-balances { token: "SBTC" } { balance: (+ current-balance amount) })
-    )
-    (print {event: "sbtc balance updated"})
-    (ok true)
-  )
-)
-
 ;; --- Withdraw Functions ---
 ;; In the "On-Chain Light" model, withdrawals are typically initiated by the backend
 ;; based on off-chain provider requests and available (unlocked) liquidity checks.
