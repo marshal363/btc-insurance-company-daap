@@ -34,6 +34,11 @@
 (define-constant POSITION-LONG-CALL "LONG_CALL")
 (define-constant POSITION-SHORT-CALL "SHORT_CALL")
 
+;; Token constants (PR-116: Add token constants)
+(define-constant TOKEN-STX "STX")
+(define-constant TOKEN-SBTC "sBTC")
+(define-constant ASSET-BTC "BTC")
+
 ;; --- Data Structures ---
 
 ;; Policy entry - the core data structure
@@ -48,6 +53,9 @@
     premium: uint,                          ;; Premium amount paid in base units
     policy-type: (string-ascii 4),          ;; "PUT" or "CALL"
     position-type: (string-ascii 9),        ;; "LONG_PUT", "SHORT_PUT", "LONG_CALL", or "SHORT_CALL"
+    collateral-token: (string-ascii 4),     ;; PR-116: Token used as collateral ("STX" or "sBTC")
+    protected-asset: (string-ascii 4),      ;; PR-116: Asset being protected ("BTC")
+    settlement-token: (string-ascii 4),     ;; PR-116: Token used for settlement if exercised
     status: (string-ascii 10),              ;; "Active", "Exercised", "Expired"
     creation-height: uint,                  ;; Block height when policy was created
     premium-distributed: bool               ;; Whether premium has been distributed to counterparty
@@ -60,7 +68,7 @@
   { policy-ids: (list 50 uint) } ;; Max 50 policies indexed per owner
 )
 
-;; Index of policies by counterparty (for Income Irenes)
+;; Index of policies by counterparty
 (define-map policies-by-counterparty
   { counterparty: principal }
   { policy-ids: (list 50 uint) } ;; Max 50 policies indexed per counterparty
@@ -131,13 +139,17 @@
       ;; Get next policy ID and increment counter
       (policy-id (var-get policy-id-counter))
       (next-id (+ policy-id u1))
-      ;; Determine position type based on policy type
+      ;; PR-121: Determine position types based on policy type
       (owner-position-type (if (is-eq policy-type POLICY-TYPE-PUT) 
                               POSITION-LONG-PUT 
                               POSITION-LONG-CALL))
       (counterparty-position-type (if (is-eq policy-type POLICY-TYPE-PUT) 
                                     POSITION-SHORT-PUT 
                                     POSITION-SHORT-CALL))
+      ;; PR-116: Determine collateral and settlement tokens based on policy type
+      (collateral-token (if (is-eq policy-type POLICY-TYPE-PUT) TOKEN-STX TOKEN-SBTC))
+      (settlement-token (if (is-eq policy-type POLICY-TYPE-PUT) TOKEN-STX TOKEN-SBTC))
+      (protected-asset ASSET-BTC)
     )
     (begin
       ;; Basic validation
@@ -166,6 +178,9 @@
           premium: premium,
           policy-type: policy-type,
           position-type: owner-position-type,  ;; Set position type for the owner (buyer)
+          collateral-token: collateral-token,  ;; PR-116: Add collateral token tracking
+          protected-asset: protected-asset,    ;; PR-116: Add protected asset tracking
+          settlement-token: settlement-token,  ;; PR-116: Add settlement token tracking
           status: STATUS-ACTIVE,
           creation-height: burn-block-height,
           premium-distributed: false
@@ -217,7 +232,7 @@
       ;; Update counter
       (var-set policy-id-counter next-id)
 
-      ;; Emit event (PR-109 Partial)
+      ;; Enhanced event for policy creation (PR-119 partial: improve event data)
       (print {
         event: "policy-created",
         policy-id: policy-id,
@@ -228,6 +243,10 @@
         protection-amount: protection-amount,
         policy-type: policy-type,
         position-type: owner-position-type,
+        counterparty-position-type: counterparty-position-type, ;; PR-121: Include counterparty position
+        collateral-token: collateral-token,    ;; PR-116: Include in event
+        settlement-token: settlement-token,    ;; PR-116: Include in event
+        protected-asset: protected-asset,      ;; PR-116: Include in event
         premium: premium
       })
 
@@ -276,13 +295,20 @@
         (merge policy { status: new-status })
       )
 
-      ;; Emit event (PR-109 Completion for this function)
+      ;; Enhanced event emission (PR-119 partial: improve event data)
       (print {
         event: "policy-status-updated",
         policy-id: policy-id,
         new-status: new-status,
         previous-status: previous-status,
-        block-height: burn-block-height
+        block-height: burn-block-height,
+        owner: (get owner policy),
+        counterparty: (get counterparty policy),
+        policy-type: (get policy-type policy),
+        position-type: (get position-type policy),
+        collateral-token: (get collateral-token policy),    ;; PR-116: Include in event
+        settlement-token: (get settlement-token policy),    ;; PR-116: Include in event
+        protected-asset: (get protected-asset policy)       ;; PR-116: Include in event
       })
 
       (ok true)
@@ -317,12 +343,20 @@
         (merge policy { premium-distributed: true })
       )
       
-      ;; Emit event for premium distribution
+      ;; PR-119: Enhanced premium distribution event emission
       (print {
-        event: "premium-distributed",
+        event: "premium-distribution-initiated",
         policy-id: policy-id,
+        owner: (get owner policy),
         counterparty: counterparty-principal,
-        premium-amount: (get premium policy)
+        premium-amount: (get premium policy),
+        policy-type: (get policy-type policy),
+        position-type: (get position-type policy),
+        collateral-token: (get collateral-token policy),
+        settlement-token: (get settlement-token policy),
+        protected-asset: (get protected-asset policy),
+        expiration-height: (get expiration-height policy),
+        creation-height: (get creation-height policy)
       })
       
       (ok true)
@@ -367,13 +401,20 @@
               { id: policy-id }
               (merge policy { status: STATUS-EXPIRED })
             )
-            ;; Log the status change
+            ;; Log the status change with enhanced event (PR-119 partial)
             (print {
               event: "policy-status-updated",
               policy-id: policy-id,
               new-status: STATUS-EXPIRED,
               previous-status: current-status,
-              block-height: burn-block-height
+              block-height: burn-block-height,
+              owner: (get owner policy),
+              counterparty: (get counterparty policy),
+              policy-type: (get policy-type policy),
+              position-type: (get position-type policy),
+              collateral-token: (get collateral-token policy),
+              settlement-token: (get settlement-token policy),
+              protected-asset: (get protected-asset policy)
             })
             (ok true) ;; Indicate successful update
           )
@@ -411,6 +452,38 @@
   (match (map-get? policies { id: policy-id })
     policy (ok (is-eq (get status policy) STATUS-ACTIVE))
     (err ERR-NOT-FOUND) ;; Returns (err u404) if not found
+  )
+)
+
+;; PR-116: Get the collateral token for a policy
+(define-read-only (get-collateral-token (policy-id uint))
+  (match (map-get? policies { id: policy-id })
+    policy (ok (get collateral-token policy))
+    (err ERR-NOT-FOUND)
+  )
+)
+
+;; PR-116: Get the settlement token for a policy
+(define-read-only (get-settlement-token (policy-id uint))
+  (match (map-get? policies { id: policy-id })
+    policy (ok (get settlement-token policy))
+    (err ERR-NOT-FOUND)
+  )
+)
+
+;; PR-116: Get the protected asset for a policy
+(define-read-only (get-protected-asset (policy-id uint))
+  (match (map-get? policies { id: policy-id })
+    policy (ok (get protected-asset policy))
+    (err ERR-NOT-FOUND)
+  )
+)
+
+;; PR-116: Check if premium has been distributed for a policy
+(define-read-only (is-premium-distributed (policy-id uint))
+  (match (map-get? policies { id: policy-id })
+    policy (ok (get premium-distributed policy))
+    (err ERR-NOT-FOUND)
   )
 )
 
@@ -524,12 +597,12 @@
   )
 )
 
-;; Determine the required token ID based on policy type (placeholder)
+;; PR-116: Determine the required token ID based on policy type
 (define-private (get-token-id-for-policy (policy-type (string-ascii 4)))
   ;; For PUT options, collateral is STX (to pay out if BTC price drops)
   ;; For CALL options, collateral is sBTC (to deliver if BTC price rises)
   (if (is-eq policy-type POLICY-TYPE-PUT)
-    "STX"
-    "SBTC"
+    TOKEN-STX
+    TOKEN-SBTC
   )
 ) 
