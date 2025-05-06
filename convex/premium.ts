@@ -102,7 +102,7 @@ export const getActiveRiskParameters = internalQuery({
  * Calculates premium using Black-Scholes for a PUT option
  * This is adapted from the existing model in options.ts
  */
-function calculateBlackScholesPremium({
+export function calculateBlackScholesPremium({
   currentPrice,  // S
   strikePrice,   // K
   volatility,    // σ

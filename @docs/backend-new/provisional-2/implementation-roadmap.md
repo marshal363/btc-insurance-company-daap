@@ -196,9 +196,9 @@ The implemented contracts maintain the minimal on-chain footprint design while p
 | CV-PR-203 | Define schema for `pendingPolicyTransactions` table in `convex/schema.ts` for managing asynchronous on-chain interactions.                                                                                                                                                         | 4          | 🟢     | CV-PR-201                             |          |
 | CV-PR-204 | Implement foundational policy query functions: `getPolicy(policyId)` and initial `getPoliciesForUser(filters)` (owner-based, basic filters) in `convex/policyRegistry.ts`.                                                                                                         | 6          | 🟡     | CV-PR-201                             |          |
 | CV-PR-205 | Implement `getPolicyEvents(policyId)` query function in `convex/policyRegistry.ts` to fetch historical events for a specific policy.                                                                                                                                               | 4          | 🟡     | CV-PR-202                             |          |
-| CV-PR-206 | Implement `checkPolicyActivationEligibility(policyId)` query in `convex/policyRegistry.ts`. Use mocked Oracle interactions (e.g., `mockGetCurrentBTCPrice()`) and blockchain data (e.g. `mockGetLatestBlockHeight()`).                                                             | 6          | ⬜     | CV-PR-201, mock(BI-204)               |          |
-| CV-PR-207 | Implement/Integrate `premiumCalculationService`. Analyze `convex/premium.ts` and `convex/prices.ts`; wrap existing logic or define a new service structure for policy lifecycle premium calculations.                                                                              | 8          | ⬜     | CV-PR-201                             |          |
-| CV-PR-208 | Implement a mock `poolLiquidityCheckingService` (e.g., in `convex/mocks.ts` or inline mock) to simulate checking Liquidity Pool capacity. This replaces the direct CV-LP-201 dependency for now.                                                                                   | 4          | ⬜     | mock(CV-LP-201)                       |          |
+| CV-PR-206 | Implement `checkPolicyActivationEligibility(policyId)` query in `convex/policyRegistry.ts`. Use mocked Oracle interactions (e.g., `mockGetCurrentBTCPrice()`) and blockchain data (e.g. `mockGetLatestBlockHeight()`).                                                             | 6          | 🟢     | CV-PR-201, mock(BI-204)               |          |
+| CV-PR-207 | Implement/Integrate `premiumCalculationService`. Analyze `convex/premium.ts` and `convex/prices.ts`; wrap existing logic or define a new service structure for policy lifecycle premium calculations.                                                                              | 8          | 🟢     | CV-PR-201                             |          |
+| CV-PR-208 | Implement a mock `poolLiquidityCheckingService` (e.g., in `convex/mocks.ts` or inline mock) to simulate checking Liquidity Pool capacity. This replaces the direct CV-LP-201 dependency for now.                                                                                   | 4          | 🟢     | mock(CV-LP-201)                       |          |
 | CV-PR-209 | Implement `requestPolicyCreation(params)` action in `convex/policyRegistry.ts`. Utilizes `premiumCalculationService`, mock `poolLiquidityCheckingService`, determines position type/counterparty, prepares mock transaction payload, and inserts into `pendingPolicyTransactions`. | 10         | ⬜     | CV-PR-203, CV-PR-207, CV-PR-208       |          |
 | CV-PR-210 | Implement `requestPolicyActivation(params)` action in `convex/policyRegistry.ts`. Uses `checkPolicyActivationEligibility`, prepares mock transaction payload, and inserts into `pendingPolicyTransactions`.                                                                        | 8          | ⬜     | CV-PR-206, CV-PR-203                  |          |
 | CV-PR-211 | Implement `updateTransactionStatus(pendingTxId, transactionId, status, error?)` mutation in `convex/policyRegistry.ts` to manage entries in `pendingPolicyTransactions`.                                                                                                           | 6          | ⬜     | CV-PR-203                             |          |
@@ -231,6 +231,19 @@ The implemented contracts maintain the minimal on-chain footprint design while p
 - **Key Considerations & Next Steps for these tasks:**
   - `getPoliciesForUser` will need pagination and more robust filtering for production.
   - Further development will populate and utilize these schemas and queries.
+
+**Implementation Notes (Policy Registry Service - Convex - Sub-Phase 2A.2):**
+
+- **Eligibility Checks & Service Stubs (CV-PR-206, CV-PR-207, CV-PR-208):** Tasks Completed.
+  - `convex/premium.ts`: Exported `calculateBlackScholesPremium`.
+  - `convex/policyRegistry.ts`:
+    - Added `calculatePremiumForPolicyCreation` leveraging `calculateBlackScholesPremium` and `internal.prices.getLatestPrice` (mocked for now). This serves as the `premiumCalculationService`.
+    - Added `mockCheckPoolLiquidity` as a placeholder for `poolLiquidityCheckingService`.
+    - Added `checkPolicyActivationEligibility` query, using `mockGetLatestBlockHeight` and `mockGetCurrentBTCPrice` for simulated on-chain/oracle data.
+- **Key Considerations & Next Steps for these tasks:**
+  - The `calculatePremiumForPolicyCreation` currently assumes it can fetch `currentPriceUSD` and `volatility` via `internal.prices.getLatestPrice` and `internal.prices.getRecentVolatility`. The `prices.ts` file will need to be updated to provide these, potentially requiring new Convex functions/queries there. For now, the mock BTC price is used.
+  - `mockCheckPoolLiquidity` will need to be replaced with actual integration with the Liquidity Pool service (CV-LP-201) once available.
+  - `checkPolicyActivationEligibility` relies on mock data; will need integration with the Blockchain Integration layer (BI-204) for real data.
 
 #### B. Liquidity Pool Service - Convex Implementation
 
