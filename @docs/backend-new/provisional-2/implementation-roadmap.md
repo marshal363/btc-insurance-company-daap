@@ -347,41 +347,41 @@ The implemented contracts maintain the minimal on-chain footprint design while p
 
 - 🟢 CV-LP-214: Implement transaction watcher service (job)
 - 🟢 CV-LP-215: Implement getTransactionsByProvider query
-- ⬜ CV-LP-216: Implement getPoolTransactions query (for admins)
+- 🟢 CV-LP-216: Implement getPoolTransactions query (for admins)
 
 **Transaction Processing**
 
-- ⬜ CV-LP-217: Implement processBlockchainTransaction action (internal)
-- ⬜ CV-LP-218: Implement checkTransactionStatus action
-- ⬜ CV-LP-219: Implement retryTransaction action
+- 🟢 CV-LP-217: Implement processBlockchainTransaction action (internal)
+- 🟢 CV-LP-218: Implement checkTransactionStatus action
+- 🟢 CV-LP-219: Implement retryTransaction action
 
 **Policy Allocation Management**
 
-- ⬜ CV-LP-220: Implement getAllocationsByPolicy query (internal)
+- 🟢 CV-LP-220: Implement getAllocationsByPolicy query (internal)
 
 **Premium Management**
 
 - ✅ CV-LP-221: Define schema for premiumBalances table
-- ✅ CV-LP-222: Implement distributePolicyPremium action (internal)
+- 🟢 CV-LP-222: Implement distributePolicyPremium action (internal)
 - ✅ CV-LP-223: Define schema for providerPremiumDistributions table
-- ✅ CV-LP-224: Implement requestPremiumWithdrawal action
+- 🟢 CV-LP-224: Implement requestPremiumWithdrawal action
 
 **Settlement and Claim Functions**
 
-- ⬜ CV-LP-225: Implement verifyClaimSubmission action (internal)
-- ⬜ CV-LP-226: Implement processClaimSettlement action (internal)
-- ⬜ CV-LP-227: Implement getClaimPaymentStatus query
+- 🟢 CV-LP-225: Implement verifyClaimSubmission action (internal)
+- 🟢 CV-LP-226: Implement processClaimSettlement action (internal)
+- 🟢 CV-LP-227: Implement getClaimPaymentStatus query
 
 **Provider Management**
 
-- ⬜ CV-LP-228: Implement registerLiquidityProvider action
-- ⬜ CV-LP-229: Implement updateProviderPreferences action
-- ⬜ CV-LP-230: Implement getProviderPreferences query
+- 🟢 CV-LP-228: Implement registerLiquidityProvider action
+- 🟢 CV-LP-229: Implement updateProviderPreferences action
+- 🟢 CV-LP-230: Implement getProviderPreferences query
 
 **Administrative Functions**
 
-- ⬜ CV-LP-231: Implement getSystemPoolStats query (admin-only)
-- ⬜ CV-LP-232: Implement pausePoolOperations action (admin-only)
+- 🟢 CV-LP-231: Implement getSystemPoolStats query (admin-only)
+- 🟢 CV-LP-232: Implement pausePoolOperations action (admin-only)
 
 #### C. Convex Testing
 

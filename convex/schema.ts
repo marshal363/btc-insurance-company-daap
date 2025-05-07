@@ -476,7 +476,9 @@ export default defineSchema({
     payload: v.any(), // Transaction-specific data for processing
     status: v.string(), // PENDING, SUBMITTED, CONFIRMED, FAILED
     chain_tx_id: v.optional(v.string()), // On-chain transaction ID once submitted
+    block_height: v.optional(v.number()), // Block height of confirmation
     last_checked: v.optional(v.number()), // When status was last checked
+    last_attempted_at: v.optional(v.number()), // Timestamp of the last retry attempt
     retry_count: v.number(), // Number of retry attempts
     error: v.optional(v.string()), // Error message if failed
     policy_id: v.optional(v.id("policies")), // Associated policy (if applicable)
@@ -517,4 +519,28 @@ export default defineSchema({
     .index("by_distribution_timestamp", ["distribution_timestamp"])
     .index("by_status", ["status"])
     .index("by_batch_id", ["batch_id"]),
+
+  provider_preferences: defineTable({
+    provider: v.string(), // Provider principal
+    riskTierComfort: v.optional(v.string()), // e.g., "conservative", "balanced", "aggressive"
+    notificationSettings: v.optional(v.object({
+      emailOnSettlement: v.optional(v.boolean()),
+      emailOnNewPolicyAllocated: v.optional(v.boolean()),
+      // Add other notification flags as needed
+    })),
+    autoReinvestPremiums: v.optional(v.boolean()),
+    // Add other preference fields here
+    lastUpdated: v.number(), // Timestamp of the last update
+  })
+    .index("by_provider", ["provider"]), // Essential for the lookup
+
+  pool_status: defineTable({
+    singletonId: v.literal("global"), // Ensures only one document
+    isDepositsPaused: v.boolean(),
+    isWithdrawalsPaused: v.boolean(),
+    isNewAllocationsPaused: v.boolean(),
+    pausedReason: v.optional(v.string()),
+    lastUpdated: v.number(),
+    updatedBy: v.string(), // Admin principal who made the change
+  }).index("by_singleton_id", ["singletonId"]), // Crucial for unique() and efficient lookup
 });

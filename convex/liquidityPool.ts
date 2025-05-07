@@ -1737,6 +1737,22 @@ export const getEligibleProvidersForAllocation = internalQuery({
 
 // --- Premium Distribution Actions (CV-LP-222) ---
 
+interface PremiumDistributionResultItem {
+  distributionId: Id<"provider_premium_distributions">;
+  provider: string;
+  premiumAmount: number;
+  allocationPercentage: number;
+}
+
+interface DistributePolicyPremiumResult {
+  policyId: Id<"policies">;
+  token: string;
+  totalAmount: number;
+  totalDistributed: number;
+  providerCount: number;
+  distributions: PremiumDistributionResultItem[];
+}
+
 /**
  * Distribute a policy premium to the providers based on their allocation percentages.
  * 
@@ -1751,7 +1767,7 @@ export const distributePolicyPremium = internalAction({
     amount: v.number(),
     token: v.string(),
   },
-  handler: async (ctx, args): Promise<any> => {
+  handler: async (ctx, args): Promise<DistributePolicyPremiumResult> => {
     // 1. Get all allocations for this policy
     const allocations = await ctx.runQuery(
       internal.liquidityPool.getPolicyAllocations,
@@ -1846,7 +1862,7 @@ export const getPolicyAllocations = internalQuery({
   args: {
     policyId: v.id("policies"),
   },
-  handler: async (ctx, args): Promise<any[]> => {
+  handler: async (ctx, args): Promise<Doc<"policy_allocations">[]> => {
     return await ctx.db
       .query("policy_allocations")
       .filter(q => q.eq(q.field("policy_id"), args.policyId))
@@ -2227,6 +2243,14 @@ export const logCollateralReleaseTransaction = internalMutation({
 
 // --- Premium Withdrawal Actions (CV-LP-224) ---
 
+interface RequestPremiumWithdrawalResult {
+  pendingTxId: Id<"pending_pool_transactions">;
+  txId: string;
+  transaction: any; // Blockchain transaction options from preparation actions
+  amount: number;
+  token: string;
+}
+
 /**
  * Request a withdrawal of earned premiums from the liquidity pool.
  * Validates eligibility, prepares transaction for processing, and returns
@@ -2241,7 +2265,7 @@ export const requestPremiumWithdrawal = action({
     token: v.string(),
     amount: v.number(),
   },
-  handler: async (ctx, args): Promise<any> => {
+  handler: async (ctx, args): Promise<RequestPremiumWithdrawalResult> => {
     // Get the authenticated user's identity
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) {
@@ -2616,6 +2640,351 @@ export const getTransactionsByProvider = query({
   }
 });
 
+// CV-LP-216: Implement getPoolTransactions query (for admins)
+export const getPoolTransactions = query({
+  args: {
+    // Filters
+    token: v.optional(v.string()),
+    tx_type: v.optional(v.string()),
+    status: v.optional(v.string()),
+    provider: v.optional(v.string()),
+    startDate: v.optional(v.number()),
+    endDate: v.optional(v.number()),
+    // Pagination
+    limit: v.optional(v.number()),
+    offset: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    // 1. Admin Authorization
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Authentication required.");
+    }
+    // Adjust if admin role is stored differently (e.g. identity.isAdmin flag or specific claim)
+    // Assuming identity.roles is an array of strings like: { roles?: string[] ... }
+    const roles = (identity as any).roles; // Cast to any to access roles, or use proper type for identity
+    const isAdmin = Array.isArray(roles) && roles.includes("admin");
+    if (!isAdmin) {
+      throw new Error("Admin access required.");
+    }
+
+    // 2. Query Construction
+    let queryBuilder = ctx.db.query("pool_transactions");
+
+    // 3. Filtering
+    if (args.token) {
+      queryBuilder = queryBuilder.filter(q => q.eq(q.field("token"), args.token!));
+    }
+    if (args.tx_type) {
+      queryBuilder = queryBuilder.filter(q => q.eq(q.field("tx_type"), args.tx_type!));
+    }
+    if (args.status) {
+      queryBuilder = queryBuilder.filter(q => q.eq(q.field("status"), args.status!));
+    }
+    if (args.provider) {
+      queryBuilder = queryBuilder.filter(q => q.eq(q.field("provider"), args.provider!));
+    }
+    if (args.startDate !== undefined) {
+      queryBuilder = queryBuilder.filter(q => q.gte(q.field("timestamp"), args.startDate!));
+    }
+    if (args.endDate !== undefined) {
+      queryBuilder = queryBuilder.filter(q => q.lte(q.field("timestamp"), args.endDate!));
+    }
+    
+    const allMatchingTransactions = await queryBuilder.collect();
+    const totalCount = allMatchingTransactions.length;
+
+    const sortedTransactions = allMatchingTransactions.sort((a, b) => b.timestamp - a.timestamp);
+    
+    const limit = args.limit ?? 10;
+    const offset = args.offset ?? 0;
+
+    const paginatedTransactions = sortedTransactions.slice(offset, offset + limit);
+
+    return {
+      transactions: paginatedTransactions,
+      totalCount,
+    };
+  },
+});
+
+// CV-LP-217: Implement processBlockchainTransaction action (internal)
+
+interface ProcessBlockchainTransactionResult {
+  success: boolean;
+  processedChainTxId?: string;
+  finalStatus?: string;
+  error?: string;
+}
+
+export const processBlockchainTransaction = internalAction({
+  args: {
+    pendingTxConvexId: v.id("pending_pool_transactions"),
+    chainTxId: v.string(),
+    outcomeStatus: v.union(v.literal("CONFIRMED"), v.literal("FAILED")),
+    blockHeight: v.optional(v.number()),
+    errorMessage: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<ProcessBlockchainTransactionResult> => {
+    console.log(`Processing blockchain transaction: ${args.chainTxId} for pending ID: ${args.pendingTxConvexId}, Status: ${args.outcomeStatus}`);
+
+    const updatedPendingTx: Doc<"pending_pool_transactions"> | null = await ctx.runMutation(internal.liquidityPool.updatePendingPoolTransactionOutcome, {
+      pendingTxConvexId: args.pendingTxConvexId,
+      chainTxId: args.chainTxId,
+      outcomeStatus: args.outcomeStatus,
+      blockHeight: args.blockHeight,
+      errorMessage: args.errorMessage,
+    });
+
+    if (!updatedPendingTx) {
+      console.error(`Failed to update or find pending pool transaction: ${args.pendingTxConvexId}. Aborting further processing for ${args.chainTxId}.`);
+      return { success: false, error: "Pending transaction not found or update failed." };
+    }
+
+    // Type guard to ensure updatedPendingTx is not null and has the expected status type from here onwards for CONFIRMED/FAILED blocks
+    if (updatedPendingTx.status !== "CONFIRMED" && updatedPendingTx.status !== "FAILED") {
+        console.warn(`Pending transaction ${updatedPendingTx._id} has an unexpected status '${updatedPendingTx.status}' after outcome update. This might indicate it was already processed or an issue with updatePendingPoolTransactionOutcome return type.`);
+        // Potentially return or throw if this state is not expected
+        return { success: false, error: `Unexpected status: ${updatedPendingTx.status}`, finalStatus: updatedPendingTx.status };
+    }
+
+    if (updatedPendingTx.status === "CONFIRMED") {
+      const finalizeArgs = {
+        _id: updatedPendingTx._id,
+        provider: updatedPendingTx.provider,
+        tx_type: updatedPendingTx.tx_type,
+        token: updatedPendingTx.token,
+        amount: updatedPendingTx.amount,
+        status: "Confirmed" as const, // Critical: Ensure this matches pendingPoolTxDataValidator
+        chain_tx_id: updatedPendingTx.chain_tx_id,
+        payload: updatedPendingTx.payload,
+        timestamp: updatedPendingTx.timestamp,
+      };
+      await ctx.runMutation(internal.liquidityPool.finalizeConfirmedPoolTransaction, {
+         pendingPoolTxData: finalizeArgs as any 
+      });
+      console.log(`Successfully triggered finalization for confirmed pending transaction: ${updatedPendingTx._id}`);
+    } else if (updatedPendingTx.status === "FAILED") {
+      // Pass the more specific type if available from the previous check
+      await ctx.runMutation(internal.liquidityPool.revertFailedPendingPoolTransaction, {
+        pendingTxData: updatedPendingTx 
+      });
+      console.log(`Successfully triggered reversion for failed pending transaction: ${updatedPendingTx._id}`);
+    }
+    
+    if (updatedPendingTx.token) {
+        await ctx.scheduler.runAfter(0, internal.liquidityPool.updatePoolMetrics, {
+            token: updatedPendingTx.token,
+        });
+        console.log(`Scheduled pool metrics update for token: ${updatedPendingTx.token}`);
+    }
+
+    return { success: true, processedChainTxId: args.chainTxId, finalStatus: updatedPendingTx.status };
+  },
+});
+
+export const updatePendingPoolTransactionOutcome = internalMutation({
+  args: {
+    pendingTxConvexId: v.id("pending_pool_transactions"),
+    chainTxId: v.string(),
+    outcomeStatus: v.union(v.literal("CONFIRMED"), v.literal("FAILED")),
+    blockHeight: v.optional(v.number()),
+    errorMessage: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<Doc<"pending_pool_transactions"> | null> => {
+    const pendingTx = await ctx.db.get(args.pendingTxConvexId);
+    if (!pendingTx) {
+      console.error(`Pending pool transaction not found: ${args.pendingTxConvexId}`);
+      return null;
+    }
+
+    // Idempotency check: If already in the final target state from this chainTx, or "Processed"
+    if (pendingTx.status === "Processed" || 
+        (pendingTx.status === args.outcomeStatus && pendingTx.chain_tx_id === args.chainTxId)) {
+      console.warn(`Pending transaction ${args.pendingTxConvexId} (ChainTx: ${pendingTx.chain_tx_id}) is already in status '${pendingTx.status}'. Current event (ChainTx: ${args.chainTxId}, Status: ${args.outcomeStatus}). Assuming already processed or duplicate event.`);
+      return pendingTx as Doc<"pending_pool_transactions">; // Return current state
+    }
+    // If it's confirmed/failed but for a *different* chainTxId, that's an error condition.
+    if ((pendingTx.status === "CONFIRMED" || pendingTx.status === "FAILED") && pendingTx.chain_tx_id !== args.chainTxId) {
+        console.error(`Critical: Pending transaction ${args.pendingTxConvexId} already has outcome ${pendingTx.status} for chainTxId ${pendingTx.chain_tx_id}, but received new outcome for ${args.chainTxId}.`);
+        // Depending on policy, you might throw an error or overwrite. Overwriting is risky.
+        // For now, we prevent overwrite by returning the current doc.
+        return pendingTx as Doc<"pending_pool_transactions">;
+    }
+
+
+    await ctx.db.patch(args.pendingTxConvexId, {
+      status: args.outcomeStatus,
+      chain_tx_id: args.chainTxId,
+      block_height: args.blockHeight,
+      error: args.errorMessage,
+      last_checked: Date.now(),
+    });
+    
+    const updatedDoc = await ctx.db.get(args.pendingTxConvexId);
+     if (!updatedDoc) {
+        console.error(`Failed to retrieve pending pool transaction ${args.pendingTxConvexId} after patch.`);
+        return null;
+    }
+    return updatedDoc as Doc<"pending_pool_transactions">;
+  },
+});
+
+export const revertFailedPendingPoolTransaction = internalMutation({
+  args: { pendingTxData: v.any() /* Use a more specific v.object if pendingTxData structure is stable */ },
+  handler: async (ctx, args) => {
+    const { provider, tx_type, token, amount, _id: pendingTxId, chain_tx_id, error: txError, timestamp: creationTimestamp } = args.pendingTxData as Doc<"pending_pool_transactions"> & { error?: string };
+    
+    console.log(`Reverting failed pending transaction: ${pendingTxId} (ChainTx: ${chain_tx_id}), Type: ${tx_type}`);
+
+    // Log the failed transaction in pool_transactions
+    // Ensure tx_id used here is the original Convex pending tx ID for internal tracking consistency
+    await ctx.db.insert("pool_transactions", {
+      provider,
+      tx_id: pendingTxId.toString(), 
+      tx_type,
+      amount,
+      token,
+      timestamp: Date.now(), 
+      status: "FAILED",
+      chain_tx_id: chain_tx_id,
+      description: `Failed ${tx_type} of ${amount} ${token}. Error: ${txError || 'Unknown error'}`,
+      metadata: { pending_tx_creation_timestamp: creationTimestamp }
+    });
+
+    if (tx_type === TransactionType.WITHDRAWAL || tx_type === "WITHDRAWAL_CAPITAL") {
+      const balance = await ctx.db
+        .query("provider_balances")
+        .filter(q => q.eq(q.field("provider"), provider) && q.eq(q.field("token"), token))
+        .unique();
+      if (balance && typeof balance.available_balance === 'number' && typeof amount === 'number') {
+        await ctx.db.patch(balance._id, {
+          available_balance: balance.available_balance + amount,
+          last_updated: Date.now(),
+        });
+        console.log(`Reverted available balance for ${provider}, token ${token}, amount ${amount}`);
+      } else {
+        console.warn(`Could not revert capital withdrawal for ${provider}, token ${token}: balance not found or invalid amount/balance.`);
+      }
+    } else if (tx_type === TransactionType.PREMIUM || tx_type === "WITHDRAWAL_PREMIUM") {
+       const balance = await ctx.db
+        .query("provider_balances")
+        .filter(q => q.eq(q.field("provider"), provider) && q.eq(q.field("token"), token))
+        .unique();
+      if (balance && typeof balance.pending_premiums === 'number' && typeof amount === 'number') {
+         await ctx.db.patch(balance._id, {
+          pending_premiums: Math.max(0, balance.pending_premiums - amount),
+          last_updated: Date.now(),
+        });
+        console.log(`Reverted pending premiums for ${provider}, token ${token}, amount ${amount}`);
+      } else {
+         console.warn(`Could not revert premium withdrawal for ${provider}, token ${token}: balance not found or invalid amount/balance.`);
+      }
+    }
+    
+    // Mark the pending transaction as "Processed" to prevent re-processing by finalizeConfirmedPoolTransaction
+    // if it was mistakenly called later. The status is already FAILED.
+    // No, this is not needed here. The "FAILED" status from updatePendingPoolTransactionOutcome is the terminal state.
+    // processBlockchainTransaction ensures finalize is not called if status is FAILED.
+
+    return { reverted: true, pendingTxId };
+  },
+});
+
+// New internal query to fetch pending transaction details
+export const getPendingPoolTransactionDetails = internalQuery({
+  args: { pendingTxConvexId: v.id("pending_pool_transactions") },
+  handler: async (ctx, args): Promise<Doc<"pending_pool_transactions"> | null> => {
+    return await ctx.db.get(args.pendingTxConvexId);
+  },
+});
+
+// CV-LP-218: Implement checkTransactionStatus action
+interface CheckTransactionStatusResult {
+  success: boolean;
+  status?: string; // The status found or current status
+  message: string;
+  processed?: boolean; // Indicates if processBlockchainTransaction was called
+}
+
+export const checkTransactionStatus = action({
+  args: {
+    pendingTxConvexId: v.id("pending_pool_transactions"),
+  },
+  handler: async (ctx, args): Promise<CheckTransactionStatusResult> => {
+    console.log(`Checking status for pending pool transaction ID: ${args.pendingTxConvexId}`);
+
+    const pendingTx = await ctx.runQuery(internal.liquidityPool.getPendingPoolTransactionDetails, { 
+      pendingTxConvexId: args.pendingTxConvexId 
+    });
+
+    if (!pendingTx) {
+      return { success: false, message: "Pending transaction not found." };
+    }
+
+    // If already in a terminal state handled by processBlockchainTransaction (CONFIRMED/FAILED leads to Processed by finalize/revert logic)
+    // or if it's simply PENDING (not yet submitted to chain), this action might not do much.
+    if (pendingTx.status === "CONFIRMED" || pendingTx.status === "FAILED" || pendingTx.status === "Processed") {
+      return { success: true, status: pendingTx.status, message: "Transaction already in a terminal state." };
+    }
+
+    if (!pendingTx.chain_tx_id) {
+      return { success: false, status: pendingTx.status, message: "Transaction does not have a chain_tx_id to check." };
+    }
+
+    if (pendingTx.status !== "SUBMITTED" && pendingTx.status !== "PENDING") { // PENDING could mean prior to submission or after submission but not yet confirmed
+        console.warn(`Checking status for transaction ${pendingTx._id} with status ${pendingTx.status}, which might not be appropriate for on-chain status check.`);
+        // Depending on exact status lifecycle, may want to return or proceed
+    }
+
+    // --- Placeholder for actual Blockchain API call --- 
+    // const onChainStatus = await fetchTransactionStatusFromBlockchainAPI(pendingTx.chain_tx_id);
+    // Simulated response:
+    // Replace this with actual API call logic.
+    // Possible values for onChainStatus.status: "confirmed", "failed", "pending"
+    // onChainStatus.blockHeight, onChainStatus.errorDetails etc.
+    
+    // Example Simulation: Randomly decide outcome for testing
+    const randomOutcome = Math.random();
+    let simulatedOnChainStatus: { status: "CONFIRMED" | "FAILED" | "PENDING_ON_CHAIN", blockHeight?: number, errorDetails?: string };
+
+    if (randomOutcome < 0.6) { // 60% chance of being confirmed
+      simulatedOnChainStatus = { status: "CONFIRMED", blockHeight: 12345 };
+    } else if (randomOutcome < 0.8) { // 20% chance of being failed
+      simulatedOnChainStatus = { status: "FAILED", errorDetails: "Simulated transaction failure: Out of gas." };
+    } else { // 20% chance of still pending on-chain
+      simulatedOnChainStatus = { status: "PENDING_ON_CHAIN" };
+    }
+    console.log(`Simulated on-chain status for ${pendingTx.chain_tx_id}: ${simulatedOnChainStatus.status}`);
+    // --- End of Placeholder --- 
+
+    let processed = false;
+    if (simulatedOnChainStatus.status === "CONFIRMED") {
+      await ctx.runAction(internal.liquidityPool.processBlockchainTransaction, {
+        pendingTxConvexId: pendingTx._id,
+        chainTxId: pendingTx.chain_tx_id, // Should be same as used for check
+        outcomeStatus: "CONFIRMED",
+        blockHeight: simulatedOnChainStatus.blockHeight,
+      });
+      processed = true;
+      return { success: true, status: "CONFIRMED", message: "Transaction confirmed and processed.", processed };
+    } else if (simulatedOnChainStatus.status === "FAILED") {
+      await ctx.runAction(internal.liquidityPool.processBlockchainTransaction, {
+        pendingTxConvexId: pendingTx._id,
+        chainTxId: pendingTx.chain_tx_id,
+        outcomeStatus: "FAILED",
+        errorMessage: simulatedOnChainStatus.errorDetails,
+      });
+      processed = true;
+      return { success: true, status: "FAILED", message: "Transaction failed and processed.", processed };
+    } else { // Still pending on-chain
+      // Optionally, update last_checked timestamp in pending_pool_transactions via a mutation
+      // await ctx.runMutation(internal.yourMutationToUpdateLastChecked, { pendingTxConvexId: pendingTx._id });
+      return { success: true, status: "PENDING_ON_CHAIN", message: "Transaction is still pending on-chain.", processed };
+    }
+  },
+});
+
 // Validator for the data coming from the pool transaction watcher
 // Aligned with schema for pending_pool_transactions and PendingPoolTransaction type in watcher
 const pendingPoolTxDataValidator = v.object({
@@ -2778,4 +3147,736 @@ export const recordProviderPremiumWithdrawalCompletion = internalMutation({
     });
     console.log("Completed premium withdrawal for ", provider, " Token: ", token, " Amount: ", amount);
   }
+});
+
+// New internal mutation to increment retry count and update status for a pending transaction
+export const incrementPendingTxRetryCount = internalMutation({
+  args: {
+    pendingTxConvexId: v.id("pending_pool_transactions"),
+    newPayloadForRetry: v.optional(v.any()), // If the payload needs to be updated for the retry (e.g. new tx options)
+  },
+  handler: async (ctx, args) => {
+    const pendingTx = await ctx.db.get(args.pendingTxConvexId);
+    if (!pendingTx) {
+      console.error(`Pending transaction not found for retry increment: ${args.pendingTxConvexId}`);
+      return null;
+    }
+    await ctx.db.patch(args.pendingTxConvexId, {
+      retry_count: (pendingTx.retry_count || 0) + 1,
+      status: "PENDING", // Reset status to PENDING for the new attempt
+      chain_tx_id: undefined, // Clear old chain_tx_id
+      error: undefined, // Clear old error
+      last_attempted_at: Date.now(), // New field, add to schema
+      last_checked: undefined, // Clear last_checked time
+      payload: args.newPayloadForRetry !== undefined ? args.newPayloadForRetry : pendingTx.payload, // Update payload if new one provided
+    });
+    return await ctx.db.get(args.pendingTxConvexId);
+  },
+});
+
+// CV-LP-219: Implement retryTransaction action
+interface RetryTransactionResult {
+  success: boolean;
+  message: string;
+  newTransactionOptions?: any; // To be signed by the user
+  pendingTxId?: Id<"pending_pool_transactions">;
+}
+
+// Max retries allowed for a transaction
+const MAX_TRANSACTION_RETRIES = 3;
+
+export const retryTransaction = action({
+  args: {
+    pendingTxConvexId: v.id("pending_pool_transactions"),
+  },
+  handler: async (ctx, args): Promise<RetryTransactionResult> => {
+    console.log(`Attempting to retry transaction: ${args.pendingTxConvexId}`);
+
+    const pendingTx = await ctx.runQuery(internal.liquidityPool.getPendingPoolTransactionDetails, {
+      pendingTxConvexId: args.pendingTxConvexId,
+    });
+
+    if (!pendingTx) {
+      return { success: false, message: "Pending transaction not found." };
+    }
+
+    if (pendingTx.status !== "FAILED") {
+      return { success: false, message: `Transaction status is '${pendingTx.status}', not 'FAILED'. Retry not applicable.` };
+    }
+
+    if ((pendingTx.retry_count || 0) >= MAX_TRANSACTION_RETRIES) {
+      return { 
+        success: false, 
+        message: `Maximum retry limit (${MAX_TRANSACTION_RETRIES}) reached for transaction ${pendingTx._id}.` 
+      };
+    }
+
+    // Placeholder for regenerating transaction options. 
+    // This would involve calling specific internal "prepare" actions based on pendingTx.tx_type
+    // and using data from pendingTx.payload.
+    let newTransactionOptions: any;
+    let newPayloadForRetry: any = pendingTx.payload; // Default to old payload
+
+    try {
+      switch (pendingTx.tx_type) {
+        case TransactionType.DEPOSIT: // Assuming TransactionType.DEPOSIT enum value matches "DEPOSIT_CAPITAL" string or similar
+        case "DEPOSIT_CAPITAL": // Or handle known strings directly
+          // Example: newTransactionOptions = await ctx.runAction(internal.blockchainPreparation.prepareStxTransferToLiquidityPool, pendingTx.payload.details_for_deposit);
+          // For now, simulate or indicate this needs actual implementation
+          console.log(`Simulating regeneration of DEPOSIT transaction for ${pendingTx._id}`);
+          // newTransactionOptions = { /* ... new options ... */ };
+          // newPayloadForRetry = { ...pendingTx.payload, transaction: newTransactionOptions }; // If payload structure includes it
+          return { success: false, message: `Retry logic for ${pendingTx.tx_type} not fully implemented yet. Requires re-preparation of transaction.` };
+
+        case TransactionType.WITHDRAWAL:
+        case "WITHDRAWAL_CAPITAL":
+          // Example: newTransactionOptions = await ctx.runAction(internal.blockchainPreparation.prepareStxWithdrawalFromLiquidityPool, pendingTx.payload.details_for_withdrawal);
+          console.log(`Simulating regeneration of WITHDRAWAL transaction for ${pendingTx._id}`);
+          return { success: false, message: `Retry logic for ${pendingTx.tx_type} not fully implemented yet. Requires re-preparation of transaction.` };
+
+        case TransactionType.PREMIUM:
+        case "WITHDRAWAL_PREMIUM":
+          // Example: newTransactionOptions = await ctx.runAction(internal.blockchainPreparation.prepareStxPremiumWithdrawalFromLiquidityPool, pendingTx.payload.details_for_premium_withdrawal);
+          console.log(`Simulating regeneration of PREMIUM transaction for ${pendingTx._id}`);
+          return { success: false, message: `Retry logic for ${pendingTx.tx_type} not fully implemented yet. Requires re-preparation of transaction.` };
+
+        default:
+          return { success: false, message: `Retry not supported for transaction type: ${pendingTx.tx_type}` };
+      }
+    } catch (error: any) {
+        console.error(`Error during transaction re-preparation for ${pendingTx._id}:`, error);
+        return { success: false, message: `Failed to re-prepare transaction: ${error.message}` };
+    }
+
+    // If newTransactionOptions were successfully generated:
+    // const updatedPendingTx = await ctx.runMutation(internal.liquidityPool.incrementPendingTxRetryCount, {
+    //   pendingTxConvexId: args.pendingTxConvexId,
+    //   newPayloadForRetry: newPayloadForRetry, // Contains the new tx options
+    // });
+
+    // if (!updatedPendingTx) {
+    //   return { success: false, message: "Failed to update pending transaction for retry." };
+    // }
+
+    // console.log(`Transaction ${updatedPendingTx._id} prepared for retry attempt ${updatedPendingTx.retry_count}. New status: ${updatedPendingTx.status}`);
+    // return {
+    //   success: true,
+    //   message: "Transaction re-prepared. Please sign and submit.",
+    //   newTransactionOptions: newTransactionOptions, // The actual on-chain tx options
+    //   pendingTxId: updatedPendingTx._id,
+    // };
+  },
+});
+
+// --- Settlement and Claim Functions ---
+
+interface VerifyClaimSubmissionResult {
+  isValid: boolean;
+  message: string;
+  lockedCollateralForPolicy?: number;
+  allocationToken?: string;
+}
+
+// CV-LP-225: Implement verifyClaimSubmission action (internal)
+export const verifyClaimSubmission = internalAction({
+  args: {
+    policyId: v.id("policies"),
+    proposedSettlementAmount: v.number(),
+    settlementToken: v.string(),
+    // Potentially: recipientAddress: v.string() to verify against policy owner if needed
+  },
+  handler: async (ctx, args): Promise<VerifyClaimSubmissionResult> => {
+    console.log(`Verifying claim submission for policyId: ${args.policyId}, amount: ${args.proposedSettlementAmount} ${args.settlementToken}`);
+
+    const allocations = await ctx.runQuery(internal.liquidityPool.getPolicyAllocations, {
+      policyId: args.policyId,
+    });
+
+    const activeAllocations = allocations.filter(alloc => alloc.status === AllocationStatus.ACTIVE);
+
+    if (activeAllocations.length === 0) {
+      return {
+        isValid: false,
+        message: "No active allocations found for this policy in the Liquidity Pool.",
+      };
+    }
+
+    const allocationToken = activeAllocations[0].token;
+    if (allocationToken !== args.settlementToken) {
+      return {
+        isValid: false,
+        message: `Settlement token mismatch. Expected ${allocationToken}, got ${args.settlementToken}.`,
+        allocationToken: allocationToken,
+      };
+    }
+
+    const totalLockedCollateral = activeAllocations.reduce((sum, alloc) => sum + alloc.allocated_amount, 0);
+
+    // Basic check: The proposed settlement amount should not exceed the total collateral locked for the policy.
+    // The exact settlement calculation logic resides in the Policy Registry / on-chain contracts.
+    // This is a sanity check from the LP's perspective.
+    if (args.proposedSettlementAmount < 0) {
+        return { isValid: false, message: "Proposed settlement amount cannot be negative." };
+    }
+    
+    // If the proposed amount to pay out is greater than the collateral, it's an issue from LP's view.
+    // For cash-settled options, payout might be less than collateral, and remaining collateral is released.
+    // This check assumes proposedSettlementAmount is the actual payout from collateral.
+    if (args.proposedSettlementAmount > totalLockedCollateral) {
+      return {
+        isValid: false,
+        message: `Proposed settlement amount (${args.proposedSettlementAmount}) exceeds total locked collateral (${totalLockedCollateral}) for policy. `,
+        lockedCollateralForPolicy: totalLockedCollateral,
+        allocationToken: allocationToken,
+      };
+    }
+    
+    // Further checks could involve comparing against an expected settlement amount if LP has visibility into policy terms for estimation,
+    // but primarily this ensures LP has the collateral it thinks it should have for the policy.
+
+    return {
+      isValid: true,
+      message: "Claim submission appears valid from Liquidity Pool perspective.",
+      lockedCollateralForPolicy: totalLockedCollateral,
+      allocationToken: allocationToken,
+    };
+  },
+});
+
+// CV-LP-226: Implement processClaimSettlement action (internal)
+
+interface ProcessClaimSettlementResult {
+  success: boolean;
+  message: string;
+  loggedPoolTransactionId?: Id<"pool_transactions">;
+}
+
+/**
+ * Processes the off-chain state changes after a policy claim has been settled on-chain.
+ * This is typically called after a "settlement-paid" event from the LP Vault contract.
+ */
+export const processClaimSettlement = internalAction({
+  args: {
+    policyId: v.id("policies"),
+    settlementAmountPaid: v.number(), // Total amount paid out by the LP Vault for this policy settlement
+    settlementToken: v.string(),
+    chainTxId: v.string(),      // On-chain transaction ID of the settlement payout
+    blockHeight: v.number(),
+    recipientAddress: v.string(), // Who received the settlement on-chain
+    // Details of how much of each provider's collateral contributed to the settlement.
+    // This might come from on-chain events or be reconstructed if necessary.
+    providerContributions: v.array(
+      v.object({
+        provider: v.string(),
+        amountSettledFromProvider: v.number(), // The portion of this provider's locked capital used for settlement
+      })
+    ),
+  },
+  handler: async (ctx, args): Promise<ProcessClaimSettlementResult> => {
+    console.log(`Processing claim settlement for policyId: ${args.policyId}, chainTxId: ${args.chainTxId}`);
+
+    // 1. Log the settlement payout in pool_transactions
+    const description = `Settlement paid for policy ${args.policyId} to ${args.recipientAddress}. Amount: ${args.settlementAmountPaid} ${args.settlementToken}.`;
+    const loggedPoolTransactionId = await ctx.runMutation(internal.liquidityPool.logGenericPoolTransaction, {
+      tx_id: `settlement-${args.policyId}-${args.chainTxId}`, // Ensure uniqueness
+      tx_type: TransactionType.SETTLEMENT, 
+      amount: args.settlementAmountPaid,
+      token: args.settlementToken,
+      status: TransactionStatus.CONFIRMED,
+      chain_tx_id: args.chainTxId,
+      policy_id: args.policyId,
+      description: description,
+      provider: "SYSTEM_SETTLEMENT", // Or derive if specific provider context makes sense
+      timestamp: Date.now(), // Or use block timestamp if available and preferred
+      metadata: { 
+        recipientAddress: args.recipientAddress,
+        blockHeight: args.blockHeight,
+        providerContributions: args.providerContributions 
+      }
+    });
+
+    // 2. Update provider_balances: reduce total_deposited for each contributing provider
+    for (const contribution of args.providerContributions) {
+      await ctx.runMutation(internal.liquidityPool.adjustProviderCapitalForSettlement, {
+        provider: contribution.provider,
+        token: args.settlementToken, // Assuming settlementToken is the same as collateral token here
+        amountSettled: contribution.amountSettledFromProvider,
+      });
+    }
+
+    // 3. Call releaseCollateral for the policy with reason EXERCISED.
+    // This will update policy_allocations status to EXERCISED 
+    // and reduce providers' locked_balances by their original allocation to this policy.
+    try {
+      await ctx.runAction(internal.liquidityPool.releaseCollateral, {
+        policyId: args.policyId,
+        reason: AllocationStatus.EXERCISED, // Use AllocationStatus enum value directly
+      });
+    } catch (error: any) {
+      // If releaseCollateral fails (e.g., allocations already released), log it but continue
+      // as the primary settlement accounting (capital reduction) is done.
+      console.error(`Error during releaseCollateral for exercised policy ${args.policyId}: ${error.message}`);
+      // This might indicate an inconsistent state if allocations weren't active before settlement.
+    }
+
+    // 4. Schedule pool metrics update
+    await ctx.scheduler.runAfter(0, internal.liquidityPool.updatePoolMetrics, {
+      token: args.settlementToken,
+    });
+
+    return {
+      success: true,
+      message: `Claim settlement processed successfully for policy ${args.policyId}.`,
+      loggedPoolTransactionId
+    };
+  },
+});
+
+// Helper internalMutation to log generic pool transactions (if not already existing)
+// This is a simplified version. A more robust one might take more specific typed args.
+export const logGenericPoolTransaction = internalMutation({
+    args: {
+        tx_id: v.string(),
+        provider: v.string(),
+        tx_type: v.string(), // Using string; ideally map to TransactionType enum if used consistently
+        amount: v.number(),
+        token: v.string(),
+        timestamp: v.number(),
+        status: v.string(), // Using string; ideally map to TransactionStatus enum
+        policy_id: v.optional(v.id("policies")),
+        chain_tx_id: v.optional(v.string()),
+        description: v.optional(v.string()),
+        metadata: v.optional(v.any()),
+    },
+    handler: async (ctx, args) => {
+        return await ctx.db.insert("pool_transactions", args);
+    },
+});
+
+// Helper internalMutation to adjust provider capital after settlement
+export const adjustProviderCapitalForSettlement = internalMutation({
+  args: {
+    provider: v.string(),
+    token: v.string(),
+    amountSettled: v.number(), // The amount of this provider's capital that was paid out
+  },
+  handler: async (ctx, args) => {
+    const balance = await ctx.db
+      .query("provider_balances")
+      .withIndex("by_provider_token", q => q.eq("provider", args.provider).eq("token", args.token))
+      .unique();
+
+    if (!balance) {
+      console.error(`Provider balance not found for ${args.provider}, token ${args.token} during settlement adjustment.`);
+      // This is a critical issue, implies inconsistency.
+      // Depending on policy, might throw error or just log.
+      return;
+    }
+
+    // Reduce total_deposited by the amount that was actually paid out from this provider's capital
+    // The locked_balance reduction is handled by releaseCollateral action for the entire original allocation.
+    const newTotalDeposited = Math.max(0, balance.total_deposited - args.amountSettled);
+
+    await ctx.db.patch(balance._id, {
+      total_deposited: newTotalDeposited,
+      last_updated: Date.now(),
+    });
+    console.log(`Adjusted capital for provider ${args.provider} due to settlement. Amount settled: ${args.amountSettled}. New total_deposited: ${newTotalDeposited}`);
+  },
+});
+
+
+// CV-LP-227: Implement getClaimPaymentStatus query
+// ... placeholder for next task ...
+
+// CV-LP-228: Implement registerLiquidityProvider action
+
+// Helper internal query to check if a provider has any balance records
+export const checkProviderHasActivity = internalQuery({
+  args: { provider: v.string() },
+  handler: async (ctx, args): Promise<boolean> => {
+    const balanceRecord = await ctx.db
+      .query("provider_balances")
+      .withIndex("by_provider", q => q.eq("provider", args.provider))
+      .first(); // Check if at least one record exists
+    return balanceRecord !== null;
+  },
+});
+
+interface RegisterLiquidityProviderResult {
+  success: boolean;
+  message: string;
+  isNewRegistration?: boolean; // True if this was effectively their first "registration" type action
+  provider?: string;
+}
+
+export const registerLiquidityProvider = action({
+  args: {},
+  handler: async (ctx, args): Promise<RegisterLiquidityProviderResult> => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity || !identity.tokenIdentifier) {
+      return { success: false, message: "Authentication required to register as a liquidity provider." };
+    }
+    const providerPrincipal = identity.tokenIdentifier;
+
+    console.log(`Registering liquidity provider: ${providerPrincipal}`);
+
+    const hasActivity = await ctx.runQuery(internal.liquidityPool.checkProviderHasActivity, {
+      provider: providerPrincipal,
+    });
+
+    if (hasActivity) {
+      return {
+        success: true,
+        message: "Provider is already known (has existing activity/balances).",
+        isNewRegistration: false,
+        provider: providerPrincipal,
+      };
+    }
+
+    // At this point, the provider has no activity in provider_balances.
+    // If there was a dedicated 'providers' table, we would add them here.
+    // For now, this action acknowledges their intent.
+    // Future: Could create an entry in a 'providers' table here if desired.
+    // e.g., await ctx.runMutation(internal.liquidityPool.createProviderRecord, { provider: providerPrincipal });
+
+    return {
+      success: true,
+      message: "Liquidity provider registration intent acknowledged. You can now commit capital.",
+      isNewRegistration: true,
+      provider: providerPrincipal,
+    };
+  },
+});
+
+
+// CV-LP-229: Implement updateProviderPreferences action
+// ... placeholder for next task ...
+
+// Define the structure of preferences for clarity and type safety
+// This should align with the fields in the (to-be-created) provider_preferences table schema
+const providerPreferenceFields = {
+  riskTierComfort: v.optional(v.string()), // e.g., "conservative", "balanced", "aggressive"
+  notificationSettings: v.optional(v.object({
+    emailOnSettlement: v.optional(v.boolean()),
+    emailOnNewPolicyAllocated: v.optional(v.boolean()),
+    // Add other notification flags as needed
+  })),
+  autoReinvestPremiums: v.optional(v.boolean()),
+  // Add other preference fields here
+};
+
+// Internal mutation to save/update provider preferences
+// Assumes a 'provider_preferences' table exists with an index on 'provider'
+export const saveProviderPreferences = internalMutation({
+  args: {
+    provider: v.string(),
+    preferencesToUpdate: v.object(providerPreferenceFields), // Pass only the fields to be updated
+  },
+  handler: async (ctx, args) => {
+    const existingPreferences = await ctx.db
+      .query("provider_preferences") // Target new table
+      .withIndex("by_provider", q => q.eq("provider", args.provider))
+      .unique();
+
+    const updates = { ...args.preferencesToUpdate, lastUpdated: Date.now() };
+
+    if (existingPreferences) {
+      await ctx.db.patch(existingPreferences._id, updates);
+      console.log(`Updated preferences for provider: ${args.provider}`);
+      return await ctx.db.get(existingPreferences._id);
+    } else {
+      const newPrefsId = await ctx.db.insert("provider_preferences", {
+        provider: args.provider,
+        ...updates,
+      });
+      console.log(`Created new preferences for provider: ${args.provider}`);
+      return await ctx.db.get(newPrefsId);
+    }
+  },
+});
+
+interface UpdateProviderPreferencesResult {
+  success: boolean;
+  message: string;
+  updatedPreferences?: Doc<"provider_preferences"> | null;
+}
+
+export const updateProviderPreferences = action({
+  args: providerPreferenceFields, // Reuse the fields definition for action arguments
+  handler: async (ctx, preferencesToUpdate): Promise<UpdateProviderPreferencesResult> => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity || !identity.tokenIdentifier) {
+      return { success: false, message: "Authentication required." };
+    }
+    const providerPrincipal = identity.tokenIdentifier;
+
+    console.log(`Updating preferences for provider: ${providerPrincipal}`);
+
+    if (Object.keys(preferencesToUpdate).length === 0) {
+        return { success: false, message: "No preferences provided to update." };
+    }
+
+    try {
+      const updatedPreferencesDoc = await ctx.runMutation(internal.liquidityPool.saveProviderPreferences, {
+        provider: providerPrincipal,
+        preferencesToUpdate: preferencesToUpdate,
+      });
+
+      if (!updatedPreferencesDoc) {
+        return { success: false, message: "Failed to save preferences." }; 
+      }
+
+      return {
+        success: true,
+        message: "Provider preferences updated successfully.",
+        updatedPreferences: updatedPreferencesDoc,
+      };
+    } catch (error: any) {
+      console.error(`Error updating provider preferences for ${providerPrincipal}:`, error);
+      return { success: false, message: `Error updating preferences: ${error.message}` };
+    }
+  },
+});
+
+
+// CV-LP-230: Implement getProviderPreferences query
+
+// Internal query to fetch preferences for a specific provider
+export const fetchProviderPreferences = internalQuery({
+  args: { provider: v.string() },
+  handler: async (ctx, args): Promise<Doc<"provider_preferences"> | null> => {
+    return await ctx.db
+      .query("provider_preferences")
+      .withIndex("by_provider", q => q.eq("provider", args.provider))
+      .unique();
+  },
+});
+
+interface GetProviderPreferencesResult {
+  success: boolean;
+  message?: string; // Optional message, e.g., if no preferences found
+  preferences: Doc<"provider_preferences"> | null;
+}
+
+export const getProviderPreferences = query({
+  args: {},
+  handler: async (ctx, args): Promise<GetProviderPreferencesResult> => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity || !identity.tokenIdentifier) {
+      return { success: false, message: "Authentication required.", preferences: null };
+    }
+    const providerPrincipal = identity.tokenIdentifier;
+
+    console.log(`Fetching preferences for provider: ${providerPrincipal}`);
+
+    const preferencesDoc = await ctx.runQuery(internal.liquidityPool.fetchProviderPreferences, {
+      provider: providerPrincipal,
+    });
+
+    if (!preferencesDoc) {
+      return {
+        success: true, // Success in fetching, but no data
+        message: "No preferences found for this provider.",
+        preferences: null,
+      };
+    }
+
+    return {
+      success: true,
+      preferences: preferencesDoc,
+    };
+  },
+});
+
+
+// Administrative Functions
+// CV-LP-231: Implement getSystemPoolStats query (admin-only)
+
+interface SystemPoolStatsResult {
+  success: boolean;
+  message?: string;
+  stats?: {
+    totalTokensTrackedInMetrics: number;
+    overallTVLApproximation: number; // Sum of total_liquidity from latest pool_metrics, needs price conversion for true USD TVL
+    overallAvailableLiquidityApproximation: number;
+    overallLockedLiquidityApproximation: number;
+    latestMetricsByToken: Record<string, Doc<"pool_metrics">>;
+    totalUniqueProviders: number;
+    totalPoolTransactions: number; // Consider adding time filter for relevance
+    totalActivePolicyAllocations: number;
+    // Add more aggregated stats as needed
+  };
+}
+
+export const getSystemPoolStats = query({
+  args: {},
+  handler: async (ctx, args): Promise<SystemPoolStatsResult> => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity || !identity.tokenIdentifier) {
+      return { success: false, message: "Authentication required." };
+    }
+    // Admin check - assuming identity.roles is an array of strings
+    const roles = (identity as any).roles;
+    const isAdmin = Array.isArray(roles) && roles.includes("admin");
+    if (!isAdmin) {
+      return { success: false, message: "Admin access required." };
+    }
+
+    console.log("Fetching system pool stats (admin-only)");
+
+    // 1. Get latest pool_metrics for each token
+    const allTokensWithMetrics = await ctx.db.query("pool_metrics").collect();
+    const latestMetricsByToken: Record<string, Doc<"pool_metrics">> = {};
+    for (const metric of allTokensWithMetrics) {
+      if (!latestMetricsByToken[metric.token] || metric.timestamp > latestMetricsByToken[metric.token]!.timestamp) {
+        latestMetricsByToken[metric.token] = metric;
+      }
+    }
+
+    let overallTVLApprox = 0;
+    let overallAvailableApprox = 0;
+    let overallLockedApprox = 0;
+    Object.values(latestMetricsByToken).forEach(m => {
+      overallTVLApprox += m.total_liquidity; // Note: This is sum of token amounts, not USD value
+      overallAvailableApprox += m.available_liquidity;
+      overallLockedApprox += m.locked_liquidity;
+    });
+
+    // 2. Count unique providers
+    const allProviderBalanceEntries = await ctx.db.query("provider_balances").collect();
+    const uniqueProviders = new Set(allProviderBalanceEntries.map(pb => pb.provider));
+    const totalUniqueProviders = uniqueProviders.size;
+
+    // 3. Count total pool transactions (can be very large, consider filtering or sampling for prod)
+    // For simplicity, just getting total count. A more advanced version might filter by recent period.
+    const totalPoolTransactions = (await ctx.db.query("pool_transactions").collect()).length;
+    
+    // 4. Count total active policy allocations
+    const activeAllocations = await ctx.db.query("policy_allocations")
+                                     .filter(q => q.eq(q.field("status"), AllocationStatus.ACTIVE))
+                                     .collect();
+    const totalActivePolicyAllocations = activeAllocations.length;
+
+    return {
+      success: true,
+      stats: {
+        totalTokensTrackedInMetrics: Object.keys(latestMetricsByToken).length,
+        overallTVLApproximation: overallTVLApprox,
+        overallAvailableLiquidityApproximation: overallAvailableApprox,
+        overallLockedLiquidityApproximation: overallLockedApprox,
+        latestMetricsByToken: latestMetricsByToken,
+        totalUniqueProviders: totalUniqueProviders,
+        totalPoolTransactions: totalPoolTransactions,
+        totalActivePolicyAllocations: totalActivePolicyAllocations,
+      },
+    };
+  },
+});
+
+
+// CV-LP-232: Implement pausePoolOperations action (admin-only)
+
+const POOL_STATUS_SINGLETON_ID = "global" as const;
+
+// Internal query to get the current pool operational status
+export const getPoolPausedState = internalQuery({
+  args: {},
+  handler: async (ctx):
+    Promise<Doc<"pool_status"> | null> => {
+    return await ctx.db
+      .query("pool_status") // Assumes 'pool_status' table exists
+      .withIndex("by_singleton_id", q => q.eq("singletonId", POOL_STATUS_SINGLETON_ID))
+      .unique();
+  },
+});
+
+// Internal mutation to update the pool's operational status
+export const updatePoolPausedState = internalMutation({
+  args: {
+    isDepositsPaused: v.optional(v.boolean()),
+    isWithdrawalsPaused: v.optional(v.boolean()),
+    isNewAllocationsPaused: v.optional(v.boolean()),
+    pausedReason: v.optional(v.string()),
+    adminPrincipal: v.string(),
+  },
+  handler: async (ctx, args) => {
+    let existingStatus = await ctx.db
+      .query("pool_status")
+      .withIndex("by_singleton_id", q => q.eq("singletonId", POOL_STATUS_SINGLETON_ID))
+      .unique();
+
+    const updates: Partial<Doc<"pool_status">> = { lastUpdated: Date.now(), updatedBy: args.adminPrincipal };
+    if (args.isDepositsPaused !== undefined) updates.isDepositsPaused = args.isDepositsPaused;
+    if (args.isWithdrawalsPaused !== undefined) updates.isWithdrawalsPaused = args.isWithdrawalsPaused;
+    if (args.isNewAllocationsPaused !== undefined) updates.isNewAllocationsPaused = args.isNewAllocationsPaused;
+    if (args.pausedReason !== undefined) updates.pausedReason = args.pausedReason;
+    // If reason is being cleared, explicitly set to undefined or null if schema allows
+    else if (args.pausedReason === null) updates.pausedReason = undefined; 
+
+
+    if (existingStatus) {
+      await ctx.db.patch(existingStatus._id, updates);
+    } else {
+      // Initialize with defaults if not explicitly set to pause, and ensure all required fields are present for insert.
+      await ctx.db.insert("pool_status", {
+        singletonId: POOL_STATUS_SINGLETON_ID,
+        isDepositsPaused: args.isDepositsPaused ?? false,
+        isWithdrawalsPaused: args.isWithdrawalsPaused ?? false,
+        isNewAllocationsPaused: args.isNewAllocationsPaused ?? false,
+        pausedReason: args.pausedReason, // This is optional in schema, so undefined is fine if not provided in args
+        lastUpdated: Date.now(), // Required, so explicitly set
+        updatedBy: args.adminPrincipal, // Required, so explicitly set
+      });
+    }
+    return await ctx.db.query("pool_status").withIndex("by_singleton_id", q => q.eq("singletonId", POOL_STATUS_SINGLETON_ID)).unique();
+  },
+});
+
+interface PausePoolOperationsResult {
+  success: boolean;
+  message: string;
+  newStatus?: Doc<"pool_status"> | null;
+}
+
+export const pausePoolOperations = action({
+  args: {
+    pauseDeposits: v.optional(v.boolean()),
+    pauseWithdrawals: v.optional(v.boolean()),
+    pauseNewAllocations: v.optional(v.boolean()),
+    reason: v.optional(v.string()), // Reason for pausing/unpausing
+  },
+  handler: async (ctx, args): Promise<PausePoolOperationsResult> => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity || !identity.tokenIdentifier) {
+      return { success: false, message: "Authentication required." };
+    }
+    const adminPrincipal = identity.tokenIdentifier;
+
+    const roles = (identity as any).roles;
+    const isAdmin = Array.isArray(roles) && roles.includes("admin");
+    if (!isAdmin) {
+      return { success: false, message: "Admin access required." };
+    }
+
+    if (Object.keys(args).length === 0) {
+        return { success: false, message: "No operations specified to pause/unpause." };
+    }
+
+    console.log(`Admin ${adminPrincipal} attempting to update pool operations status:`, args);
+
+    try {
+      const newStatus = await ctx.runMutation(internal.liquidityPool.updatePoolPausedState, {
+        isDepositsPaused: args.pauseDeposits,
+        isWithdrawalsPaused: args.pauseWithdrawals,
+        isNewAllocationsPaused: args.pauseNewAllocations,
+        pausedReason: args.reason,
+        adminPrincipal: adminPrincipal,
+      });
+      return { success: true, message: "Pool operational status updated successfully.", newStatus };
+    } catch (error: any) {
+      console.error(`Error updating pool operational status by admin ${adminPrincipal}:`, error);
+      return { success: false, message: `Error updating status: ${error.message}` };
+    }
+  },
 });
