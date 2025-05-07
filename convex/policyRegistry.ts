@@ -6,43 +6,26 @@ import { internal, api } from "./_generated/api"; // API and internal functions 
 // Utilities that might have been used by original top-level functions or are general
 import { calculateBlackScholesPremium } from "./premium"; 
 import { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
-import { mockNotifyLiquidityPoolOfPremiumDistribution } from "./mocks";
 
-// Import all necessary types from the centralized types module
-import {
-  PolicyStatus,
-  PolicyType,
-  PositionType,
-  TokenType,
-  PolicyEventType,
-  TransactionStatus,
-  CalculatePremiumForCreationParams,
-  PolicyActivationEligibilityResult,
-  PolicyCreationParams
-} from "./policyRegistry/types";
-
-// Import public-facing functions from their new modules
-import { getPolicy, getPoliciesForUser, getPoliciesForCounterparty, getPolicyEvents } from "./policyRegistry/queries";
-import { updateTransactionStatusPublic } from "./policyRegistry/transactionManager";
-import { checkPolicyActivationEligibility } from "./policyRegistry/eligibilityChecks"; // mockCheckPoolLiquidity is not re-exported
-import { requestPolicyCreation } from "./policyRegistry/policyLifecycle";
-import { getCounterpartyIncomeStats, acceptPolicyOfferByCounterparty } from "./policyRegistry/counterpartyOperations";
-
-// --- Re-export public-facing functionalities --- 
+// Re-export public-facing functions from their new modules
+// No need to import types here since we're re-exporting from modules that already have them
 
 // From queries.ts
-export { getPolicy, getPoliciesForUser, getPoliciesForCounterparty, getPolicyEvents };
+export { getPolicy, getPoliciesForUser, getPoliciesForCounterparty, getPolicyEvents } from "./policyRegistry/queries";
 
 // From transactionManager.ts
-export { updateTransactionStatusPublic };
+export { updateTransactionStatusPublic } from "./policyRegistry/transactionManager";
 
 // From eligibilityChecks.ts
-export { checkPolicyActivationEligibility };
+export { checkPolicyActivationEligibility } from "./policyRegistry/eligibilityChecks";
 
 // From policyLifecycle.ts
-export { requestPolicyCreation };
+export { requestPolicyCreation } from "./policyRegistry/policyLifecycle";
 
 // From counterpartyOperations.ts
-export { getCounterpartyIncomeStats, acceptPolicyOfferByCounterparty };
+export { getCounterpartyIncomeStats, acceptPolicyOfferByCounterparty } from "./policyRegistry/counterpartyOperations";
+
+// Re-export types for external use
+export * from "./policyRegistry/types";
 
 console.log("convex/policyRegistry.ts loaded: Main re-export file for Policy Registry."); 

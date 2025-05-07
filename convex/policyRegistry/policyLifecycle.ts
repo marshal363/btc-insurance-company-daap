@@ -158,6 +158,7 @@ export const updatePolicyStatus = internalMutation({
 
 /**
  * Request policy creation. Builds a transaction for the user to sign.
+ * Modified to use blockchain integration for transaction building.
  */
 export const requestPolicyCreation = action({
   args: {
@@ -226,18 +227,19 @@ export const requestPolicyCreation = action({
 
     const expirationHeight = await daysToBlockHeight(params.durationDays);
 
-    const policyCreationTx = await preparePolicyCreationTransaction({
-      owner: params.owner,
-      counterparty: params.counterparty,
-      protectedValue: usdToSats(params.protectedValueUSD),
-      protectionAmount: btcToSats(params.protectionAmountBTC),
-      expirationHeight,
-      premium: usdToSats(premiumUSD!),
-      policyType: params.policyType,
-      positionType: positionType,
-      collateralToken: params.collateralToken,
-      settlementToken: params.settlementToken,
+    // UPDATED: Use blockchain integration instead of mock transaction preparation
+    // Get transaction from blockchain integration
+    const blockchainTxResult = await ctx.runAction(internal.policyRegistry.blockchainIntegration.createPolicyCreationTransaction, {
+      params: {
+        ...params,
+        positionType,
+        expirationHeight,
+        premiumUSD: premiumUSD!,
+      }
     });
+
+    // Use the transaction response from blockchain integration
+    const policyCreationTx = blockchainTxResult.txResponse;
 
     const pendingTxId: Id<"pendingPolicyTransactions"> = await ctx.runMutation(internal.policyRegistry.transactionManager.createPendingPolicyTransaction, {
       actionType: "Create",
@@ -249,15 +251,21 @@ export const requestPolicyCreation = action({
           expirationHeight,
           premiumUSD: premiumUSD, 
         },
-        transaction: policyCreationTx,
+        txOptions: policyCreationTx.success ? policyCreationTx.txOptions : undefined
       },
-      userId: params.owner,
+      error: policyCreationTx.success ? undefined : policyCreationTx.error
     });
+
+    // If there was an error in building the transaction, still return but include the error
+    if (!policyCreationTx.success) {
+      console.error("Error building policy creation transaction:", policyCreationTx.error);
+      throw new Error(`Failed to create policy transaction: ${policyCreationTx.error}`);
+    }
 
     return {
       pendingTxId,
       transaction: policyCreationTx.txOptions,
-      estimatedPremium: premiumUSD as number,
+      estimatedPremium: premiumUSD!,
       positionType,
     };
   },

@@ -296,4 +296,100 @@ export const updateTransactionStatusPublic = mutation({
       updatedAt: Date.now(),
     });
   }
+});
+
+/**
+ * Internal mutation to handle policy creation event from blockchain.
+ */
+export const handlePolicyCreatedEvent = internalMutation({
+  args: {
+    policyId: v.string(),
+    owner: v.string(),
+    counterparty: v.optional(v.string()),
+    policyType: v.string(),
+    positionType: v.string(),
+    strikePrice: v.number(),
+    protectionAmount: v.number(),
+    premium: v.number(),
+    expirationHeight: v.number(),
+    creationHeight: v.number(),
+    transactionId: v.optional(v.string()),
+    collateralToken: v.optional(v.string()),
+    settlementToken: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    console.log(`Processing on-chain policy creation event for policy ID ${args.policyId}`);
+    
+    // Check if we already have a record for this policy
+    const existingPolicyQuery = await ctx.db
+      .query("policies")
+      .withIndex("by_onChainPolicyId", (q) => q.eq("onChainPolicyId", args.policyId))
+      .first();
+    
+    if (existingPolicyQuery) {
+      console.log(`Policy with on-chain ID ${args.policyId} already exists in our database.`);
+      return existingPolicyQuery._id;
+    }
+    
+    // Find any pending transactions that might be related to this policy
+    const pendingTx = await ctx.db
+      .query("pendingPolicyTransactions")
+      .withIndex("by_status", (q) => q.eq("status", "Submitted"))
+      .filter((q) => 
+        q.eq(q.field("payload.params.owner"), args.owner) &&
+        q.eq(q.field("payload.params.policyType"), args.policyType) &&
+        q.eq(q.field("actionType"), "Create")
+      )
+      .first();
+    
+    // Create/update policy record in the database
+    const policyData = {
+      owner: args.owner,
+      counterparty: args.counterparty || "SYSTEM",
+      status: "ACTIVE" as const,
+      policyType: args.policyType,
+      positionType: args.positionType,
+      protectedValue: args.strikePrice,
+      protectionAmount: args.protectionAmount,
+      premium: args.premium,
+      creationHeight: args.creationHeight,
+      expirationHeight: args.expirationHeight,
+      onChainPolicyId: args.policyId,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      collateralToken: args.collateralToken || "STX",
+      settlementToken: args.settlementToken || "STX",
+      // If there was a pending transaction, include its metadata
+      description: pendingTx?.payload?.params?.description,
+      displayName: pendingTx?.payload?.params?.displayName,
+      tags: pendingTx?.payload?.params?.tags,
+    };
+    
+    // Create the policy in our database
+    const policyId = await ctx.db.insert("policies", policyData);
+    
+    // Create an event for the policy creation
+    await ctx.db.insert("policyEvents", {
+      policyConvexId: policyId,
+      eventType: "OnChainConfirmed",
+      data: {
+        onChainPolicyId: args.policyId,
+        transactionId: args.transactionId,
+      },
+      timestamp: Date.now(),
+      blockHeight: args.creationHeight,
+      transactionId: args.transactionId,
+    });
+    
+    // If there was a pending transaction, link it to the policy and update its status
+    if (pendingTx) {
+      await ctx.db.patch(pendingTx._id, {
+        status: "Confirmed",
+        policyConvexId: policyId,
+        updatedAt: Date.now(),
+      });
+    }
+    
+    return policyId;
+  },
 }); 

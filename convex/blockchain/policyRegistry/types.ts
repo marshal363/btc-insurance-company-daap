@@ -4,7 +4,10 @@
  * This file contains type definitions specific to Policy Registry blockchain operations.
  */
 
-import { BlockchainReadResponse, BlockchainWriteResponse, TransactionParams } from "../common/types";
+import { BlockchainReadResponse, BlockchainWriteResponse, TransactionParams, BlockchainError, BlockchainErrorCode, NetworkEnvironment } from "../common/types";
+
+// Re-export the common types used across the Policy Registry module
+export { BlockchainError, BlockchainErrorCode, NetworkEnvironment };
 
 /**
  * Policy status types corresponding to on-chain status
