@@ -13,6 +13,23 @@ import type {
   FilterApi,
   FunctionReference,
 } from "convex/server";
+import type * as blockchain_common_contracts from "../blockchain/common/contracts.js";
+import type * as blockchain_common_eventListener from "../blockchain/common/eventListener.js";
+import type * as blockchain_common_index from "../blockchain/common/index.js";
+import type * as blockchain_common_network from "../blockchain/common/network.js";
+import type * as blockchain_common_transaction from "../blockchain/common/transaction.js";
+import type * as blockchain_common_types from "../blockchain/common/types.js";
+import type * as blockchain_common_utils from "../blockchain/common/utils.js";
+import type * as blockchain_index from "../blockchain/index.js";
+import type * as blockchain_liquidityPool_types from "../blockchain/liquidityPool/types.js";
+import type * as blockchain_oracle_adapter from "../blockchain/oracle/adapter.js";
+import type * as blockchain_oracle_index from "../blockchain/oracle/index.js";
+import type * as blockchain_oracle_priceReader from "../blockchain/oracle/priceReader.js";
+import type * as blockchain_oracle_priceWriter from "../blockchain/oracle/priceWriter.js";
+import type * as blockchain_oracle_types from "../blockchain/oracle/types.js";
+import type * as blockchain_policyRegistry_types from "../blockchain/policyRegistry/types.js";
+import type * as blockchain_testing_dependencyAnalyzer from "../blockchain/testing/dependencyAnalyzer.js";
+import type * as blockchain_testing_mocks from "../blockchain/testing/mocks.js";
 import type * as blockchainIntegration from "../blockchainIntegration.js";
 import type * as blockchainPreparation from "../blockchainPreparation.js";
 import type * as crons from "../crons.js";
@@ -49,6 +66,10 @@ import type * as prices from "../prices.js";
 import type * as quotes from "../quotes.js";
 import type * as reconciliationJobs from "../reconciliationJobs.js";
 import type * as router from "../router.js";
+import type * as services_index from "../services/index.js";
+import type * as services_oracle_index from "../services/oracle/index.js";
+import type * as services_oracle_premiumCalculation from "../services/oracle/premiumCalculation.js";
+import type * as services_oracle_priceService from "../services/oracle/priceService.js";
 import type * as settlementJobs from "../settlementJobs.js";
 import type * as transactionStatusJobs from "../transactionStatusJobs.js";
 import type * as types from "../types.js";
@@ -63,6 +84,23 @@ import type * as users from "../users.js";
  * ```
  */
 declare const fullApi: ApiFromModules<{
+  "blockchain/common/contracts": typeof blockchain_common_contracts;
+  "blockchain/common/eventListener": typeof blockchain_common_eventListener;
+  "blockchain/common/index": typeof blockchain_common_index;
+  "blockchain/common/network": typeof blockchain_common_network;
+  "blockchain/common/transaction": typeof blockchain_common_transaction;
+  "blockchain/common/types": typeof blockchain_common_types;
+  "blockchain/common/utils": typeof blockchain_common_utils;
+  "blockchain/index": typeof blockchain_index;
+  "blockchain/liquidityPool/types": typeof blockchain_liquidityPool_types;
+  "blockchain/oracle/adapter": typeof blockchain_oracle_adapter;
+  "blockchain/oracle/index": typeof blockchain_oracle_index;
+  "blockchain/oracle/priceReader": typeof blockchain_oracle_priceReader;
+  "blockchain/oracle/priceWriter": typeof blockchain_oracle_priceWriter;
+  "blockchain/oracle/types": typeof blockchain_oracle_types;
+  "blockchain/policyRegistry/types": typeof blockchain_policyRegistry_types;
+  "blockchain/testing/dependencyAnalyzer": typeof blockchain_testing_dependencyAnalyzer;
+  "blockchain/testing/mocks": typeof blockchain_testing_mocks;
   blockchainIntegration: typeof blockchainIntegration;
   blockchainPreparation: typeof blockchainPreparation;
   crons: typeof crons;
@@ -99,6 +137,10 @@ declare const fullApi: ApiFromModules<{
   quotes: typeof quotes;
   reconciliationJobs: typeof reconciliationJobs;
   router: typeof router;
+  "services/index": typeof services_index;
+  "services/oracle/index": typeof services_oracle_index;
+  "services/oracle/premiumCalculation": typeof services_oracle_premiumCalculation;
+  "services/oracle/priceService": typeof services_oracle_priceService;
   settlementJobs: typeof settlementJobs;
   transactionStatusJobs: typeof transactionStatusJobs;
   types: typeof types;

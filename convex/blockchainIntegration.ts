@@ -141,90 +141,19 @@ const stacksApiUrl = network.coreApiUrl;
 // --- Blockchain Interaction Functions ---
 
 /**
- * Reads the latest price data from the on-chain oracle contract.
- * IMPORTANT: Changed from query to internalAction to allow fetch calls.
- *
- * @returns {Promise<{ price: string | null, timestamp: string | null, error?: string }>} 
- *          An object containing the price and timestamp as strings if successful,
- *          or null values and an error message if the read fails or returns no data.
+ * LEGACY ADAPTER: This function uses the new modular Oracle implementation.
+ * It is maintained for backward compatibility.
  */
 export const readLatestOraclePrice = internalAction({
   handler: async (ctx): Promise<{ price: string | null, timestamp: string | null, error?: string }> => {
-    console.log(`Reading latest price from ${ORACLE_CONTRACT_ADDRESS}.${ORACLE_CONTRACT_NAME}`);
-
-    try {
-      const options = {
-        contractAddress: ORACLE_CONTRACT_ADDRESS,
-        contractName: ORACLE_CONTRACT_NAME,
-        functionName: 'get-latest-price',
-        functionArgs: [], // No arguments for get-latest-price
-        network: network,
-        senderAddress: ORACLE_CONTRACT_ADDRESS, // Sender address doesn't matter for read-only calls, but required
-      };
-
-      const resultCV: ClarityValue = await callReadOnlyFunction(options);
-      const resultJson = cvToJSON(resultCV);
-
-      // Adjusted check for OK response, considering potential Clarity response wrapper
-      if (resultJson.success === true && resultJson.type.includes('(tuple (price uint) (timestamp uint))')) {
-        // Safely access nested values
-        const priceValue = resultJson.value?.value?.price?.value;
-        const timestampValue = resultJson.value?.value?.timestamp?.value;
-
-        if (priceValue && timestampValue) {
-          console.log(`Successfully read price: ${priceValue}, timestamp: ${timestampValue} from oracle.`);
-          return {
-            price: priceValue, // Return as string
-            timestamp: timestampValue, // Return as string
-          };
-        } else {
-           console.error('Error parsing successful response fields from get-latest-price:', JSON.stringify(resultJson, null, 2));
-           return { price: null, timestamp: null, error: 'Error parsing successful response fields.' };
-        }
-      } else if (resultJson.success === false && resultJson.type.includes('uint')) { // Check for Clarity error response (uint code)
-         const errorCode = resultJson.value?.value; // e.g., '104' for ERR-NO-PRICE-DATA
-
-         console.warn(`Oracle contract returned error code: ${errorCode}. Price data might not be available yet.`);
-         if (errorCode === '104') {
-            return { price: null, timestamp: null, error: 'ERR_NO_PRICE_DATA' };
-         }
-         if (errorCode === '102') {
-             console.warn(`Oracle contract returned ERR_TIMESTAMP_TOO_OLD (u102). Data is stale.`);
-             return { price: null, timestamp: null, error: 'ERR_TIMESTAMP_TOO_OLD' };
-         }
-         return { price: null, timestamp: null, error: `Oracle contract error code: ${errorCode}` };
-      } else {
-         // This case handles genuinely unexpected structures
-         console.error('Unexpected response structure from get-latest-price that is neither known OK nor known ERR:', JSON.stringify(resultJson, null, 2));
-         return { price: null, timestamp: null, error: 'Unexpected response structure.' };
-      }
-
-    } catch (error: any) {
-      console.error('Error calling read-only function get-latest-price:', error);
-      return {
-        price: null,
-        timestamp: null,
-        error: error.message || 'Failed to read from oracle contract.',
-      };
-    }
+    console.log("Legacy adapter: Redirecting to new Oracle implementation");
+    return await ctx.runAction(internal.blockchain.oracle.adapter.readLatestOraclePriceAdapter, {});
   },
 });
 
 /**
- * Prepares the latest aggregated price data for submission to the oracle contract.
- * Implements the multi-factor threshold logic (CVX-301) to determine if an update should be performed.
- * 
- * This action:
- * 1. Fetches the latest aggregated price from the Convex DB
- * 2. Fetches the last submitted on-chain price from the blockchain
- * 3. Evaluates if an update is needed based on configured thresholds:
- *    - Price change percentage threshold
- *    - Maximum time since last update threshold
- *    - Minimum time between updates threshold
- *    - Minimum source count threshold
- * 4. If update is needed, returns the price data; if not, returns a result indicating no update needed
- * 
- * @returns {Promise<{ shouldUpdate: boolean, reason: string, priceInSatoshis?: number, currentTimestamp?: number, percentChange?: number | null, sourceCount?: number }>}
+ * LEGACY ADAPTER: This function uses the new modular Oracle implementation.
+ * It is maintained for backward compatibility.
  */
 export const prepareOracleSubmission = internalAction({
   args: {},
@@ -236,148 +165,83 @@ export const prepareOracleSubmission = internalAction({
     percentChange?: number | null;
     sourceCount?: number;
   }> => {
-    console.log("prepareOracleSubmission action running with multi-factor threshold logic...");
+    console.log("Legacy adapter: Redirecting to new Oracle implementation");
     
-    // Step 1: Fetch the latest aggregated price from the Convex DB
+    // Get the latest aggregated price data to pass to the adapter
     const latestAggregatedPriceData = await ctx.runQuery(api.prices.getLatestPrice, {});
     
     if (!latestAggregatedPriceData) {
-      console.warn("No aggregated price data available in the database. Cannot prepare oracle submission.");
       return { 
         shouldUpdate: false, 
         reason: "No aggregated price data available in the database." 
       };
     }
-
-    // Check minimum source count threshold
-    if (latestAggregatedPriceData.sourceCount !== undefined && 
-        latestAggregatedPriceData.sourceCount < ORACLE_UPDATE_THRESHOLDS.MIN_SOURCE_COUNT) {
-      console.warn(`Insufficient price sources (${latestAggregatedPriceData.sourceCount}) for confident update. Minimum required: ${ORACLE_UPDATE_THRESHOLDS.MIN_SOURCE_COUNT}`);
-      return {
-        shouldUpdate: false,
-        reason: `Insufficient price sources (${latestAggregatedPriceData.sourceCount}) for confident update. Minimum required: ${ORACLE_UPDATE_THRESHOLDS.MIN_SOURCE_COUNT}`
-      };
-    }
     
-    // Extract price in USD and convert to satoshis
-    const currentPriceUSD = latestAggregatedPriceData.price;
-    const priceInSatoshis = Math.round(currentPriceUSD * 100000000);
-    const currentTimestamp = latestAggregatedPriceData.timestamp;
-    
-    console.log(`Latest aggregated price data: ${currentPriceUSD} USD (${priceInSatoshis} satoshis), Timestamp: ${new Date(currentTimestamp).toISOString()}, Sources: ${latestAggregatedPriceData.sourceCount}`);
-    
-    // Step 2: Fetch the last submitted on-chain price from the blockchain
-    const onChainPriceData = await ctx.runAction(internal.blockchainIntegration.readLatestOraclePrice, {});
-    
-    // Case: No on-chain price exists yet (first submission) - always submit
-    if (!onChainPriceData.price || onChainPriceData.error === 'ERR_NO_PRICE_DATA') {
-      console.log("No existing on-chain price data found. This appears to be the first submission.");
-      return {
-        shouldUpdate: true,
-        reason: "Initial price submission (no existing on-chain data).",
-        priceInSatoshis,
-        currentTimestamp,
-        percentChange: null,
-        sourceCount: latestAggregatedPriceData.sourceCount,
-      };
-    }
-    
-    // Case: Error reading on-chain price (not NO_PRICE_DATA error)
-    if (onChainPriceData.error && onChainPriceData.error !== 'ERR_NO_PRICE_DATA') {
-      console.error(`Error reading on-chain price: ${onChainPriceData.error}. Cannot determine if update is needed.`);
-      return {
-        shouldUpdate: false,
-        reason: `Error reading on-chain price: ${onChainPriceData.error}. Cannot determine if update is needed.`,
-      };
-    }
-    
-    // Parse on-chain price and timestamp
-    const lastSubmittedPriceStr = onChainPriceData.price!;
-    const lastSubmittedTimestampStr = onChainPriceData.timestamp!;
-    const lastSubmittedPrice = parseInt(lastSubmittedPriceStr, 10);
-    const lastSubmittedTimestamp = parseInt(lastSubmittedTimestampStr, 10);
-    
-    if (isNaN(lastSubmittedPrice) || isNaN(lastSubmittedTimestamp)) {
-      console.error(`Invalid on-chain price or timestamp format. Price: ${lastSubmittedPriceStr}, Timestamp: ${lastSubmittedTimestampStr}`);
-      return {
-        shouldUpdate: false,
-        reason: `Invalid on-chain price or timestamp format. Cannot determine if update is needed.`,
-      };
-    }
-    
-    console.log(`Last on-chain price: ${lastSubmittedPrice} satoshis, Timestamp: ${lastSubmittedTimestamp} (${new Date(lastSubmittedTimestamp * 1000).toISOString()})`);
-    
-    // Step 3: Calculate percentage change and time elapsed
-    const percentChange = ((priceInSatoshis - lastSubmittedPrice) / lastSubmittedPrice) * 100;
-    const absPercentChange = Math.abs(percentChange);
-    
-    // Convert block height timestamp to milliseconds for comparison
-    // Stacks block timestamps are Unix timestamps in seconds, convert to milliseconds
-    const lastSubmittedTimestampMs = lastSubmittedTimestamp * 1000;
-    const timeElapsedMs = currentTimestamp - lastSubmittedTimestampMs;
-    
-    console.log(`Calculated metrics: ` +
-      `Percent change: ${percentChange.toFixed(4)}% (absolute: ${absPercentChange.toFixed(4)}%), ` +
-      `Time elapsed since last update: ${(timeElapsedMs / (60 * 1000)).toFixed(2)} minutes`);
-    
-    // Step 4: Apply threshold checks
-    
-    // Check minimum time threshold (to prevent excessive updates)
-    if (timeElapsedMs < ORACLE_UPDATE_THRESHOLDS.MIN_TIME_BETWEEN_UPDATES_MS) {
-      const minutesSinceLastUpdate = (timeElapsedMs / (60 * 1000)).toFixed(2);
-      const minimumMinutes = (ORACLE_UPDATE_THRESHOLDS.MIN_TIME_BETWEEN_UPDATES_MS / (60 * 1000)).toFixed(2);
-      console.log(`Too soon since last update. Minutes elapsed: ${minutesSinceLastUpdate}, Minimum required: ${minimumMinutes}`);
-      return {
-        shouldUpdate: false,
-        reason: `Minimum time between updates not yet reached. Minutes elapsed: ${minutesSinceLastUpdate}, Minimum required: ${minimumMinutes}`,
-        priceInSatoshis,
-        currentTimestamp,
-        percentChange,
-        sourceCount: latestAggregatedPriceData.sourceCount,
-      };
-    }
-    
-    // Check price change threshold
-    const priceChangeExceedsThreshold = absPercentChange >= ORACLE_UPDATE_THRESHOLDS.MIN_PRICE_CHANGE_PERCENT;
-    
-    // Check maximum time threshold
-    const timeExceedsMaxThreshold = timeElapsedMs >= ORACLE_UPDATE_THRESHOLDS.MAX_TIME_BETWEEN_UPDATES_MS;
-    
-    // Decision logic
-    if (priceChangeExceedsThreshold) {
-      console.log(`Price change (${absPercentChange.toFixed(4)}%) exceeds threshold (${ORACLE_UPDATE_THRESHOLDS.MIN_PRICE_CHANGE_PERCENT}%). Update recommended.`);
-      return {
-        shouldUpdate: true,
-        reason: `Price change (${absPercentChange.toFixed(4)}%) exceeds threshold (${ORACLE_UPDATE_THRESHOLDS.MIN_PRICE_CHANGE_PERCENT}%).`,
-        priceInSatoshis,
-        currentTimestamp,
-        percentChange,
-        sourceCount: latestAggregatedPriceData.sourceCount,
-      };
-    } else if (timeExceedsMaxThreshold) {
-      const hoursElapsed = (timeElapsedMs / (60 * 60 * 1000)).toFixed(2);
-      const maxHours = (ORACLE_UPDATE_THRESHOLDS.MAX_TIME_BETWEEN_UPDATES_MS / (60 * 60 * 1000)).toFixed(2);
-      console.log(`Maximum time threshold exceeded. Hours elapsed: ${hoursElapsed}, Maximum: ${maxHours}. Update recommended despite small price change.`);
-      return {
-        shouldUpdate: true,
-        reason: `Maximum time threshold exceeded. Hours elapsed: ${hoursElapsed}, Maximum: ${maxHours}.`,
-        priceInSatoshis,
-        currentTimestamp,
-        percentChange,
-        sourceCount: latestAggregatedPriceData.sourceCount,
-      };
-    } else {
-      console.log(`No update needed. Price change (${absPercentChange.toFixed(4)}%) below threshold and time elapsed (${(timeElapsedMs / (60 * 60 * 1000)).toFixed(2)} hours) within limits.`);
-      return {
-        shouldUpdate: false,
-        reason: `Price change (${absPercentChange.toFixed(4)}%) below threshold and time elapsed (${(timeElapsedMs / (60 * 60 * 1000)).toFixed(2)} hours) within limits.`,
-        priceInSatoshis,
-        currentTimestamp,
-        percentChange,
-        sourceCount: latestAggregatedPriceData.sourceCount,
-      };
-    }
+    // Call the adapter with the price data
+    return await ctx.runAction(internal.blockchain.oracle.adapter.prepareOracleSubmissionAdapter, {
+      price: latestAggregatedPriceData.price,
+      timestamp: latestAggregatedPriceData.timestamp,
+      sourceCount: latestAggregatedPriceData.sourceCount
+    });
   }
+});
+
+/**
+ * LEGACY ADAPTER: This function uses the new modular Oracle implementation.
+ * It is maintained for backward compatibility.
+ */
+export const submitAggregatedPrice = action({
+  args: { priceInSatoshis: v.number() },
+  handler: async (ctx, { priceInSatoshis }): Promise<{ txid: string }> => {
+    console.log("Legacy adapter: Redirecting to new Oracle implementation");
+    return await ctx.runAction(api.blockchain.oracle.adapter.submitAggregatedPriceAdapter, {
+      priceInSatoshis
+    });
+  },
+});
+
+/**
+ * LEGACY ADAPTER: This function uses the new modular Oracle implementation.
+ * It is maintained for backward compatibility.
+ */
+export const checkAndSubmitOraclePrice = internalAction({
+  args: {},
+  handler: async (ctx): Promise<void> => {
+    console.log("Legacy adapter: Redirecting to new Oracle implementation");
+    
+    // Get the latest aggregated price data to pass to the adapter
+    const latestAggregatedPriceData = await ctx.runQuery(api.prices.getLatestPrice, {});
+    
+    if (!latestAggregatedPriceData) {
+      console.log("No aggregated price data available in the database. Cannot check for submission.");
+      return;
+    }
+    
+    // Call the adapter with the price data
+    const result = await ctx.runAction(internal.blockchain.oracle.adapter.checkAndSubmitOraclePriceAdapter, {
+      price: latestAggregatedPriceData.price,
+      timestamp: latestAggregatedPriceData.timestamp,
+      sourceCount: latestAggregatedPriceData.sourceCount
+    });
+    
+    // Record the submission (if a transaction was created)
+    // Note: In the new architecture, this would be handled elsewhere,
+    // but we keep it here for compatibility
+    if (result && result.txid) {
+      try {
+        await ctx.runMutation(internal.oracleSubmissions.recordOracleSubmission, {
+          txid: result.txid,
+          submittedPriceSatoshis: Math.round(latestAggregatedPriceData.price * 100000000), // Convert to satoshis
+          reason: result.reason || "Price update required",
+          percentChange: result.percentChange,
+          sourceCount: latestAggregatedPriceData.sourceCount || 0,
+          status: "submitted",
+        });
+      } catch (recordError: any) {
+        console.error(`Error recording oracle submission to DB (TxID: ${result.txid}): ${recordError.message}`, recordError);
+      }
+    }
+  },
 });
 
 // --- Transaction Building (BI-302) ---
@@ -577,112 +441,6 @@ export const broadcastSignedTransaction = internalAction({
       console.error("Error during transaction broadcast:", error);
       // Rethrow or handle specific broadcast errors as needed
       throw new Error(`Failed to broadcast transaction: ${error.message || error}`);
-    }
-  },
-});
-
-// --- Oracle Submission Action Wrapper (BI-305) ---
-
-/**
- * Public action to sign and broadcast the `set-aggregated-price` transaction.
- * This encapsulates the signing and broadcasting steps.
- *
- * @param {object} args - The arguments object.
- * @param {number} args.priceInSatoshis - The aggregated price in the smallest unit (e.g., satoshis).
- * @returns {Promise<{ txid: string }>} The transaction ID if broadcast is successful.
- * @throws {Error} If signing or broadcasting fails.
- */
-export const submitAggregatedPrice = action({
-  args: { priceInSatoshis: v.number() },
-  handler: async (ctx, { priceInSatoshis }): Promise<{ txid: string }> => {
-    console.log(`submitAggregatedPrice action initiated for price: ${priceInSatoshis}`);
-
-    // Validate input price
-    if (!Number.isInteger(priceInSatoshis) || priceInSatoshis < 0) {
-      throw new Error("Invalid price format: must be a non-negative integer.");
-    }
-
-    try {
-      // Step 1: Sign the transaction using the internal action
-      console.log("Calling internal action to sign transaction...");
-      const serializedTxHex = await ctx.runAction(internal.blockchainIntegration.signSetPriceTransaction, {
-        price: priceInSatoshis,
-      });
-      console.log("Transaction signed successfully.");
-
-      // Step 2: Broadcast the signed transaction using the internal action
-      console.log("Calling internal action to broadcast transaction...");
-      const broadcastResult = await ctx.runAction(internal.blockchainIntegration.broadcastSignedTransaction, {
-        serializedTxHex: serializedTxHex,
-      });
-      console.log(`Transaction broadcast initiated. TxID: ${broadcastResult.txid}`);
-
-      // Return the transaction ID
-      return { txid: broadcastResult.txid };
-
-    } catch (error: any) {
-      console.error(`Error in submitAggregatedPrice action: ${error.message}`, error);
-      // Rethrow the error to be handled by the caller (e.g., the cron job)
-      throw new Error(`Failed to submit aggregated price: ${error.message}`);
-    }
-  },
-});
-
-// --- Oracle Submission Orchestrator (CVX-302 Integration) ---
-
-/**
- * Internal action scheduled by the cron job to check if an oracle price update
- * is needed and trigger the submission if required.
- */
-export const checkAndSubmitOraclePrice = internalAction({
-  args: {},
-  handler: async (ctx): Promise<void> => {
-    console.log("Cron Job: Running checkAndSubmitOraclePrice...");
-
-    try {
-      // 1. Prepare submission data and check thresholds
-      const preparationResult = await ctx.runAction(internal.blockchainIntegration.prepareOracleSubmission, {});
-
-      console.log(`Preparation result: Should Update: ${preparationResult.shouldUpdate}, Reason: ${preparationResult.reason}`);
-
-      // 2. If update is needed, submit the price
-      if (preparationResult.shouldUpdate && preparationResult.priceInSatoshis !== undefined) {
-        console.log(`Update required. Submitting price: ${preparationResult.priceInSatoshis}...`);
-        
-        try {
-          const submissionResult = await ctx.runAction(api.blockchainIntegration.submitAggregatedPrice, {
-            priceInSatoshis: preparationResult.priceInSatoshis,
-          });
-          console.log(`Successfully submitted price update. TxID: ${submissionResult.txid}`);
-          
-          // CVX-303: Record the submission attempt in the new location
-          try {
-            await ctx.runMutation(internal.oracleSubmissions.recordOracleSubmission, {
-              txid: submissionResult.txid,
-              submittedPriceSatoshis: preparationResult.priceInSatoshis,
-              reason: preparationResult.reason,
-              percentChange: preparationResult.percentChange ?? undefined, // Pass undefined if null/undefined
-              sourceCount: preparationResult.sourceCount ?? 0, // Pass 0 if undefined (should have sourceCount if submitting)
-              status: "submitted", // Initial status
-            });
-          } catch (recordError: any) {
-            console.error(`Error recording oracle submission to DB (TxID: ${submissionResult.txid}): ${recordError.message}`, recordError);
-            // Log the error, but don't fail the whole action just because DB write failed.
-            // The transaction was still submitted.
-          }
-           
-        } catch (submissionError: any) {
-          console.error(`Error submitting price update after check: ${submissionError.message}`, submissionError);
-          // Decide if we want to retry or just log the error. For now, just log.
-        }
-
-      } else {
-        console.log("No price update needed based on current thresholds.");
-      }
-
-    } catch (error: any) {
-      console.error(`Error during checkAndSubmitOraclePrice: ${error.message}`, error);
-      // Log error, cron will run again later.
     }
   },
 }); 
