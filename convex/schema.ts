@@ -329,6 +329,7 @@ export default defineSchema({
     settlementTransactionId: v.optional(v.string()), // Transaction ID of the settlement
     settlementCompletedAt: v.optional(v.number()), // Timestamp when settlement was completed
     settlementError: v.optional(v.string()), // Error if settlement failed
+    settlementBlockHeight: v.optional(v.number()), // Block height of settlement confirmation
     
     // Premium Distribution
     premiumPaid: v.optional(v.boolean()), // Whether premium has been paid
@@ -346,6 +347,7 @@ export default defineSchema({
     .index("by_status", ["status"])
     .index("by_expirationHeight", ["expirationHeight"])
     .index("by_policyType", ["policyType"])
+    .index("by_positionType", ["positionType"])
     .index("by_counterparty", ["counterparty"]),
 
   policyEvents: defineTable({

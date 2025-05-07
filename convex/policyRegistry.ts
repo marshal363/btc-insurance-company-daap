@@ -9,9 +9,12 @@ import { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
 export enum PolicyStatus {
   PENDING = "Pending", // Policy created off-chain, awaiting on-chain confirmation or premium payment
   ACTIVE = "Active",
-  EXERCISED = "Exercised",
+  SETTLED = "Settled",
   EXPIRED = "Expired",
   CANCELLED = "Cancelled",
+  PENDING_COUNTERPARTY_ACCEPTANCE = "PendingCounterpartyAcceptance",
+  PENDING_COUNTERPARTY_SIGNATURE = "PendingCounterpartySignature",
+  SETTLEMENT_IN_PROGRESS = "SettlementInProgress",
 }
 
 export enum PolicyType {
@@ -36,14 +39,14 @@ export enum PolicyEventType {
   CREATED = "Created", // Policy record created in Convex
   ONCHAIN_SUBMITTED = "OnChainSubmitted", // Submitted to on-chain contract
   ONCHAIN_CONFIRMED = "OnChainConfirmed", // Confirmed on-chain (e.g. policy-created event from contract)
-  ACTIVATED = "Activated", // Policy exercised by owner
-  EXPIRED = "Expired", // Policy reached expiration height
+  ACTIVE = "Active", // Policy exercised by owner
+  SETTLED = "Settled", // Policy was settled (protection paid)
   CANCELLED = "Cancelled",
   PREMIUM_PAID = "PremiumPaid",
   PREMIUM_DISTRIBUTION_REQUESTED = "PremiumDistributionRequested",
   PREMIUM_DISTRIBUTED = "PremiumDistributed", // Premium given to counterparty/providers
   SETTLEMENT_REQUESTED = "SettlementRequested",
-  SETTLEMENT_COMPLETED = "SettlementCompleted",
+  SETTLEMENT_CONFIRMED = "SettlementConfirmed", // Settlement was confirmed
   STATUS_UPDATE = "StatusUpdate", // Generic status change
   ERROR = "Error", // An error occurred during processing
   RECONCILIATION_UPDATE = "ReconciliationUpdate", // Updated due to state reconciliation
@@ -71,6 +74,7 @@ export const getPoliciesForUser = query({
   args: {
     statusFilter: v.optional(v.array(v.string())), 
     policyTypeFilter: v.optional(v.string()), 
+    positionTypeFilter: v.optional(v.string()),
     fromTimestamp: v.optional(v.number()), 
     toTimestamp: v.optional(v.number()),   
     limit: v.optional(v.number()),
@@ -96,6 +100,10 @@ export const getPoliciesForUser = query({
 
     if (args.policyTypeFilter) {
       queryBuilder = queryBuilder.filter(q => q.eq(q.field("policyType"), args.policyTypeFilter!));
+    }
+
+    if (args.positionTypeFilter) {
+      queryBuilder = queryBuilder.filter(q => q.eq(q.field("positionType"), args.positionTypeFilter!));
     }
 
     if (args.fromTimestamp) {
@@ -127,6 +135,75 @@ export const getPoliciesForUser = query({
     const paginatedPolicies = sortedPolicies.slice(effectiveOffset, effectiveOffset + effectiveLimit);
 
     return paginatedPolicies;
+  },
+});
+
+/**
+ * Get policies for a specific counterparty (e.g., liquidity provider).
+ * Corresponds to CV-PR-217.
+ */
+export const getPoliciesForCounterparty = query({
+  args: {
+    statusFilter: v.optional(v.array(v.string())),
+    policyTypeFilter: v.optional(v.string()),
+    positionTypeFilter: v.optional(v.string()),
+    collateralTokenFilter: v.optional(v.string()),
+    fromTimestamp: v.optional(v.number()),
+    toTimestamp: v.optional(v.number()),
+    limit: v.optional(v.number()),
+    offset: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("User must be authenticated to query their policies as counterparty.");
+    }
+    const counterparty = identity.tokenIdentifier;
+    if (!counterparty) {
+      throw new Error("Unable to determine user principal from identity.");
+    }
+
+    let queryBuilder = ctx.db
+      .query("policies")
+      .filter(q => q.eq(q.field("counterparty"), counterparty));
+
+    if (args.statusFilter && args.statusFilter.length > 0) {
+      queryBuilder = queryBuilder.filter(q => q.or(...args.statusFilter!.map((status: string) => q.eq(q.field("status"), status))));
+    }
+
+    if (args.policyTypeFilter) {
+      queryBuilder = queryBuilder.filter(q => q.eq(q.field("policyType"), args.policyTypeFilter!));
+    }
+
+    if (args.positionTypeFilter) {
+      queryBuilder = queryBuilder.filter(q => q.eq(q.field("positionType"), args.positionTypeFilter!));
+    }
+
+    if (args.collateralTokenFilter) {
+      queryBuilder = queryBuilder.filter(q => q.eq(q.field("collateralToken"), args.collateralTokenFilter!));
+    }
+
+    if (args.fromTimestamp) {
+      queryBuilder = queryBuilder.filter(q => q.gte(q.field("creationTimestamp"), args.fromTimestamp!));
+    }
+
+    if (args.toTimestamp) {
+      queryBuilder = queryBuilder.filter(q => q.lte(q.field("creationTimestamp"), args.toTimestamp!));
+    }
+
+    // Collect and sort filtered policies
+    const filteredPolicies = await queryBuilder.collect();
+    const sortedPolicies = filteredPolicies.sort((a, b) => b.creationTimestamp - a.creationTimestamp);
+
+    // Handle pagination
+    const limit = args.limit || 20;
+    const offset = args.offset || 0;
+    const paginatedPolicies = sortedPolicies.slice(offset, offset + limit);
+
+    return {
+      policies: paginatedPolicies,
+      total: filteredPolicies.length,
+    };
   },
 });
 
@@ -828,9 +905,9 @@ async function handleConfirmedPolicyActivation(ctx: MutationCtx, pendingTx: Doc<
       throw new Error(`Policy not found with ID: ${policyId}`);
     }
     
-    // Update the policy status to EXERCISED
+    // Update the policy status to SETTLED
     await ctx.db.patch(policyId, {
-      status: PolicyStatus.EXERCISED,
+      status: PolicyStatus.SETTLED,
       updatedAt: Date.now(),
       exercisedAt: Date.now(),
       settlementAmount: pendingTx.payload.settlementAmount,
@@ -840,7 +917,7 @@ async function handleConfirmedPolicyActivation(ctx: MutationCtx, pendingTx: Doc<
     // Create policy events
     await ctx.db.insert("policyEvents", {
       policyConvexId: policyId,
-      eventType: PolicyEventType.ACTIVATED,
+      eventType: PolicyEventType.SETTLED,
       data: {
         pendingTxId: pendingTx._id,
         transactionId: args.transactionId,
@@ -885,4 +962,521 @@ async function handleConfirmedPolicyActivation(ctx: MutationCtx, pendingTx: Doc<
   }
 }
 
+/**
+ * Get income statistics for counterparty (Income Irene).
+ * Aggregates policy data to provide insight on income, exposure, and distribution.
+ * Corresponds to CV-PR-217.
+ */
+export const getCounterpartyIncomeStats = query({
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("User must be authenticated to get counterparty income stats.");
+    }
+    const counterparty = identity.tokenIdentifier;
+    if (!counterparty) {
+      throw new Error("Unable to determine user principal from identity.");
+    }
+
+    // Get all policies where user is counterparty
+    const policies = await ctx.db
+      .query("policies")
+      .filter(q => q.eq(q.field("counterparty"), counterparty))
+      .collect();
+
+    // Default values for tokenBreakdown
+    const tokenBreakdown: Record<string, {
+      totalPolicies: number;
+      activePolicies: number;
+      earnedPremium: number;
+      pendingPremium: number;
+      activeExposure: number;
+    }> = {};
+
+    // Calculate aggregate statistics
+    const stats = {
+      totalPolicies: policies.length,
+      activePolicies: policies.filter(p => p.status === PolicyStatus.ACTIVE).length,
+      expiredPolicies: policies.filter(p => p.status === PolicyStatus.EXPIRED).length,
+      exercisedPolicies: policies.filter(p => p.status === PolicyStatus.SETTLED).length,
+
+      totalPremiumEarned: policies
+        .filter(p => p.premiumDistributed)
+        .reduce((sum, p) => sum + p.premium, 0),
+
+      pendingPremiums: policies
+        .filter(p => p.status === PolicyStatus.EXPIRED && !p.premiumDistributed)
+        .reduce((sum, p) => sum + p.premium, 0),
+
+      activeExposure: policies
+        .filter(p => p.status === PolicyStatus.ACTIVE)
+        .reduce((sum, p) => sum + p.protectionAmount, 0),
+
+      // Group by collateral token
+      tokenBreakdown: policies.reduce((acc, policy) => {
+        const token = policy.collateralToken;
+        if (!acc[token]) {
+          acc[token] = {
+            totalPolicies: 0,
+            activePolicies: 0,
+            earnedPremium: 0,
+            pendingPremium: 0,
+            activeExposure: 0,
+          };
+        }
+
+        acc[token].totalPolicies++;
+
+        if (policy.status === PolicyStatus.ACTIVE) {
+          acc[token].activePolicies++;
+          acc[token].activeExposure += policy.protectionAmount;
+        }
+
+        if (policy.premiumDistributed) {
+          acc[token].earnedPremium += policy.premium;
+        } else if (policy.status === PolicyStatus.EXPIRED) {
+          acc[token].pendingPremium += policy.premium;
+        }
+
+        return acc;
+      }, tokenBreakdown),
+    };
+
+    return stats;
+  },
+});
+
+/**
+ * Determines the position type based on policy type and role.
+ * This ensures correct assignment of position types (LONG/SHORT) during policy creation.
+ * Implements CV-PR-227.
+ * 
+ * @param policyType The type of policy (PUT/CALL)
+ * @param isBuyer Whether the current user is buying protection (true) or providing liquidity (false)
+ * @returns The appropriate position type enum value
+ */
+function determinePolicyPositionType(policyType: PolicyType, isBuyer: boolean): PositionType {
+  if (policyType === PolicyType.PUT) {
+    return isBuyer ? PositionType.LONG_PUT : PositionType.SHORT_PUT;
+  } else {
+    return isBuyer ? PositionType.LONG_CALL : PositionType.SHORT_CALL;
+  }
+}
+
+/**
+ * Request policy creation. Builds a transaction for the user to sign.
+ * Corresponds to CV-PR-209 from the implementation roadmap.
+ */
+export const requestPolicyCreation = action({
+  args: {
+    // Remaining policy parameters
+    protectedValueUSD: v.number(),
+    protectionAmountBTC: v.number(),
+    policyType: v.string(),
+    durationDays: v.number(),
+    premiumUSD: v.optional(v.number()),
+    // Optional parameters
+    counterparty: v.optional(v.string()),
+    collateralToken: v.optional(v.string()),
+    settlementToken: v.optional(v.string()),
+    displayName: v.optional(v.string()),
+    description: v.optional(v.string()),
+    tags: v.optional(v.array(v.string())),
+  },
+  handler: async (ctx, args): Promise<{ pendingTxId: Id<"pendingPolicyTransactions">; transaction: any; estimatedPremium: number; positionType: PositionType; }> => {
+    // Authentication - Get user identity
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+    const owner = identity.tokenIdentifier;
+
+    // Build parameters for validation
+    const params: PolicyCreationParams = {
+      owner,
+      counterparty: args.counterparty || "ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM", // Default counterparty (liquidity pool)
+      protectedValueUSD: args.protectedValueUSD,
+      protectionAmountBTC: args.protectionAmountBTC,
+      policyType: args.policyType as PolicyType,
+      durationDays: args.durationDays,
+      premiumUSD: args.premiumUSD,
+      collateralToken: args.collateralToken as TokenType,
+      settlementToken: args.settlementToken as TokenType,
+      displayName: args.displayName,
+      description: args.description,
+      tags: args.tags,
+    };
+
+    // 1. Validate parameters
+    validatePolicyParameters(params);
+
+    // 2. Calculate premium if not provided
+    let premiumUSD = params.premiumUSD;
+    if (!premiumUSD) {
+      premiumUSD = await calculatePremiumForPolicyCreation(ctx, {
+        policyType: params.policyType,
+        strikePriceUSD: params.protectedValueUSD,
+        durationDays: params.durationDays,
+        protectionAmount: params.protectionAmountBTC,
+      });
+      params.premiumUSD = premiumUSD;
+    }
+
+    // 3. Derive collateral token and settlement token if not specified
+    if (!params.collateralToken) {
+      params.collateralToken = params.policyType === PolicyType.PUT ? TokenType.STX : TokenType.SBTC;
+    }
+    if (!params.settlementToken) {
+      params.settlementToken = params.policyType === PolicyType.PUT ? TokenType.STX : TokenType.SBTC;
+    }
+
+    // 4. Determine position type
+    const positionType = determinePolicyPositionType(params.policyType, true);
+    
+    // 5. Check if the Liquidity Pool has sufficient collateral
+    await mockCheckPoolLiquidity(ctx, {
+      collateralToken: params.collateralToken || TokenType.STX,
+      collateralAmount: params.protectionAmountBTC,
+    });
+
+    // 6. Convert duration days to expiration block height
+    const expirationHeight = await daysToBlockHeight(params.durationDays);
+
+    // 7. Prepare on-chain transaction
+    const policyCreationTx = await preparePolicyCreationTransaction({
+      owner: params.owner,
+      counterparty: params.counterparty,
+      protectedValue: usdToSats(params.protectedValueUSD),
+      protectionAmount: btcToSats(params.protectionAmountBTC),
+      expirationHeight,
+      premium: usdToSats(premiumUSD),
+      policyType: params.policyType,
+      positionType: positionType,
+      collateralToken: params.collateralToken,
+      settlementToken: params.settlementToken,
+    });
+
+    // 8. Create pending transaction record
+    const pendingTxId: Id<"pendingPolicyTransactions"> = await ctx.runMutation(internal.policyRegistry.createPendingPolicyTransaction, {
+      actionType: "Create",
+      status: TransactionStatus.PENDING,
+      payload: {
+        params: {
+          ...params,
+          positionType,
+          expirationHeight,
+          premium: premiumUSD,
+        },
+        transaction: policyCreationTx,
+      },
+      userId: params.owner,
+    });
+
+    // 9. Return transaction data for user to sign
+    return {
+      pendingTxId,
+      transaction: policyCreationTx.txOptions,
+      estimatedPremium: premiumUSD as number, // Ensure premiumUSD is treated as number
+      positionType, // Return position type to frontend
+    };
+  },
+});
+
+// Add this mock function for policy acceptance transactions
+/**
+ * Mock function to prepare policy acceptance transaction
+ * This would be replaced with actual blockchain interaction
+ */
+async function preparePolicyAcceptanceTransaction(params: {
+  policyId: Id<"policies">,
+  counterparty: string,
+  positionType: PositionType
+}) {
+  // Mock implementation - would be replaced with actual blockchain calls
+  console.log(`Preparing mock policy acceptance transaction for policy ${params.policyId}`);
+  return {
+    txOptions: {
+      contractAddress: "ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM",
+      contractName: "policy-registry",
+      functionName: "accept-policy",
+      functionArgs: [params.policyId, params.counterparty, params.positionType],
+      postConditions: [],
+      network: "testnet",
+    },
+    txid: `mock-accept-tx-${Date.now()}`,
+  };
+}
+
+/**
+ * Accept a policy offer as a counterparty.
+ * Allows liquidity providers to accept pending policy offers.
+ * Implements CV-PR-228.
+ */
+export const acceptPolicyOfferByCounterparty = mutation({
+  args: {
+    policyId: v.id("policies"),
+  },
+  handler: async (ctx, args) => {
+    // Get counterparty identity
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Counterparty must be authenticated to accept policy offers");
+    }
+    const counterparty = identity.tokenIdentifier;
+
+    // Get the policy by ID
+    const policy = await ctx.db.get(args.policyId);
+    if (!policy) {
+      throw new Error(`Policy with ID ${args.policyId} not found`);
+    }
+
+    // Verify the policy is in PENDING_COUNTERPARTY_ACCEPTANCE status
+    if (policy.status !== PolicyStatus.PENDING_COUNTERPARTY_ACCEPTANCE) {
+      throw new Error(`Policy is not in pending counterparty acceptance status (current: ${policy.status})`);
+    }
+
+    // If policy has a specified counterparty, verify it matches the current user
+    if (policy.counterparty && policy.counterparty !== counterparty) {
+      throw new Error("You are not the specified counterparty for this policy");
+    }
+
+    // Determine position type for counterparty (opposite of the policy owner's position)
+    // Since the policy owner is buying protection (LONG), counterparty is providing liquidity (SHORT)
+    const counterpartyPositionType = determinePolicyPositionType(policy.policyType as PolicyType, false);
+
+    // Prepare transaction for counterparty to accept policy
+    const acceptTx = await preparePolicyAcceptanceTransaction({
+      policyId: args.policyId,
+      counterparty,
+      positionType: counterpartyPositionType,
+    });
+
+    // Create pending transaction record
+    const pendingTxId = await ctx.db.insert("pendingPolicyTransactions", {
+      actionType: "Accept",
+      status: TransactionStatus.PENDING,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      payload: {
+        policyId: args.policyId,
+        counterparty,
+        positionType: counterpartyPositionType,
+        transaction: acceptTx,
+      },
+      retryCount: 0,
+      userId: counterparty,
+    });
+
+    // Update policy status to indicate counterparty is processing acceptance
+    await ctx.db.patch(args.policyId, {
+      status: PolicyStatus.PENDING_COUNTERPARTY_SIGNATURE,
+      updatedAt: Date.now(),
+    });
+
+    // Return transaction for counterparty to sign
+    return {
+      pendingTxId,
+      transaction: acceptTx.txOptions,
+      positionType: counterpartyPositionType,
+    };
+  },
+});
+
 console.log("convex/policyRegistry.ts loaded: Defines Policy Registry enums and initial queries."); 
+
+/**
+ * Handle a policy activation (exercise) request.
+ * This is only available to the policy owner during active policy period.
+ * Implements CV-PR-211 from the implementation roadmap.
+ */
+export const requestPolicySettlement = mutation({
+  args: {
+    policyId: v.id("policies"),
+    currentPrice: v.number(), // Current market price triggering the settlement
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("User must be authenticated to settle a policy");
+    }
+    
+    const owner = identity.tokenIdentifier;
+    
+    // Get the policy
+    const policy = await ctx.db.get(args.policyId);
+    if (!policy) {
+      throw new Error(`Policy with ID ${args.policyId} not found`);
+    }
+    
+    // Verify the user is the policy owner
+    if (policy.owner !== owner) {
+      throw new Error("Only the policy owner can settle the policy");
+    }
+    
+    // Verify that the policy is in active status
+    if (policy.status !== PolicyStatus.ACTIVE) {
+      throw new Error(`Policy must be active to settle (current status: ${policy.status})`);
+    }
+    
+    // Get the current block height
+    const currentBlockHeight = await mockGetLatestBlockHeight();
+    
+    // Verify the policy has not expired
+    if (policy.expirationHeight < currentBlockHeight) {
+      throw new Error(`Policy has expired at block ${policy.expirationHeight} (current: ${currentBlockHeight})`);
+    }
+    
+    // Calculate settlement amount based on policy terms and current price
+    const settlementAmount = calculateSettlementAmount(
+      policy.policyType as PolicyType,
+      policy.protectedValue,
+      policy.protectionAmount,
+      args.currentPrice
+    );
+    
+    // If settlement amount is 0, no need to settle
+    if (settlementAmount <= 0) {
+      throw new Error("Settlement amount is zero or negative, no settlement needed");
+    }
+    
+    // Prepare on-chain transaction for settlement
+    const settlementTx = await preparePolicySettlementTransaction({
+      policyId: args.policyId,
+      owner,
+      settlementAmount,
+      currentPrice: args.currentPrice,
+    });
+    
+    // Create pending transaction record
+    const pendingTxId = await ctx.db.insert("pendingPolicyTransactions", {
+      actionType: "Settle",
+      status: TransactionStatus.PENDING,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      payload: {
+        policyId: args.policyId,
+        owner,
+        settlementAmount,
+        currentPrice: args.currentPrice,
+        transaction: settlementTx,
+      },
+      retryCount: 0,
+      userId: owner,
+      policyConvexId: args.policyId, // Associate this transaction with the policy
+    });
+    
+    // Update policy status to indicate settlement is in progress
+    await ctx.db.patch(args.policyId, {
+      status: PolicyStatus.SETTLEMENT_IN_PROGRESS,
+      updatedAt: Date.now(),
+    });
+    
+    // Return transaction for user to sign
+    return {
+      pendingTxId,
+      transaction: settlementTx.txOptions,
+      settlementAmount,
+    };
+  },
+});
+
+/**
+ * Update policy status to SETTLED.
+ * Called by the settlement system after successful settlement.
+ */
+export const updatePolicyToSettled = internalMutation({
+  args: {
+    policyId: v.id("policies"),
+    settlementAmount: v.number(),
+    settlementTransactionId: v.string(),
+    settlementBlockHeight: v.number(),
+    settlementPrice: v.number(),
+  },
+  handler: async (ctx, args) => {
+    // Update policy status
+    await ctx.db.patch(args.policyId, {
+      status: PolicyStatus.SETTLED,
+      updatedAt: Date.now(),
+      settlementAmount: args.settlementAmount,
+      settlementTransactionId: args.settlementTransactionId,
+      settlementBlockHeight: args.settlementBlockHeight,
+      settlementPrice: args.settlementPrice,
+    });
+    
+    // Create settlement event
+    await ctx.db.insert("policyEvents", {
+      policyConvexId: args.policyId,
+      eventType: PolicyEventType.SETTLED,
+      data: {
+        settlementAmount: args.settlementAmount,
+        settlementTransactionId: args.settlementTransactionId,
+        settlementBlockHeight: args.settlementBlockHeight,
+        settlementPrice: args.settlementPrice,
+      },
+      timestamp: Date.now(),
+      transactionId: args.settlementTransactionId,
+      blockHeight: args.settlementBlockHeight,
+    });
+    
+    return { success: true };
+  },
+});
+
+/**
+ * Helper function to calculate the settlement amount for a policy.
+ */
+function calculateSettlementAmount(
+  policyType: PolicyType,
+  protectedValue: number,
+  protectionAmount: number,
+  currentPrice: number
+): number {
+  if (policyType === PolicyType.PUT) {
+    // For PUT options, settlement amount is based on how far the price has fallen below the strike price
+    const priceDifference = protectedValue - currentPrice;
+    if (priceDifference > 0) {
+      // Calculate the proportion of the protected value that is lost
+      const proportionLost = priceDifference / protectedValue;
+      // Calculate the settlement amount based on the proportion lost and the protection amount
+      return Math.min(proportionLost * protectionAmount, protectionAmount);
+    }
+  } else if (policyType === PolicyType.CALL) {
+    // For CALL options, settlement amount is based on how far the price has risen above the strike price
+    const priceDifference = currentPrice - protectedValue;
+    if (priceDifference > 0) {
+      // Calculate the proportion of the price increase
+      const proportionGained = priceDifference / protectedValue;
+      // Calculate the settlement amount based on the proportion gained and the protection amount
+      return Math.min(proportionGained * protectionAmount, protectionAmount);
+    }
+  }
+  
+  // If no settlement needed or invalid policy type
+  return 0;
+}
+
+// Add this mock function for policy settlement transactions
+/**
+ * Mock function to prepare policy settlement transaction
+ * This would be replaced with actual blockchain interaction
+ */
+async function preparePolicySettlementTransaction(params: {
+  policyId: Id<"policies">,
+  owner: string,
+  settlementAmount: number,
+  currentPrice: number
+}) {
+  // Mock implementation - would be replaced with actual blockchain calls
+  console.log(`Preparing mock policy settlement transaction for policy ${params.policyId}`);
+  return {
+    txOptions: {
+      contractAddress: "ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM",
+      contractName: "policy-registry",
+      functionName: "settle-policy",
+      functionArgs: [params.policyId, params.settlementAmount, params.currentPrice],
+      postConditions: [],
+      network: "testnet",
+    },
+    txid: `mock-settle-tx-${Date.now()}`,
+  };
+} 
