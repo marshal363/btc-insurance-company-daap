@@ -1,5 +1,6 @@
 import { v } from "convex/values";
-import { internalQuery, query, action, internalAction } from "./_generated/server";
+import { query, internalAction, QueryCtx, ActionCtx, DatabaseReader } from "./_generated/server";
+import { DataModel } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { 
   BlockchainParams, 
@@ -7,89 +8,87 @@ import {
   ProviderBlockchainParams,
   PreparedTransaction
 } from './types';
+import { Id } from "./_generated/dataModel";
 
 /**
- * Prepare a quote for blockchain integration
- * This transforms the quote data into a format ready for on-chain interaction
+ * Helper function to prepare a quote for blockchain integration
  */
-export const prepareQuoteForBlockchain = internalQuery({
-  args: {
-    quoteId: v.id("quotes"),
-  },
-  handler: async (ctx, args): Promise<BlockchainParams> => {
-    const quote = await ctx.db.get(args.quoteId);
-    if (!quote) throw new Error("Quote not found");
+async function prepareQuoteForBlockchainHelper(
+  db: DatabaseReader,
+  args: { quoteId: Id<"quotes"> }
+): Promise<BlockchainParams> {
+  const quote = await db.get(args.quoteId);
+  if (!quote) throw new Error("Quote not found");
 
-    // Check quote status
-    if (quote.status !== "active" || new Date(quote.expiresAt) < new Date()) {
-      throw new Error("Quote is not active or has expired.");
-    }
+  // Check quote status
+  if (quote.status !== "active" || new Date(quote.expiresAt) < new Date()) {
+    throw new Error("Quote is not active or has expired.");
+  }
 
-    // Use snapshots stored in the quote
-    const marketData = quote.marketDataSnapshot;
-    const riskParams = quote.riskParamsSnapshot;
+  // Use snapshots stored in the quote
+  const marketData = quote.marketDataSnapshot;
+  const riskParams = quote.riskParamsSnapshot;
 
-    // Mock blockchain integration - in reality, would get from blockchain
-    const BLOCKS_PER_DAY = 144; // Approximately 144 blocks per day (10-minute block time)
-    const currentBlockHeight = 800000; // Mock current block height
-    let blockchainParamsDTO: BlockchainParams;
+  // Mock blockchain integration - in reality, would get from blockchain
+  const BLOCKS_PER_DAY = 144; // Approximately 144 blocks per day (10-minute block time)
+  const currentBlockHeight = 800000; // Mock current block height
+  let blockchainParamsDTO: BlockchainParams;
 
-    if (quote.quoteType === "buyer" && quote.buyerParamsSnapshot) {
-      const params = quote.buyerParamsSnapshot;
-      const result = quote.quoteResult;
-      const expirationBlocks = Math.floor(
-        params.expirationDays * BLOCKS_PER_DAY
-      );
+  if (quote.quoteType === "buyer" && quote.buyerParamsSnapshot) {
+    const params = quote.buyerParamsSnapshot;
+    const result = quote.quoteResult;
+    const expirationBlocks = Math.floor(
+      params.expirationDays * BLOCKS_PER_DAY
+    );
 
-      // Convert USD premium to STX microSTX 
-      // This is a simplified mock conversion - real implementation would use an oracle
-      const premiumMicroStx = BigInt(
-        Math.floor(((result.premium || 0) / 0.45) * 1000000)
-      );
-      const protectedValueMicroStx = BigInt(
-        Math.floor(
-          ((marketData.btcPrice * params.protectedValuePercentage) /
-            100 /
-            0.45) *
-            1000000
+    // Convert USD premium to STX microSTX 
+    // This is a simplified mock conversion - real implementation would use an oracle
+    const premiumMicroStx = BigInt(
+      Math.floor(((result.premium || 0) / 0.45) * 1000000)
+    );
+    const protectedValueMicroStx = BigInt(
+      Math.floor(
+        ((marketData.btcPrice * params.protectedValuePercentage) /
+          100 /
+          0.45) *
+          1000000
         )
       );
 
-      blockchainParamsDTO = {
-        policyType: params.policyType,
-        protectedValueMicroStx,
-        protectedAmountSats: BigInt(
-          Math.floor(params.protectionAmount * 100000000)
-        ),
-        expirationBlocks: BigInt(expirationBlocks),
-        premiumMicroStx,
-        currentBlockHeight: BigInt(currentBlockHeight),
-        expirationHeight: BigInt(currentBlockHeight + expirationBlocks),
-      } as BuyerBlockchainParams;
-    } else if (quote.quoteType === "provider" && quote.providerParamsSnapshot) {
-      const params = quote.providerParamsSnapshot;
-      const durationBlocks = Math.floor(params.selectedPeriod * BLOCKS_PER_DAY);
+    blockchainParamsDTO = {
+      policyType: params.policyType,
+      protectedValueMicroStx,
+      protectedAmountSats: BigInt(
+        Math.floor(params.protectionAmount * 100000000)
+      ),
+      expirationBlocks: BigInt(expirationBlocks),
+      premiumMicroStx,
+      currentBlockHeight: BigInt(currentBlockHeight),
+      expirationHeight: BigInt(currentBlockHeight + expirationBlocks),
+    } as BuyerBlockchainParams;
+  } else if (quote.quoteType === "provider" && quote.providerParamsSnapshot) {
+    const params = quote.providerParamsSnapshot;
+    const durationBlocks = Math.floor(params.selectedPeriod * BLOCKS_PER_DAY);
 
-      // Convert USD commitment to STX microSTX
-      // This is a simplified mock conversion - real implementation would use an oracle
-      const commitmentMicroStx = BigInt(
-        Math.floor((params.commitmentAmountUSD / 0.45) * 1000000)
-      );
+    // Convert USD commitment to STX microSTX
+    // This is a simplified mock conversion - real implementation would use an oracle
+    const commitmentMicroStx = BigInt(
+      Math.floor((params.commitmentAmountUSD / 0.45) * 1000000)
+    );
 
-      blockchainParamsDTO = {
-        tierName: params.selectedTier,
-        commitmentAmountMicroStx: commitmentMicroStx,
-        durationBlocks: BigInt(durationBlocks),
-        currentBlockHeight: BigInt(currentBlockHeight),
-        expirationHeight: BigInt(currentBlockHeight + durationBlocks),
-      } as ProviderBlockchainParams;
-    } else {
-      throw new Error("Invalid quote type or missing parameter snapshot");
-    }
+    blockchainParamsDTO = {
+      tierName: params.selectedTier,
+      commitmentAmountMicroStx: commitmentMicroStx,
+      durationBlocks: BigInt(durationBlocks),
+      currentBlockHeight: BigInt(currentBlockHeight),
+      expirationHeight: BigInt(currentBlockHeight + durationBlocks),
+    } as ProviderBlockchainParams;
+  } else {
+    throw new Error("Invalid quote type or missing parameter snapshot");
+  }
 
-    return blockchainParamsDTO; // Return the prepared DTO
-  },
-});
+  return blockchainParamsDTO;
+}
 
 /**
  * Public facing query for UI to get blockchain-ready parameters
@@ -98,14 +97,12 @@ export const getBlockchainParams = query({
   args: {
     quoteId: v.id("quotes"),
   },
-  handler: async (ctx, args): Promise<Record<string, string | number>> => {
-    // This will throw if the quote is not found or is invalid
-    const blockchainParams: BlockchainParams = await ctx.runQuery(
-      internal.blockchainPreparation.prepareQuoteForBlockchain,
+  handler: async (ctx: QueryCtx, args): Promise<Record<string, string | number>> => {
+    const blockchainParams: BlockchainParams = await prepareQuoteForBlockchainHelper(
+      ctx.db, 
       { quoteId: args.quoteId }
     );
     
-    // Convert BigInts to strings for JSON serialization
     return JSON.parse(
       JSON.stringify(blockchainParams, (key, value) =>
         typeof value === "bigint" ? value.toString() : value
@@ -122,14 +119,12 @@ export const prepareMockTransaction = query({
   args: {
     quoteId: v.id("quotes"),
   },
-  handler: async (ctx, args): Promise<PreparedTransaction> => {
-    // Get the blockchain parameters
-    const blockchainParams: BlockchainParams = await ctx.runQuery(
-      internal.blockchainPreparation.prepareQuoteForBlockchain,
+  handler: async (ctx: QueryCtx, args): Promise<PreparedTransaction> => {
+    const blockchainParams: BlockchainParams = await prepareQuoteForBlockchainHelper(
+      ctx.db, 
       { quoteId: args.quoteId }
     );
     
-    // Fetch the quote to determine the type
     const quote = await ctx.db.get(args.quoteId);
     if (!quote) throw new Error("Quote not found");
     
@@ -198,6 +193,20 @@ export const prepareMockTransaction = query({
   },
 });
 
+export interface PreparedStxTransferResult {
+  txOptions: {
+    contractAddress: string;
+    contractName: string;
+    functionName: string;
+    functionArgs: { type: string; value: string }[];
+    fee: number;
+    nonce: number;
+  };
+  amount: number;
+  sender: string;
+  type: 'STX';
+}
+
 /**
  * Prepare a STX transfer to the liquidity pool contract
  */
@@ -206,7 +215,7 @@ export const prepareStxTransferToLiquidityPool = internalAction({
     amount: v.number(),
     sender: v.string(),
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx: ActionCtx, args): Promise<PreparedStxTransferResult> => {
     // In a real implementation, this would:
     // 1. Calculate the right contract address based on the environment
     // 2. Format transaction data in the right format for the blockchain
@@ -232,6 +241,20 @@ export const prepareStxTransferToLiquidityPool = internalAction({
   },
 });
 
+interface PreparedSbtcTransferResult {
+  txOptions: {
+    contractAddress: string;
+    contractName: string;
+    functionName: string;
+    functionArgs: { type: string; value: string }[];
+    fee: number;
+    nonce: number;
+  };
+  amount: number;
+  sender: string;
+  type: 'sBTC';
+}
+
 /**
  * Prepare a sBTC transfer to the liquidity pool contract
  */
@@ -240,7 +263,7 @@ export const prepareSbtcTransferToLiquidityPool = internalAction({
     amount: v.number(),
     sender: v.string(),
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx: ActionCtx, args): Promise<PreparedSbtcTransferResult> => {
     // In a real implementation, this would:
     // 1. Calculate the right contract addresses based on the environment
     // 2. Format transaction data in the right format for the blockchain

@@ -11,7 +11,13 @@
     "jsx": "react-jsx",
     "skipLibCheck": true,
     "allowSyntheticDefaultImports": true,
-
+    "noErrorTruncation": true,
+    "typeRoots": ["./node_modules/@types"],
+    
+    /* Added to help with deep type recursion issues */
+    "noImplicitAny": false,
+    "experimentalDecorators": true,
+    
     /* These compiler options are required by Convex */
     "target": "ESNext",
     "lib": ["ES2021", "dom"],

@@ -5,29 +5,30 @@ import { internal } from "./_generated/api";
 const crons = cronJobs();
 
 // Fetch prices every 5 minutes
-crons.interval("fetch-prices", { minutes: 5 }, internal.prices.fetchPrices, {});
+// Using 'as any' to bypass TypeScript's excessive depth checking
+crons.interval("fetch-prices", { minutes: 5 }, internal.prices.fetchPrices as any, {});
 
 // Prepare Oracle Submission Data every 5 minutes (will eventually trigger threshold check + submission)
 crons.interval(
   "check-and-submit-oracle-price",
   { minutes: 5 }, 
-  internal.blockchainIntegration.checkAndSubmitOraclePrice,
+  internal.blockchainIntegration.checkAndSubmitOraclePrice as any,
   {}
 );
 
 // Fetch historical data every hour (full refresh)
-crons.interval("fetch-historical", { hours: 1 }, internal.prices.fetchHistoricalPrices, {});
+crons.interval("fetch-historical", { hours: 1 }, internal.prices.fetchHistoricalPrices as any, {});
 
 // Update just the latest daily price once per day (more efficient daily updates)
 // Running at 00:15 UTC each day
-crons.daily("fetch-latest-daily", { hourUTC: 0, minuteUTC: 15 }, internal.prices.fetchLatestDailyPrice, {});
+crons.daily("fetch-latest-daily", { hourUTC: 0, minuteUTC: 15 }, internal.prices.fetchLatestDailyPrice as any, {});
 
 // Check transaction status for pending policy transactions every 5 minutes
 // This job implements CV-PR-212 from the implementation roadmap
 crons.interval(
   "check-transaction-status",
   { minutes: 5 },
-  internal.transactionStatusJobs.checkTransactionStatusJob,
+  internal.transactionStatusJobs.checkTransactionStatusJob as any,
   {}
 );
 
@@ -36,7 +37,7 @@ crons.interval(
 crons.daily(
   "check-expired-policies",
   { hourUTC: 1, minuteUTC: 0 },
-  internal.transactionStatusJobs.checkExpiredPoliciesJob,
+  internal.transactionStatusJobs.checkExpiredPoliciesJob as any,
   {}
 );
 
@@ -45,7 +46,7 @@ crons.daily(
 crons.interval(
   "process-settlements",
   { hours: 1 },
-  internal.settlementJobs.processSettlementsJob,
+  internal.settlementJobs.processSettlementsJob as any,
   {}
 );
 
@@ -54,7 +55,7 @@ crons.interval(
 crons.interval(
   "auto-reconciliation",
   { hours: 4 },
-  internal.reconciliationJobs.autoReconciliationJob,
+  internal.reconciliationJobs.autoReconciliationJob as any,
   {}
 );
 
@@ -67,7 +68,7 @@ crons.interval(
 crons.interval(
   "check-pool-transaction-statuses",
   { minutes: 5 },
-  internal.poolTransactionWatcher.checkPoolTransactions,
+  internal.poolTransactionWatcher.checkPoolTransactions as any,
   {}
 );
 

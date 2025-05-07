@@ -55,6 +55,20 @@ export const mockGetBlockchainTransactionStatus = query({
   }
 });
 
+/**
+ * Direct function to get blockchain transaction status - bypasses TypeScript circular reference issues
+ * This is a workaround for TypeScript's "Type instantiation is excessively deep and possibly infinite" error
+ */
+export function getBlockchainStatus(onChainTxId: string): "Confirmed" | "Failed" | "Pending" {
+  if (onChainTxId.endsWith("1")) {
+    return "Confirmed";
+  } else if (onChainTxId.endsWith("2")) {
+    return "Failed";
+  } else {
+    return "Pending";
+  }
+}
+
 // Add other general-purpose mock functions here as needed.
 
 // Add other mock functions here as needed, for example:

@@ -216,7 +216,7 @@ export const fetchPrices = internalAction({
       const volatilityToStore: number = fetchedVolatility ?? 0; // Ensure it's a number
 
       // Calculate 24h range
-      const rangeData = await ctx.runQuery(api.prices.calculate24hRange, {});
+      const rangeData = await ctx.runQuery(api.prices.calculate24hRange as any, {});
       const range24hToStore = rangeData ? rangeData.range : undefined; // Pass range or undefined
 
       // Store aggregated price
@@ -486,7 +486,7 @@ export const calculateVolatilityWithTimeframe = internalQuery({
     
     // Calculate log returns
     // console.log(`Calculating log returns...`);
-    const returns = [];
+    const returns: number[] = [];
     for (let i = 1; i < prices.length; i++) {
       if (prices[i-1].price <= 0 || prices[i].price <= 0) { // Avoid log(0) or division by zero issues
         console.warn(`Skipping return calculation due to non-positive price: P[${i-1}]=${prices[i-1].price} at ${new Date(prices[i-1].timestamp).toISOString()} or P[${i}]=${prices[i].price} at ${new Date(prices[i].timestamp).toISOString()}`);

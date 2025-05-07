@@ -28,8 +28,8 @@ export const saveQuote = mutation({
     const expires = new Date(now.getTime() + 24 * 60 * 60 * 1000); // 24h expiry
 
     // Extract parameters and results based on quoteType
-    let buyerParamsSnapshot = undefined;
-    let providerParamsSnapshot = undefined;
+    let buyerParamsSnapshot: any = undefined;
+    let providerParamsSnapshot: any = undefined;
     let quoteResult = {};
 
     if (args.quoteType === "buyer" && args.calculationResult) {
