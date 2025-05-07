@@ -321,11 +321,12 @@ export const checkExpiredPoliciesJob = internalAction({
           stats.pendingTransactionsCreated++;
           
           // Check if premium distribution is needed for expired policy
-          // In a real scenario, this might initiate the premium distribution process
-          // for policies that expire out-of-the-money (i.e., without being exercised)
-          if ((policy as any).premiumPaid && !(policy as any).premiumDistributed) {
-            console.log(`Policy ${policy._id} needs premium distribution after expiration`);
-            // Future implementation: Create pending transaction for premium distribution
+          if (policy.premiumPaid && !policy.premiumDistributed) {
+            console.log(`Policy ${policy._id} needs premium distribution after expiration. Initiating process.`);
+            // Initiate the premium distribution process
+            await ctx.runAction(internal.policyRegistry.initiatePremiumDistributionForExpiredPolicy, { 
+              policyId: policy._id 
+            });
           }
           
         } catch (error: any) {

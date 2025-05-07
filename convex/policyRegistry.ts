@@ -1,9 +1,10 @@
-import { query, mutation, action, internalMutation } from "./_generated/server";
+import { query, mutation, action, internalMutation, internalAction } from "./_generated/server";
 import { v } from "convex/values";
 import { Id, Doc } from "./_generated/dataModel";
 import { internal, api } from "./_generated/api";
 import { calculateBlackScholesPremium } from "./premium";
 import { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
+import { mockNotifyLiquidityPoolOfPremiumDistribution } from "./mocks";
 
 // --- Enums (as defined in convex-policy-registry-architecture.md) ---
 export enum PolicyStatus {
@@ -738,6 +739,13 @@ export const updateTransactionStatus = internalMutation({
         await handleConfirmedPolicyCreation(ctx, pendingTx, args);
       } else if (pendingTx.actionType === "Activate") {
         await handleConfirmedPolicyActivation(ctx, pendingTx, args);
+      } else if (pendingTx.actionType === "PremiumDistribution") {
+        // Handle confirmed premium distribution
+        await ctx.runMutation(internal.policyRegistry.processPremiumDistributionEvent, {
+          policyId: pendingTx.payload.policyId, // Assuming policyId is in payload
+          transactionId: args.transactionId,
+          blockHeight: args.data?.blockHeight,
+        });
       }
       // Add other action types as needed (e.g., Cancel, Expire)
     } else if (newStatus === TransactionStatus.FAILED) {
@@ -805,7 +813,7 @@ async function handleConfirmedPolicyCreation(ctx: MutationCtx, pendingTx: Doc<"p
       premium: params.premiumUSD,
       creationTimestamp: Date.now(),
       expirationHeight: params.expirationHeight,
-      status: PolicyStatus.ACTIVE,
+      status: PolicyStatus.ACTIVE, // Assuming policy is active once premium is paid (on-chain confirmation)
       policyType: params.policyType,
       positionType: params.positionType,
       onChainPolicyId: args.data?.onChainPolicyId || "mock-policy-id-" + Math.floor(Math.random() * 1000000),
@@ -814,7 +822,9 @@ async function handleConfirmedPolicyCreation(ctx: MutationCtx, pendingTx: Doc<"p
       displayName: params.displayName || `${params.policyType} Option - ${params.protectedValueUSD} USD`,
       description: params.description,
       tags: params.tags,
-      updatedAt: Date.now(), 
+      updatedAt: Date.now(),
+      premiumPaid: true, // Set premiumPaid to true upon policy creation confirmation
+      premiumDistributed: false, // Initialize premiumDistributed as false
     });
     
     policyIdToUseForEvents = newlyCreatedPolicyId; // Policy successfully created, use its ID for events
@@ -1479,4 +1489,81 @@ async function preparePolicySettlementTransaction(params: {
     },
     txid: `mock-settle-tx-${Date.now()}`,
   };
-} 
+}
+
+/**
+ * Internal action to initiate the premium distribution process for a given policy.
+ * This would be called by a scheduled job (e.g., checkExpiredPoliciesJob).
+ * Corresponds to CV-PR-224 (distributePolicyPremium).
+ */
+export const initiatePremiumDistributionForExpiredPolicy = internalAction({
+  args: {
+    policyId: v.id("policies"),
+  },
+  handler: async (ctx: ActionCtx, args: { policyId: Id<"policies"> }) => { // Use ActionCtx directly
+    console.log(`Initiating premium distribution check for expired policy: ${args.policyId}`);
+    try {
+      // Requesting the distribution will perform eligibility checks
+      // ... existing code ...
+    } catch (error: any) {
+      console.error(`Error initiating premium distribution for expired policy:`, error);
+    }
+  },
+});
+
+export const processPremiumDistributionEvent = internalMutation({
+  args: {
+    policyId: v.id("policies"),
+    transactionId: v.optional(v.string()), // On-chain transaction ID of the distribution
+    blockHeight: v.optional(v.number()),   // Block height of the distribution transaction
+    // Add any other relevant data from the event
+  },
+  handler: async (ctx, args) => {
+    const policy = await ctx.db.get(args.policyId);
+
+    if (!policy) {
+      console.error(`Policy not found with ID: ${args.policyId} during processPremiumDistributionEvent.`);
+      return { success: false, reason: "Policy not found." };
+    }
+
+    if (policy.premiumDistributed) {
+      console.log(`Premium already marked as distributed for policy ${args.policyId}. No action taken.`);
+      return { success: true, reason: "Premium already distributed." };
+    }
+
+    await ctx.db.patch(args.policyId, {
+      premiumDistributed: true,
+      updatedAt: Date.now(),
+    });
+
+    await ctx.db.insert("policyEvents", {
+      policyConvexId: args.policyId,
+      eventType: PolicyEventType.PREMIUM_DISTRIBUTED,
+      data: {
+        message: "Premium successfully distributed to counterparty.",
+        transactionId: args.transactionId,
+        blockHeight: args.blockHeight,
+      },
+      timestamp: Date.now(),
+      transactionId: args.transactionId,
+      blockHeight: args.blockHeight,
+    });
+
+    // Notify Liquidity Pool (mocked)
+    // We need to ensure all necessary params for the mock are available from the policy or args
+    if (policy.counterparty && policy.premium && policy.settlementToken) {
+      await mockNotifyLiquidityPoolOfPremiumDistribution({
+        policyId: args.policyId,
+        premiumAmount: policy.premium, 
+        distributedToCounterparty: policy.counterparty, 
+        tokenId: policy.settlementToken, // Assuming premium is in settlementToken
+        distributionTxId: args.transactionId,
+      });
+    } else {
+      console.warn(`[processPremiumDistributionEvent] Missing data on policy ${args.policyId} for LP notification.`);
+    }
+
+    console.log(`Premium distribution processed for policy ${args.policyId}.`);
+    return { success: true };
+  },
+}); 

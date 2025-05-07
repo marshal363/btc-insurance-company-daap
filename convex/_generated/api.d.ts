@@ -17,6 +17,7 @@ import type * as blockchainIntegration from "../blockchainIntegration.js";
 import type * as blockchainPreparation from "../blockchainPreparation.js";
 import type * as crons from "../crons.js";
 import type * as http from "../http.js";
+import type * as mocks from "../mocks.js";
 import type * as options from "../options.js";
 import type * as oracleSubmissions from "../oracleSubmissions.js";
 import type * as policyRegistry from "../policyRegistry.js";
@@ -43,6 +44,7 @@ declare const fullApi: ApiFromModules<{
   blockchainPreparation: typeof blockchainPreparation;
   crons: typeof crons;
   http: typeof http;
+  mocks: typeof mocks;
   options: typeof options;
   oracleSubmissions: typeof oracleSubmissions;
   policyRegistry: typeof policyRegistry;
