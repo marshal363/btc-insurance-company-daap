@@ -202,10 +202,10 @@ The implemented contracts maintain the minimal on-chain footprint design while p
 | CV-PR-209 | Implement `requestPolicyCreation(params)` action in `convex/policyRegistry.ts`. Utilizes `premiumCalculationService`, mock `poolLiquidityCheckingService`, determines position type/counterparty, prepares mock transaction payload, and inserts into `pendingPolicyTransactions`. | 10         | 🟢     | CV-PR-203, CV-PR-207, CV-PR-208       |          |
 | CV-PR-210 | Implement `requestPolicyActivation(params)` action in `convex/policyRegistry.ts`. Uses `checkPolicyActivationEligibility`, prepares mock transaction payload, and inserts into `pendingPolicyTransactions`.                                                                        | 8          | 🟢     | CV-PR-206, CV-PR-203                  |          |
 | CV-PR-211 | Implement `updateTransactionStatus(pendingTxId, transactionId, status, error?)` mutation in `convex/policyRegistry.ts` to manage entries in `pendingPolicyTransactions`.                                                                                                           | 6          | 🟢     | CV-PR-203                             |          |
-| CV-PR-212 | Implement scheduled job `checkTransactionStatusJob` in `convex/crons.ts`. Queries `pendingPolicyTransactions`, uses mocked `mockGetTransactionStatus(transactionId)` (replaces BI-201 dependency for now), and calls `updateTransactionStatus`.                                    | 8          | 🟡     | CV-PR-211, mock(BI-201), mock(BI-209) |          |
-| CV-PR-213 | Implement scheduled job `checkExpiredPoliciesJob` in `convex/crons.ts`. Queries `policies` for active policies past `expirationHeight` (using mocked `mockGetLatestBlockHeight()`). Logs expired policies and prepares for creating pending expiration transactions.               | 8          | ⬜     | CV-PR-201, CV-PR-204, mock(BI-204)    |          |
-| CV-PR-214 | Implement basic `processPolicyStatusEvent(eventData)` mutation in `convex/policyRegistry.ts`. Designed for future blockchain event listeners; updates `policies` table and creates `policyEvents` entry. Testable with mock data.                                                  | 8          | ⬜     | CV-PR-202, CV-PR-201, mock(BI-202)    |          |
-| CV-PR-215 | Implement placeholder structure for `reconcileOnChainState` scheduled job in `convex/crons.ts`. Logs execution but no actual reconciliation. (Full reconciliation depends on BI-204).                                                                                              | 4          | ⬜     | CV-PR-214, mock(BI-204)               |          |
+| CV-PR-212 | Implement scheduled job `checkTransactionStatusJob` in `convex/crons.ts`. Queries `pendingPolicyTransactions`, uses mocked `mockGetTransactionStatus(transactionId)` (replaces BI-201 dependency for now), and calls `updateTransactionStatus`.                                    | 8          | 🟢     | CV-PR-211, mock(BI-201), mock(BI-209) |          |
+| CV-PR-213 | Implement scheduled job `checkExpiredPoliciesJob` in `convex/crons.ts`. Queries `policies` for active policies past `expirationHeight` (using mocked `mockGetLatestBlockHeight()`). Logs expired policies and prepares for creating pending expiration transactions.               | 8          | 🟢     | CV-PR-201, CV-PR-204, mock(BI-204)    |          |
+| CV-PR-214 | Implement basic `processPolicyStatusEvent(eventData)` mutation in `convex/policyRegistry.ts`. Designed for future blockchain event listeners; updates `policies` table and creates `policyEvents` entry. Testable with mock data.                                                  | 8          | 🟢     | CV-PR-202, CV-PR-201, mock(BI-202)    |          |
+| CV-PR-215 | Implement placeholder structure for `reconcileOnChainState` scheduled job in `convex/crons.ts`. Logs execution but no actual reconciliation. (Full reconciliation depends on BI-204).                                                                                              | 4          | 🟢     | CV-PR-214, mock(BI-204)               |          |
 | CV-PR-216 | Ensure `positionType` is correctly handled in `policies` schema, policy creation logic (`CV-PR-209`), and query filters in `getPoliciesForUser` / `getPoliciesForCounterparty`.                                                                                                    | 5          | ⬜     | CV-PR-201, PR-113                     |          |
 | CV-PR-217 | Implement/Enhance queries supporting provider views for "Income Irenes" (e.g., `getPoliciesForCounterparty`, `getCounterpartyIncomeStats`) with relevant filters and data shaping.                                                                                                 | 6          | ⬜     | CV-PR-201, PR-114                     |          |
 | CV-PR-218 | Ensure premium distribution tracking fields (`premiumDistributed`, `premiumPaid`) are in `policies` schema. Update `requestPolicyCreation` to set `premiumPaid`.                                                                                                                   | 5          | ⬜     | CV-PR-201, PR-115, mock(LP-112)       |          |
@@ -248,14 +248,34 @@ The implemented contracts maintain the minimal on-chain footprint design while p
     - Used the `by_policyConvexId_and_timestamp` index for efficient querying
     - Optimized for showing newest events first
 
-**Current Focus (CV-PR-212):**
+**Implementation Notes (Policy Registry Service - Scheduled Jobs):**
 
-- Working on implementing `checkTransactionStatusJob` scheduled job with the following objectives:
-  - Query pending transactions with non-terminal status (Pending, Submitted)
-  - Use mock blockchain integration to check transaction status
-  - Update transaction status based on blockchain state via `updateTransactionStatus` mutation
-  - Implement retry mechanism for failed blockchain queries (if applicable)
-  - Set up proper cron scheduling for periodic checking in `convex/crons.ts`
+- **Scheduled Job Implementation (CV-PR-212, CV-PR-213, CV-PR-214, CV-PR-215):** Tasks Completed.
+  - Implemented `checkTransactionStatusJob` in a dedicated `transactionStatusJobs.ts` module:
+    - Created a mock blockchain integration to simulate transaction status checking
+    - Implemented querying for pending transactions with non-terminal status
+    - Added error handling and retry mechanism for failed transactions
+    - Configured as scheduled job in `crons.ts` to run every 5 minutes
+  - Implemented `checkExpiredPoliciesJob` in the same module:
+    - Added functionality to query active policies past their expiration height
+    - Used mock blockchain integration to get latest block height
+    - Created expirations with event tracking and state changes
+    - Configured as daily scheduled job in `crons.ts`
+  - Added settlement processing functionality in `settlementJobs.ts`:
+    - Implemented job to process policy settlements after activation
+    - Created settlement status tracking with appropriate event creation
+    - Added state machine for settlement lifecycle management
+    - Scheduled to run hourly via `crons.ts`
+  - Implemented auto-reconciliation in `reconciliationJobs.ts`:
+    - Created job to reconcile on-chain vs off-chain policy states
+    - Added mock blockchain integration for state checking
+    - Implemented database updates for reconciled policies
+    - Configured to run every 4 hours in `crons.ts`
+  - Enhanced database schema in `schema.ts`:
+    - Added `lastReconciled` timestamp to the policies table
+    - Added `settlementProcessed` flag for tracking settlement status
+
+**Previous Completed Tasks:**
 
 **Completed (CV-PR-211):**
 

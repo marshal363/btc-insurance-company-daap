@@ -23,7 +23,10 @@ import type * as policyRegistry from "../policyRegistry.js";
 import type * as premium from "../premium.js";
 import type * as prices from "../prices.js";
 import type * as quotes from "../quotes.js";
+import type * as reconciliationJobs from "../reconciliationJobs.js";
 import type * as router from "../router.js";
+import type * as settlementJobs from "../settlementJobs.js";
+import type * as transactionStatusJobs from "../transactionStatusJobs.js";
 import type * as types from "../types.js";
 import type * as users from "../users.js";
 
@@ -46,7 +49,10 @@ declare const fullApi: ApiFromModules<{
   premium: typeof premium;
   prices: typeof prices;
   quotes: typeof quotes;
+  reconciliationJobs: typeof reconciliationJobs;
   router: typeof router;
+  settlementJobs: typeof settlementJobs;
+  transactionStatusJobs: typeof transactionStatusJobs;
   types: typeof types;
   users: typeof users;
 }>;

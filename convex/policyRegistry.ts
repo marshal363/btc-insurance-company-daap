@@ -593,7 +593,7 @@ export const updatePolicyStatus = internalMutation({
  * @param args Parameters for updating transaction status
  * @returns The updated pending transaction record
  */
-export const updateTransactionStatus = mutation({
+export const updateTransactionStatus = internalMutation({
   args: {
     pendingTxId: v.id("pendingPolicyTransactions"),
     transactionId: v.optional(v.string()), // On-chain TX ID, if available
@@ -685,6 +685,23 @@ export const updateTransactionStatus = mutation({
     // 5. Return the updated pending transaction
     return await ctx.db.get(args.pendingTxId);
   },
+});
+
+// Also, make a public version that can be called from frontend
+export const updateTransactionStatusPublic = mutation({
+  args: {
+    pendingTxId: v.id("pendingPolicyTransactions"),
+    transactionId: v.string(), // On-chain TX ID, required for public calls
+    status: v.string(), // New status (use TransactionStatus enum values)
+  },
+  handler: async (ctx, args): Promise<any> => {
+    // Just call the internal mutation
+    return await ctx.db.patch(args.pendingTxId, {
+      transactionId: args.transactionId,
+      status: args.status,
+      updatedAt: Date.now(),
+    });
+  }
 });
 
 /**

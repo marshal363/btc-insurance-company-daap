@@ -305,7 +305,8 @@ export default defineSchema({
     expirationHeight: v.number(), // Stacks block height at which policy expires
     exercisedAt: v.optional(v.number()), // Timestamp when policy was exercised
     updatedAt: v.optional(v.number()), // Timestamp of last update to this record
-
+    lastReconciled: v.optional(v.number()), // Timestamp of last on-chain reconciliation
+    
     // Status & Lifecycle
     status: v.string(), // e.g., "Pending", "Active", "Exercised", "Expired", "Cancelled"
     
@@ -321,6 +322,17 @@ export default defineSchema({
     settlementPrice: v.optional(v.number()), // Price of underlying at exercise
     breakEvenPrice: v.optional(v.number()), // Price at which P&L is zero for buyer
     exercisePrice: v.optional(v.number()), // Price at which the policy was exercised (market price)
+    
+    // Settlement Processing
+    settlementStatus: v.optional(v.string()), // e.g., "Requested", "Processing", "Completed", "Failed"
+    settlementProcessed: v.optional(v.boolean()), // Whether settlement has been processed
+    settlementTransactionId: v.optional(v.string()), // Transaction ID of the settlement
+    settlementCompletedAt: v.optional(v.number()), // Timestamp when settlement was completed
+    settlementError: v.optional(v.string()), // Error if settlement failed
+    
+    // Premium Distribution
+    premiumPaid: v.optional(v.boolean()), // Whether premium has been paid
+    premiumDistributed: v.optional(v.boolean()), // Whether premium has been distributed to counterparty
 
     // User-Facing Information
     displayName: v.optional(v.string()),
