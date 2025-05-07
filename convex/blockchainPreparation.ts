@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { internalQuery, query } from "./_generated/server";
+import { internalQuery, query, action, internalAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { 
   BlockchainParams, 
@@ -196,4 +196,190 @@ export const prepareMockTransaction = query({
       quoteType: quote.quoteType
     };
   },
-}); 
+});
+
+/**
+ * Prepare a STX transfer to the liquidity pool contract
+ */
+export const prepareStxTransferToLiquidityPool = internalAction({
+  args: {
+    amount: v.number(),
+    sender: v.string(),
+  },
+  handler: async (ctx, args) => {
+    // In a real implementation, this would:
+    // 1. Calculate the right contract address based on the environment
+    // 2. Format transaction data in the right format for the blockchain
+    // 3. Generate any necessary signatures or authentication
+    
+    // For now, we'll return a placeholder transaction object
+    return {
+      txOptions: {
+        contractAddress: 'ST3QFXBFMB0FBJR71KISEXBWZM5NYTYKPRD74EJM', // Example contract address
+        contractName: 'liquidity-pool',
+        functionName: 'deposit',
+        functionArgs: [
+          { type: 'uint', value: args.amount.toString() },
+          { type: 'principal', value: args.sender },
+        ],
+        fee: 1000, // Example fee
+        nonce: 0,   // This would be determined dynamically in production
+      },
+      amount: args.amount,
+      sender: args.sender,
+      type: 'STX',
+    };
+  },
+});
+
+/**
+ * Prepare a sBTC transfer to the liquidity pool contract
+ */
+export const prepareSbtcTransferToLiquidityPool = internalAction({
+  args: {
+    amount: v.number(),
+    sender: v.string(),
+  },
+  handler: async (ctx, args) => {
+    // In a real implementation, this would:
+    // 1. Calculate the right contract addresses based on the environment
+    // 2. Format transaction data in the right format for the blockchain
+    // 3. Generate any necessary signatures or authentication
+    
+    // For now, we'll return a placeholder transaction object
+    return {
+      txOptions: {
+        contractAddress: 'ST3QFXBFMB0FBJR71KISEXBWZM5NYTYKPRD74EJM', // Example contract address
+        contractName: 'liquidity-pool',
+        functionName: 'deposit-sbtc',
+        functionArgs: [
+          { type: 'uint', value: args.amount.toString() },
+          { type: 'principal', value: args.sender },
+        ],
+        fee: 1000, // Example fee
+        nonce: 0,   // This would be determined dynamically in production
+      },
+      amount: args.amount,
+      sender: args.sender,
+      type: 'sBTC',
+    };
+  },
+});
+
+/**
+ * Prepare a STX withdrawal from the liquidity pool contract
+ */
+export const prepareStxWithdrawalFromLiquidityPool = internalAction({
+  args: {
+    amount: v.number(),
+    recipient: v.string(),
+  },
+  handler: async (ctx, args) => {
+    // In a real implementation, this would prepare the transaction for the blockchain
+    return {
+      txOptions: {
+        contractAddress: 'ST3QFXBFMB0FBJR71KISEXBWZM5NYTYKPRD74EJM', // Example contract address
+        contractName: 'liquidity-pool',
+        functionName: 'withdraw',
+        functionArgs: [
+          { type: 'uint', value: args.amount.toString() },
+          { type: 'principal', value: args.recipient },
+        ],
+        fee: 1000, // Example fee
+        nonce: 0,   // This would be determined dynamically in production
+      },
+      amount: args.amount,
+      recipient: args.recipient,
+      type: 'STX',
+    };
+  },
+});
+
+/**
+ * Prepare a sBTC withdrawal from the liquidity pool contract
+ */
+export const prepareSbtcWithdrawalFromLiquidityPool = internalAction({
+  args: {
+    amount: v.number(),
+    recipient: v.string(),
+  },
+  handler: async (ctx, args) => {
+    // In a real implementation, this would prepare the transaction for the blockchain
+    return {
+      txOptions: {
+        contractAddress: 'ST3QFXBFMB0FBJR71KISEXBWZM5NYTYKPRD74EJM', // Example contract address
+        contractName: 'liquidity-pool',
+        functionName: 'withdraw-sbtc',
+        functionArgs: [
+          { type: 'uint', value: args.amount.toString() },
+          { type: 'principal', value: args.recipient },
+        ],
+        fee: 1000, // Example fee
+        nonce: 0,   // This would be determined dynamically in production
+      },
+      amount: args.amount,
+      recipient: args.recipient,
+      type: 'sBTC',
+    };
+  },
+});
+
+/**
+ * Prepare a STX premium withdrawal from the liquidity pool contract
+ */
+export const prepareStxPremiumWithdrawalFromLiquidityPool = internalAction({
+  args: {
+    amount: v.number(),
+    recipient: v.string(),
+  },
+  handler: async (ctx, args) => {
+    // In a real implementation, this would prepare the transaction for the blockchain
+    return {
+      txOptions: {
+        contractAddress: 'ST3QFXBFMB0FBJR71KISEXBWZM5NYTYKPRD74EJM', // Example contract address
+        contractName: 'liquidity-pool',
+        functionName: 'withdraw-premium',
+        functionArgs: [
+          { type: 'uint', value: args.amount.toString() },
+          { type: 'principal', value: args.recipient },
+        ],
+        fee: 1000, // Example fee
+        nonce: 0,   // This would be determined dynamically in production
+      },
+      amount: args.amount,
+      recipient: args.recipient,
+      type: 'STX',
+    };
+  },
+});
+
+/**
+ * Prepare a sBTC premium withdrawal from the liquidity pool contract
+ */
+export const prepareSbtcPremiumWithdrawalFromLiquidityPool = internalAction({
+  args: {
+    amount: v.number(),
+    recipient: v.string(),
+  },
+  handler: async (ctx, args) => {
+    // In a real implementation, this would prepare the transaction for the blockchain
+    return {
+      txOptions: {
+        contractAddress: 'ST3QFXBFMB0FBJR71KISEXBWZM5NYTYKPRD74EJM', // Example contract address
+        contractName: 'liquidity-pool',
+        functionName: 'withdraw-sbtc-premium',
+        functionArgs: [
+          { type: 'uint', value: args.amount.toString() },
+          { type: 'principal', value: args.recipient },
+        ],
+        fee: 1000, // Example fee
+        nonce: 0,   // This would be determined dynamically in production
+      },
+      amount: args.amount,
+      recipient: args.recipient,
+      type: 'sBTC',
+    };
+  },
+});
+
+console.log("convex/blockchainPreparation.ts loaded: Defines blockchain transaction preparation functions."); 

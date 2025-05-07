@@ -390,4 +390,131 @@ export default defineSchema({
     .index("by_status_and_actionType", ["status", "actionType"])
     .index("by_policyConvexId", ["policyConvexId"])
     .index("by_userId", ["userId"]),
+
+  // --- Liquidity Pool Tables ---
+  
+  // CV-LP-201: Provider Balances Table
+  provider_balances: defineTable({
+    provider: v.string(), // Provider principal (Stacks address)
+    token: v.string(), // Token ID (STX, sBTC, etc.)
+    total_deposited: v.number(), // Total amount deposited
+    available_balance: v.number(), // Available (unlocked) balance
+    locked_balance: v.number(), // Balance locked as collateral
+    earned_premiums: v.number(), // Total premiums earned
+    withdrawn_premiums: v.number(), // Premiums withdrawn
+    pending_premiums: v.number(), // Premiums pending distribution
+    last_updated: v.number(), // Timestamp of last update
+  })
+    .index("by_provider_token", ["provider", "token"])
+    .index("by_provider", ["provider"])
+    .index("by_token", ["token"]),
+
+  // CV-LP-202: Pool Metrics Table
+  pool_metrics: defineTable({
+    timestamp: v.number(), // When the metrics were recorded
+    token: v.string(), // Token ID (STX, sBTC, etc.)
+    total_liquidity: v.number(), // Total funds in the pool for this token
+    available_liquidity: v.number(), // Unlocked funds available for new policies
+    locked_liquidity: v.number(), // Funds locked as collateral
+    total_providers: v.number(), // Number of providers with active deposits
+    active_policies: v.number(), // Number of active policies backed by this pool
+    total_premiums_collected: v.number(), // Total premiums collected (lifetime)
+    premiums_distributed: v.number(), // Total premiums distributed to providers
+    annualized_yield: v.number(), // Current annualized yield for this token
+    avg_policy_duration: v.optional(v.number()), // Average duration of active policies
+    utilization_rate: v.number(), // Percentage of pool funds utilized (locked/total)
+  })
+    .index("by_timestamp", ["timestamp"])
+    .index("by_token_timestamp", ["token", "timestamp"]),
+
+  // CV-LP-203: Policy Allocations Table
+  policy_allocations: defineTable({
+    policy_id: v.id("policies"), // Policy ID
+    provider: v.string(), // Provider principal
+    token: v.string(), // Token ID
+    allocated_amount: v.number(), // Amount allocated as collateral
+    allocation_percentage: v.number(), // Percentage of total policy collateral
+    premium_share: v.number(), // Share of premium allocated to this provider
+    premium_distributed: v.boolean(), // Whether premium has been distributed
+    allocation_timestamp: v.number(), // When allocation was made
+    status: v.string(), // ACTIVE, EXPIRED, EXERCISED, etc.
+  })
+    .index("by_policy_provider", ["policy_id", "provider"])
+    .index("by_provider", ["provider"])
+    .index("by_status", ["status"])
+    .index("by_provider_status", ["provider", "status"])
+    .index("by_policy_status", ["policy_id", "status"]),
+
+  // CV-LP-204: Pool Transactions Table 
+  pool_transactions: defineTable({
+    provider: v.string(), // Provider principal (Stacks address)
+    tx_id: v.string(), // Internal transaction ID
+    tx_type: v.string(), // DEPOSIT, WITHDRAWAL, PREMIUM, ALLOCATION, etc.
+    amount: v.number(), // Amount involved in the transaction
+    token: v.string(), // Token ID (STX, sBTC, etc.)
+    timestamp: v.number(), // Transaction timestamp
+    policy_id: v.optional(v.id("policies")), // Associated policy (if applicable)
+    status: v.string(), // PENDING, CONFIRMED, FAILED
+    chain_tx_id: v.optional(v.string()), // On-chain transaction ID
+    description: v.optional(v.string()), // Human-readable description
+    metadata: v.optional(v.any()), // Additional transaction-specific data
+  })
+    .index("by_provider_timestamp", ["provider", "timestamp"])
+    .index("by_tx_type", ["tx_type"])
+    .index("by_provider_tx_type", ["provider", "tx_type"])
+    .index("by_policy_id", ["policy_id"])
+    .index("by_status", ["status"]),
+
+  // CV-LP-205: Pending Pool Transactions Table
+  pending_pool_transactions: defineTable({
+    provider: v.string(), // Provider principal (Stacks address)
+    tx_id: v.string(), // Internal transaction ID
+    tx_type: v.string(), // DEPOSIT, WITHDRAWAL, PREMIUM_DISTRIBUTION, etc.
+    amount: v.number(), // Amount involved
+    token: v.string(), // Token ID (STX, sBTC, etc.)
+    timestamp: v.number(), // Creation timestamp
+    payload: v.any(), // Transaction-specific data for processing
+    status: v.string(), // PENDING, SUBMITTED, CONFIRMED, FAILED
+    chain_tx_id: v.optional(v.string()), // On-chain transaction ID once submitted
+    last_checked: v.optional(v.number()), // When status was last checked
+    retry_count: v.number(), // Number of retry attempts
+    error: v.optional(v.string()), // Error message if failed
+    policy_id: v.optional(v.id("policies")), // Associated policy (if applicable)
+    metadata: v.optional(v.any()), // Additional processing metadata
+  })
+    .index("by_provider", ["provider"])
+    .index("by_status", ["status"])
+    .index("by_tx_type_status", ["tx_type", "status"])
+    .index("by_policy_id", ["policy_id"]),
+
+  // CV-LP-221: Premium Balances Table
+  premium_balances: defineTable({
+    token: v.string(), // Token ID used for premium (STX, sBTC, etc.)
+    total_premiums: v.number(), // Total premiums collected in this token
+    distributed_premiums: v.number(), // Total premiums distributed to providers
+    last_updated: v.number(), // Timestamp of last update
+    last_distribution: v.optional(v.number()), // Timestamp of last distribution
+    distribution_count: v.optional(v.number()), // Count of distribution events
+  })
+    .index("by_token", ["token"]),
+
+  // CV-LP-223: Provider Premium Distributions Table
+  provider_premium_distributions: defineTable({
+    policy_id: v.id("policies"), // Policy ID
+    provider: v.string(), // Provider principal (Stacks address)
+    premium_amount: v.number(), // Premium amount for this provider
+    token: v.string(), // Token used for premium payment
+    distribution_timestamp: v.number(), // When premium was distributed/recorded
+    status: v.string(), // PENDING, COMPLETED, FAILED
+    chain_tx_id: v.optional(v.string()), // On-chain transaction ID if applicable
+    allocation_percentage: v.optional(v.number()), // Provider's percentage of total premium
+    source: v.optional(v.string()), // Source of distribution (e.g., "policy_expiration", "manual")
+    batch_id: v.optional(v.string()), // ID for batch distributions
+  })
+    .index("by_policy_provider", ["policy_id", "provider"])
+    .index("by_provider", ["provider"])
+    .index("by_provider_status", ["provider", "status"])
+    .index("by_distribution_timestamp", ["distribution_timestamp"])
+    .index("by_status", ["status"])
+    .index("by_batch_id", ["batch_id"]),
 });

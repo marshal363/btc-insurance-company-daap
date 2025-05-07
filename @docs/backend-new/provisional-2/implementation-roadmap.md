@@ -321,40 +321,67 @@ The implemented contracts maintain the minimal on-chain footprint design while p
 
 #### B. Liquidity Pool Service - Convex Implementation
 
-| Task ID   | Description                                                            | Est. Hours | Status | Dependencies                    | Assignee |
-| --------- | ---------------------------------------------------------------------- | ---------- | ------ | ------------------------------- | -------- |
-| CV-LP-201 | Define schema for providerBalances table                               | 6          | ⬜     | LP-102                          |          |
-| CV-LP-202 | Define schema for poolMetrics table                                    | 4          | ⬜     | CV-LP-201                       |          |
-| CV-LP-203 | Define schema for policyAllocations table                              | 4          | ⬜     | CV-LP-201, CV-PR-201            |          |
-| CV-LP-204 | Define schema for poolTransactions table                               | 4          | ⬜     | CV-LP-201                       |          |
-| CV-LP-205 | Define schema for pendingPoolTransactions table                        | 4          | ⬜     | CV-LP-204                       |          |
-| CV-LP-206 | Implement provider balances query functions (getProviderBalances)      | 6          | ⬜     | CV-LP-201                       |          |
-| CV-LP-207 | Implement provider dashboard query (getProviderDashboard)              | 10         | ⬜     | CV-LP-201, CV-LP-203, CV-LP-204 |          |
-| CV-LP-208 | Implement pool metrics query (getPoolMetrics)                          | 6          | ⬜     | CV-LP-202                       |          |
-| CV-LP-209 | Implement withdrawal eligibility checking (checkWithdrawalEligibility) | 8          | ⬜     | CV-LP-201                       |          |
-| CV-LP-210 | Implement capital commitment action (requestCapitalCommitment)         | 12         | ⬜     | CV-LP-205, BI-205               |          |
-| CV-LP-211 | Implement capital withdrawal action (requestCapitalWithdrawal)         | 12         | ⬜     | CV-LP-209, CV-LP-205, BI-205    |          |
-| CV-LP-212 | Implement transaction status update mutation                           | 6          | ⬜     | CV-LP-205                       |          |
-| CV-LP-213 | Implement scheduled job for checking transaction status                | 8          | ⬜     | CV-LP-212, BI-201               |          |
-| CV-LP-214 | Implement risk tier management system                                  | 10         | ⬜     | CV-LP-201                       |          |
-| CV-LP-215 | Implement collateral allocation for policies                           | 12         | ⬜     | CV-LP-203, CV-PR-201            |          |
-| CV-LP-216 | Implement settlement processing                                        | 12         | ⬜     | CV-LP-203, CV-LP-201            |          |
-| CV-LP-217 | Implement premium distribution                                         | 10         | ⬜     | CV-LP-203, CV-LP-201            |          |
-| CV-LP-218 | Implement pool state reconciliation                                    | 10         | ⬜     | CV-LP-201, BI-204               |          |
-| CV-LP-219 | Enhance premium tracking for provider-specific accounting              | 10         | ⬜     | CV-LP-201, LP-112               |          |
-| CV-LP-220 | Implement yield reporting for Income Irenes                            | 12         | ⬜     | CV-LP-201, CV-PR-218            |          |
-| CV-LP-221 | Define schema for premium_balances table                               | 4          | ⬜     | CV-LP-201, LP-114               |          |
-| CV-LP-222 | Implement premium recording and tracking                               | 8          | ⬜     | CV-LP-221, LP-115               |          |
-| CV-LP-223 | Define schema for provider_premium_distributions table                 | 6          | ⬜     | CV-LP-201, LP-117               |          |
-| CV-LP-224 | Implement provider-specific premium allocation                         | 10         | ⬜     | CV-LP-223, LP-118               |          |
-| CV-LP-225 | Create premium distribution dashboard for providers                    | 12         | ⬜     | CV-LP-222, CV-LP-224            |          |
-| CV-LP-226 | Implement recordPolicyPremium handler for policy registry events       | 8          | ⬜     | CV-LP-221, CV-LP-223, CV-PR-225 |          |
-| CV-LP-227 | Create processProviderPremiumDistributions scheduled job               | 6          | ⬜     | CV-LP-224                       |          |
-| CV-LP-228 | Implement distributeProviderPremium function                           | 8          | ⬜     | CV-LP-224                       |          |
-| CV-LP-229 | Create getPendingPremiumDistributions query                            | 6          | ⬜     | CV-LP-223                       |          |
-| CV-LP-230 | Implement claimPendingPremiums user action                             | 8          | ⬜     | CV-LP-229, CV-LP-228            |          |
-| CV-LP-231 | Create processBatchPremiumClaim function                               | 6          | ⬜     | CV-LP-230, CV-LP-228            |          |
-| CV-LP-232 | Add premium balance to provider withdrawal calculations                | 4          | ⬜     | CV-LP-211, CV-LP-222            |          |
+**Schema Tables**
+
+- ✅ CV-LP-201: Define schema for providerBalances table
+- ✅ CV-LP-202: Define schema for poolMetrics table
+- ✅ CV-LP-203: Define schema for policyAllocations table
+- ✅ CV-LP-204: Define schema for poolTransactions table
+- ✅ CV-LP-205: Define schema for pendingPoolTransactions table
+
+**Provider Queries and Dashboard**
+
+- ✅ CV-LP-206: Implement getProviderBalances query
+- ✅ CV-LP-207: Implement getProviderDashboard query (aggregated view)
+- ✅ CV-LP-208: Implement getPoolMetrics query (TVL, utilization, etc)
+- ✅ CV-LP-209: Implement checkWithdrawalEligibility query
+
+**Capital Management**
+
+- ✅ CV-LP-210: Implement requestCapitalCommitment action
+- ✅ CV-LP-211: Implement requestWithdrawal action
+- ✅ CV-LP-212: Implement allocateCapitalForPolicy action (internal)
+- ✅ CV-LP-213: Implement releaseCollateral action (internal)
+
+**Transaction Monitoring**
+
+- ⬜ CV-LP-214: Implement transaction watcher service (job)
+- ⬜ CV-LP-215: Implement getTransactionsByProvider query
+- ⬜ CV-LP-216: Implement getPoolTransactions query (for admins)
+
+**Transaction Processing**
+
+- ⬜ CV-LP-217: Implement processBlockchainTransaction action (internal)
+- ⬜ CV-LP-218: Implement checkTransactionStatus action
+- ⬜ CV-LP-219: Implement retryTransaction action
+
+**Policy Allocation Management**
+
+- ⬜ CV-LP-220: Implement getAllocationsByPolicy query (internal)
+
+**Premium Management**
+
+- ✅ CV-LP-221: Define schema for premiumBalances table
+- ✅ CV-LP-222: Implement distributePolicyPremium action (internal)
+- ✅ CV-LP-223: Define schema for providerPremiumDistributions table
+- ✅ CV-LP-224: Implement requestPremiumWithdrawal action
+
+**Settlement and Claim Functions**
+
+- ⬜ CV-LP-225: Implement verifyClaimSubmission action (internal)
+- ⬜ CV-LP-226: Implement processClaimSettlement action (internal)
+- ⬜ CV-LP-227: Implement getClaimPaymentStatus query
+
+**Provider Management**
+
+- ⬜ CV-LP-228: Implement registerLiquidityProvider action
+- ⬜ CV-LP-229: Implement updateProviderPreferences action
+- ⬜ CV-LP-230: Implement getProviderPreferences query
+
+**Administrative Functions**
+
+- ⬜ CV-LP-231: Implement getSystemPoolStats query (admin-only)
+- ⬜ CV-LP-232: Implement pausePoolOperations action (admin-only)
 
 #### C. Convex Testing
 
