@@ -22,6 +22,7 @@ import type * as mocks from "../mocks.js";
 import type * as options from "../options.js";
 import type * as oracleSubmissions from "../oracleSubmissions.js";
 import type * as policyRegistry from "../policyRegistry.js";
+import type * as poolTransactionWatcher from "../poolTransactionWatcher.js";
 import type * as premium from "../premium.js";
 import type * as prices from "../prices.js";
 import type * as quotes from "../quotes.js";
@@ -50,6 +51,7 @@ declare const fullApi: ApiFromModules<{
   options: typeof options;
   oracleSubmissions: typeof oracleSubmissions;
   policyRegistry: typeof policyRegistry;
+  poolTransactionWatcher: typeof poolTransactionWatcher;
   premium: typeof premium;
   prices: typeof prices;
   quotes: typeof quotes;

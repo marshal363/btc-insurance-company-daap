@@ -63,4 +63,12 @@ crons.interval(
 // once the initial data is loaded
 // crons.interval("initial-bulk-fetch", { seconds: 30 }, internal.prices.fetchHistoricalPrices, {}, { runOnStart: true });
 
+// Add a new cron job for checking pool transaction statuses
+crons.interval(
+  "check-pool-transaction-statuses",
+  { minutes: 5 },
+  internal.poolTransactionWatcher.checkPoolTransactions,
+  {}
+);
+
 export default crons;

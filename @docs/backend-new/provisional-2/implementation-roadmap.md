@@ -345,8 +345,8 @@ The implemented contracts maintain the minimal on-chain footprint design while p
 
 **Transaction Monitoring**
 
-- ⬜ CV-LP-214: Implement transaction watcher service (job)
-- ⬜ CV-LP-215: Implement getTransactionsByProvider query
+- 🟢 CV-LP-214: Implement transaction watcher service (job)
+- 🟢 CV-LP-215: Implement getTransactionsByProvider query
 - ⬜ CV-LP-216: Implement getPoolTransactions query (for admins)
 
 **Transaction Processing**

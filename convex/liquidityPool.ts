@@ -3,6 +3,7 @@ import { v } from "convex/values";
 import { Id, Doc } from "./_generated/dataModel";
 import { internal, api } from "./_generated/api";
 import { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
+import type { PendingPoolTransaction as PendingPoolTxSchemaType } from "./poolTransactionWatcher"; // Renamed to avoid conflict
 
 // --- Enums ---
 export enum TransactionType {
@@ -2579,3 +2580,202 @@ export const confirmPremiumWithdrawal = mutation({
 
 // Service implementations will go here
 console.log("convex/liquidityPool.ts loaded: Defines Liquidity Pool service functions."); 
+
+// CV-LP-215: Implement getTransactionsByProvider query
+export const getTransactionsByProvider = query({
+  args: {
+    provider: v.string(), 
+    token: v.optional(v.string()),
+    tx_type: v.optional(v.string()), 
+    limit: v.optional(v.number()), // Ensured limit is defined in args
+  },
+  handler: async (ctx, { provider, token, tx_type, limit }) => {
+    let queryBuilder = ctx.db
+      .query("pool_transactions") // Corrected table name to pool_transactions
+      .withIndex("by_provider_timestamp", (q) => q.eq("provider", provider))
+      .order("desc");
+
+    // The schema for pool_transactions has provider, token, tx_type, so direct filtering should work if types align.
+    // The as any[] is a temporary workaround for potential type mismatches during development.
+    const allTransactions = await queryBuilder.collect() as any[]; 
+    let filteredTransactions = allTransactions;
+
+    if (token) {
+      // Ensure tx.token exists on the items from pool_transactions
+      filteredTransactions = filteredTransactions.filter(tx => tx.token === token);
+    }
+    if (tx_type) {
+      // Ensure tx.tx_type exists on the items from pool_transactions
+      filteredTransactions = filteredTransactions.filter(tx => tx.tx_type === tx_type);
+    }
+
+    if (limit) {
+      return filteredTransactions.slice(0, limit);
+    }
+    return filteredTransactions;
+  }
+});
+
+// Validator for the data coming from the pool transaction watcher
+// Aligned with schema for pending_pool_transactions and PendingPoolTransaction type in watcher
+const pendingPoolTxDataValidator = v.object({
+  _id: v.id("pending_pool_transactions"),
+  provider: v.string(),
+  tx_type: v.string(), // Aligned with schema pending_pool_transactions.tx_type
+  token: v.string(),
+  amount: v.number(),
+  status: v.literal("Confirmed"), // Expecting only Confirmed status here
+  chain_tx_id: v.optional(v.string()), // Aligned
+  payload: v.optional(v.any()), // Aligned
+  timestamp: v.number(), // Aligned (creation time of pending tx)
+  // error: v.optional(v.string()), // Not needed for confirmed path, but good for type completeness if used elsewhere
+  // retry_count: v.optional(v.number()), // Same as above
+});
+
+export const finalizeConfirmedPoolTransaction = internalMutation({
+  args: { pendingPoolTxData: pendingPoolTxDataValidator },
+  handler: async (ctx, { pendingPoolTxData }) => {
+    console.log("Finalizing confirmed pool transaction: ", pendingPoolTxData._id);
+
+    const commonTxData = {
+      provider: pendingPoolTxData.provider,
+      tx_id: pendingPoolTxData._id.toString(), // Using pending tx ID as internal tx_id for now
+      tx_type: pendingPoolTxData.tx_type, 
+      amount: pendingPoolTxData.amount,
+      token: pendingPoolTxData.token,
+      timestamp: Date.now(), // Timestamp of this finalization event
+      status: "Confirmed", // Status in the historical pool_transactions table
+      chain_tx_id: pendingPoolTxData.chain_tx_id,
+      policy_id: pendingPoolTxData.payload?.policy_id, // Example if policy_id is in payload
+      description: `Finalized: ${pendingPoolTxData.tx_type} of ${pendingPoolTxData.amount} ${pendingPoolTxData.token}`,
+      metadata: { pending_tx_creation_timestamp: pendingPoolTxData.timestamp }
+    };
+
+    const historicalTxId = await ctx.db.insert("pool_transactions", commonTxData as any);
+    console.log("Created pool_transaction: ", historicalTxId, " for pending tx: ", pendingPoolTxData._id);
+
+    let specificArgs: any;
+    switch (pendingPoolTxData.tx_type) {
+      case "DEPOSIT_CAPITAL": // Assuming this is a value for tx_type
+        specificArgs = { 
+          provider: pendingPoolTxData.provider,
+          token: pendingPoolTxData.token,
+          amount: pendingPoolTxData.amount,
+          providerTxId: historicalTxId, 
+        };
+        await ctx.runMutation(internal.liquidityPool.recordProviderDepositCompletion, specificArgs);
+        break;
+      case "WITHDRAWAL_CAPITAL": // Assuming this is a value for tx_type
+        specificArgs = { 
+          provider: pendingPoolTxData.provider,
+          token: pendingPoolTxData.token,
+          amount: pendingPoolTxData.amount,
+          providerTxId: historicalTxId,
+        };
+        await ctx.runMutation(internal.liquidityPool.recordProviderWithdrawalCompletion, specificArgs);
+        break;
+      case "WITHDRAWAL_PREMIUM": // Assuming this is a value for tx_type
+        specificArgs = {
+          provider: pendingPoolTxData.provider,
+          token: pendingPoolTxData.token,
+          amount: pendingPoolTxData.amount,
+          providerTxId: historicalTxId,
+        };
+        await ctx.runMutation(internal.liquidityPool.recordProviderPremiumWithdrawalCompletion, specificArgs);
+        break;
+      default:
+        console.error("Unknown tx_type in finalizeConfirmedPoolTransaction: ", pendingPoolTxData.tx_type);
+        // Potentially mark the pending transaction with an error status
+        await ctx.db.patch(pendingPoolTxData._id, { status: "ErrorInFinalization", error: `Unknown tx_type: ${pendingPoolTxData.tx_type}` } as any);
+        return;
+    }
+    await ctx.db.patch(pendingPoolTxData._id, { status: "Processed" } as any);
+    console.log("Successfully finalized and marked as Processed: ", pendingPoolTxData._id);
+  }
+});
+
+export const recordProviderDepositCompletion = internalMutation({
+  args: {
+    provider: v.string(),
+    token: v.string(),
+    amount: v.number(),
+    providerTxId: v.id("pool_transactions"), // Corrected table name
+  },
+  handler: async (ctx, { provider, token, amount }) => {
+    let balance = await ctx.db.query("provider_balances")
+      .withIndex("by_provider_token", (q) => q.eq("provider", provider).eq("token", token))
+      .unique();
+
+    if (balance) {
+      await ctx.db.patch(balance._id, {
+        total_deposited: (balance.total_deposited || 0) + amount,
+        available_balance: (balance.available_balance || 0) + amount,
+        last_updated: Date.now(),
+      });
+    } else {
+      await ctx.db.insert("provider_balances", {
+        provider,
+        token,
+        total_deposited: amount,
+        available_balance: amount,
+        locked_balance: 0,
+        earned_premiums: 0,
+        withdrawn_premiums: 0,
+        pending_premiums: 0,
+        last_updated: Date.now(),
+      } as any);
+    }
+    console.log("Completed deposit for ", provider, " Token: ", token, " Amount: ", amount);
+  }
+});
+
+export const recordProviderWithdrawalCompletion = internalMutation({
+  args: {
+    provider: v.string(),
+    token: v.string(),
+    amount: v.number(),
+    providerTxId: v.id("pool_transactions"), // Corrected table name
+  },
+  handler: async (ctx, { provider, token, amount }) => {
+    const balance = await ctx.db.query("provider_balances")
+      .withIndex("by_provider_token", (q) => q.eq("provider", provider).eq("token", token))
+      .unique();
+
+    if (!balance || (balance.available_balance || 0) < amount) {
+      console.error("CRITICAL: Insufficient available balance for withdrawal completion for ", provider, token, amount);
+      return; 
+    }
+
+    await ctx.db.patch(balance._id, {
+      available_balance: (balance.available_balance || 0) - amount,
+      last_updated: Date.now(),
+    });
+    console.log("Completed withdrawal for ", provider, " Token: ", token, " Amount: ", amount);
+  }
+});
+
+export const recordProviderPremiumWithdrawalCompletion = internalMutation({
+  args: {
+    provider: v.string(),
+    token: v.string(),
+    amount: v.number(),
+    providerTxId: v.id("pool_transactions"), // Corrected table name
+  },
+  handler: async (ctx, { provider, token, amount }) => {
+    const balance = await ctx.db.query("provider_balances")
+      .withIndex("by_provider_token", (q) => q.eq("provider", provider).eq("token", token))
+      .unique();
+
+    if (!balance || (balance.earned_premiums || 0) < amount) { 
+      console.error("CRITICAL: Insufficient earned_premiums for withdrawal completion for ", provider, token, amount);
+      return;
+    }
+
+    await ctx.db.patch(balance._id, {
+      earned_premiums: (balance.earned_premiums || 0) - amount,
+      withdrawn_premiums: (balance.withdrawn_premiums || 0) + amount,
+      last_updated: Date.now(),
+    });
+    console.log("Completed premium withdrawal for ", provider, " Token: ", token, " Amount: ", amount);
+  }
+});

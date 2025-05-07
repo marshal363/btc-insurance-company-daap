@@ -1,4 +1,6 @@
 import { Id } from "./_generated/dataModel";
+import { query } from "./_generated/server";
+import { v } from "convex/values";
 
 /**
  * Mock function to simulate notifying the Liquidity Pool service that a premium 
@@ -28,5 +30,35 @@ export async function mockNotifyLiquidityPoolOfPremiumDistribution(params: {
   // await ctx.runAction(api.liquidityPool.handlePremiumDistributionNotification, params);
 }
 
+/**
+ * Mocks the retrieval of a blockchain transaction status.
+ * In a real implementation, this would involve calling a blockchain API.
+ * 
+ * Behavior:
+ * - Returns "Confirmed" for txIds ending in "1" (approx 10% chance)
+ * - Returns "Failed" for txIds ending in "2" (approx 10% chance)
+ * - Returns "Pending" for all others (approx 80% chance)
+ */
+export const mockGetBlockchainTransactionStatus = query({
+  args: { onChainTxId: v.string() },
+  handler: async (ctx, { onChainTxId }): Promise<"Confirmed" | "Failed" | "Pending"> => {
+    // Simulate some delay
+    await new Promise(resolve => setTimeout(resolve, Math.random() * 500 + 100));
+
+    if (onChainTxId.endsWith("1")) {
+      return "Confirmed";
+    } else if (onChainTxId.endsWith("2")) {
+      return "Failed";
+    } else {
+      return "Pending";
+    }
+  }
+});
+
+// Add other general-purpose mock functions here as needed.
+
 // Add other mock functions here as needed, for example:
 // export async function mockAnotherService(...) 
+
+// Removed deliberate syntax error
+// export const testProcessing = query({{ 
