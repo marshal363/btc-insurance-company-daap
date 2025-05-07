@@ -235,6 +235,16 @@ export const fetchPrices = internalAction({
   }
 });
 
+// Public wrapper for fetchPrices internalAction, to be called by cron
+/*
+export const runFetchPricesCron = action({
+  args: {},
+  handler: async (ctx) => {
+    await ctx.runAction(internal.prices.fetchPrices, {});
+  }
+});
+*/
+
 // Internal function to fetch historical prices - NOW PRIMARY: CryptoCompare (OHLCV)
 export const fetchHistoricalPrices = internalAction({
   args: {},

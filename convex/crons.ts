@@ -1,11 +1,10 @@
 import { cronJobs } from "convex/server";
-import { internal } from "./_generated/api";
+import { internal, api } from "./_generated/api";
 
 // Define cron jobs
 const crons = cronJobs();
 
 // Fetch prices every 5 minutes
-// Using 'as any' to bypass TypeScript's excessive depth checking
 crons.interval("fetch-prices", { minutes: 5 }, internal.prices.fetchPrices as any, {});
 
 // Prepare Oracle Submission Data every 5 minutes (will eventually trigger threshold check + submission)
