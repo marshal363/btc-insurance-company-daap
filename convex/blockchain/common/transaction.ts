@@ -5,6 +5,20 @@
  * It provides utilities for constructing transaction options, signing, and monitoring transactions.
  */
 
+// Handle browser environments that don't have Buffer
+// This is needed because Convex serverless functions run in a browser-like environment
+// that doesn't have the Node.js Buffer global
+let hasBuffer = false;
+try {
+  // Check if Buffer exists
+  hasBuffer = typeof Buffer !== 'undefined';
+  if (!hasBuffer) {
+    console.log("Buffer not available in this environment - transaction serialization will use alternate approach");
+  }
+} catch (err) {
+  console.warn("Error checking Buffer availability:", err);
+}
+
 import {
   ClarityValue,
   makeContractCall,
@@ -113,13 +127,35 @@ export async function signTransaction(txOptions: any): Promise<string> {
   console.log(`Signing transaction for ${txOptions.contractName}.${txOptions.functionName}`);
   
   try {
+    // Check if Buffer exists in the environment
+    console.log("Buffer availability check:", hasBuffer ? "Buffer is defined" : "Buffer is NOT defined");
+    
     const signedTransaction = await makeContractCall(txOptions);
+    console.log("Transaction contract call completed successfully");
     
-    // Serialize transaction to hex string
-    const serializedTx = Buffer.from(signedTransaction.serialize()).toString('hex');
-    console.log(`Transaction signed successfully. Serialized Hex (first 64 chars): ${serializedTx.substring(0, 64)}...`);
+    // Store the signed transaction for direct broadcasting if needed
+    // @ts-ignore - adding custom property
+    txOptions.__signedTransaction = signedTransaction;
     
-    return serializedTx;
+    // If Buffer is not available, return a special marker and store the transaction
+    if (!hasBuffer) {
+      console.log("Using direct transaction approach instead of serialization due to missing Buffer");
+      // Return a special marker that broadcastSignedTransaction will recognize
+      return `DIRECT_TX:${txOptions.contractName}.${txOptions.functionName}`;
+    }
+    
+    // Safely handle serialization with explicit error checking
+    try {
+      // Serialize transaction to hex string
+      console.log("About to serialize transaction");
+      const serializedTx = Buffer.from(signedTransaction.serialize()).toString('hex');
+      console.log(`Transaction signed successfully. Serialized Hex (first 64 chars): ${serializedTx.substring(0, 64)}...`);
+      
+      return serializedTx;
+    } catch (serializeError: any) {
+      console.error("Error in transaction serialization step:", serializeError);
+      throw new Error(`Failed to serialize transaction: ${serializeError.message}`);
+    }
   } catch (error: any) {
     console.error('Error signing transaction:', error);
     throw new Error(`Failed to sign transaction: ${error.message}`);
@@ -128,20 +164,35 @@ export async function signTransaction(txOptions: any): Promise<string> {
 
 /**
  * Broadcast a signed transaction to the network
- * @param serializedTxHex Serialized transaction hex string from signTransaction
+ * @param serializedTxHex Serialized transaction hex string from signTransaction or DIRECT_TX marker
  * @param networkEnv Network environment to broadcast on
+ * @param txOptions Optional transaction options with __signedTransaction when using direct approach
  * @returns Promise resolving to the broadcast result with transaction ID
  */
 export async function broadcastSignedTransaction(
   serializedTxHex: string, 
-  networkEnv: NetworkEnvironment
+  networkEnv: NetworkEnvironment,
+  txOptions?: any
 ): Promise<BlockchainWriteResponse> {
   console.log("Broadcasting signed transaction...");
   const network = getStacksNetwork(networkEnv);
   
   try {
-    // Deserialize the hex string back into a StacksTransaction object
-    const transaction = deserializeTransaction(Buffer.from(serializedTxHex, 'hex'));
+    let transaction;
+    
+    // Check if we're using the direct transaction approach
+    if (serializedTxHex.startsWith('DIRECT_TX:')) {
+      console.log("Using direct transaction approach for broadcasting");
+      if (!txOptions || !txOptions.__signedTransaction) {
+        throw new Error("Direct transaction requested but signed transaction not found in options");
+      }
+      transaction = txOptions.__signedTransaction;
+    } else {
+      // Traditional approach using serialized hex
+      console.log("Using serialized transaction approach for broadcasting");
+      // Deserialize the hex string back into a StacksTransaction object
+      transaction = deserializeTransaction(Buffer.from(serializedTxHex, 'hex'));
+    }
     
     // Broadcast the transaction
     const result = await broadcastTransaction(transaction, network);
@@ -150,16 +201,31 @@ export async function broadcastSignedTransaction(
     
     // Check if the broadcast returned an error
     if (result && typeof result === 'object' && 'error' in result && result.error) {
-      const errorDetails = result.error as any; // Type assertion for easier access
-      const reason = errorDetails.reason || 'Unknown reason';
-      const reasonData = errorDetails.reason_data ? JSON.stringify(errorDetails.reason_data) : 'No reason data';
-      const txid = errorDetails.txid || 'No txid in error';
+      const rawError = String(result.error);
+      const rawReason = ('reason' in result && typeof result.reason === 'string') ? result.reason : 'Unknown reason';
+      const rawTxId = ('txid'in result && typeof result.txid === 'string') ? result.txid : 'No txid in error';
+      let rawReasonDataStr = ('reason_data' in result && result.reason_data) ? JSON.stringify(result.reason_data) : 'No reason data';
+      let finalErrorMessage = `Transaction broadcast failed: ${rawError}. Reason: ${rawReason}. TxID: ${rawTxId}. Data: ${rawReasonDataStr}`;
+      let expectedNonceForRetry: number | undefined = undefined;
+
+      if (rawReason === 'BadNonce' && 'reason_data' in result && typeof result.reason_data === 'object' && result.reason_data !== null) {
+        const nonceData = result.reason_data as any;
+        if (nonceData.expected !== undefined && nonceData.actual !== undefined) {
+          expectedNonceForRetry = Number(nonceData.expected);
+          rawReasonDataStr = `BadNonce: Got ${nonceData.actual}, Expected ${expectedNonceForRetry}`;
+          finalErrorMessage = `Transaction rejected due to BadNonce. Expected: ${expectedNonceForRetry}, Actual: ${nonceData.actual}. TxID: ${rawTxId}.`;
+        }
+      }
       
-      console.error(`Transaction broadcast failed: ${errorDetails.error || 'No error message'}. Reason: ${reason}. Data: ${reasonData}. TxID: ${txid}`);
+      console.error(finalErrorMessage, result); // Log the full error message and the original result object
+
       return {
         success: false,
-        error: `Transaction broadcast failed: ${reason}. TxID: ${txid}`,
-        data: reasonData,
+        txId: rawTxId, // Include TxID even on failure if available
+        error: finalErrorMessage, // This is the descriptive message
+        data: result,
+        // Add errorType and expectedNonce if it's a BadNonce error eligible for retry
+        ...(rawReason === 'BadNonce' && expectedNonceForRetry !== undefined && { errorType: 'BadNonce', expectedNonce: expectedNonceForRetry })
       };
     }
     
@@ -169,6 +235,7 @@ export async function broadcastSignedTransaction(
       return {
         success: false,
         error: "Transaction broadcast status uncertain: txid missing from response.",
+        data: result,
       };
     }
     
@@ -179,12 +246,12 @@ export async function broadcastSignedTransaction(
       txId: result.txid,
       data: result,
     };
-    
   } catch (error: any) {
     console.error("Error during transaction broadcast:", error);
     return {
       success: false,
       error: `Failed to broadcast transaction: ${error.message || error}`,
+      data: error,
     };
   }
 }
@@ -192,21 +259,51 @@ export async function broadcastSignedTransaction(
 /**
  * Build, sign, and broadcast a transaction in one operation
  * @param config Transaction configuration
+ * @param retryAttempt Number of times this transaction has been attempted
  * @returns Promise resolving to the broadcast result with transaction ID
  */
-export async function buildSignAndBroadcastTransaction(config: TransactionConfig): Promise<BlockchainWriteResponse> {
+export async function buildSignAndBroadcastTransaction(
+  config: TransactionConfig,
+  retryAttempt: number = 0 // Added for retry limiting
+): Promise<BlockchainWriteResponse> {
+  const MAX_RETRIES = 1; // Allow one retry for BadNonce
+
   try {
     // Build and sign the transaction
     const txOptions = await buildTransaction(config);
-    const serializedTx = await signTransaction(txOptions);
+    const serializedTxOrMarker = await signTransaction(txOptions);
     
     // Broadcast the transaction
-    return await broadcastSignedTransaction(serializedTx, config.networkEnv);
+    const broadcastResult = await broadcastSignedTransaction(serializedTxOrMarker, config.networkEnv, txOptions);
+
+    // Check for BadNonce specific errorType from our updated broadcastSignedTransaction response
+    if (!broadcastResult.success && broadcastResult.errorType === 'BadNonce' && broadcastResult.expectedNonce !== undefined) {
+      if (retryAttempt < MAX_RETRIES) {
+        console.log(`BadNonce detected (attempt ${retryAttempt + 1}/${MAX_RETRIES + 1}). Retrying with expected nonce: ${broadcastResult.expectedNonce}. Original TxID: ${broadcastResult.txId || 'N/A'}`);
+        const newConfig = { ...config, nonce: broadcastResult.expectedNonce };
+        // Recursively call self, incrementing retryAttempt
+        return buildSignAndBroadcastTransaction(newConfig, retryAttempt + 1);
+      } else {
+        const finalErrorMsg = `Transaction failed after ${MAX_RETRIES + 1} attempts due to persistent BadNonce. Last expected nonce: ${broadcastResult.expectedNonce}. Last TxID: ${broadcastResult.txId || 'N/A'}. Original error: ${broadcastResult.error}`;
+        console.error(finalErrorMsg);
+        // Return the error from the last failed attempt, ensuring a clear message
+        return {
+            success: false,
+            error: finalErrorMsg,
+            txId: broadcastResult.txId,
+            data: broadcastResult.data,
+            errorType: 'BadNoncePersistence' // Custom error type for final failure
+        };
+      }
+    }
+    return broadcastResult; // Return original result if not BadNonce or no retry needed / successful retry
+
   } catch (error: any) {
     console.error("Error in buildSignAndBroadcastTransaction:", error);
     return {
       success: false,
       error: `Transaction processing failed: ${error.message || error}`,
+      data: error,
     };
   }
 }

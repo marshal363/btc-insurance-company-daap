@@ -257,23 +257,40 @@ export async function submitAggregatedPrice(params: OraclePriceSubmission): Prom
       contractName: txOptions.contractName,
       functionName: txOptions.functionName,
       functionArgs: txOptions.functionArgs,
-      networkEnv: NetworkEnvironment.TESTNET,
+      networkEnv: getNetworkEnvironment(), // Ensure this gets the correct env
       anchorMode: txOptions.anchorMode,
       postConditionMode: txOptions.postConditionMode,
       fee: txOptions.fee
     };
     
     // Sign and broadcast the transaction
-    const signerKey = getBackendSignerKey();
     const result = await buildSignAndBroadcastTransaction(transactionConfig);
     
-    console.log(`Transaction broadcast successfully. TxID: ${result.txId}`);
+    if (!result.success) {
+      // Log the detailed error from buildSignAndBroadcastTransaction
+      console.error(`submitAggregatedPrice failed: ${result.error}`, result.data);
+      // Propagate a clear error message that includes txId if available
+      let errorMessage = `Failed to submit aggregated price: ${result.error}`;
+      if (result.txId) {
+        errorMessage += ` (TxID: ${result.txId})`;
+      }
+      throw new Error(errorMessage);
+    }
     
-    // Return using the expected interface
-    return { txid: result.txId || "" };
+    // txId should be present if success is true
+    if (!result.txId) {
+        console.error("submitAggregatedPrice succeeded but txId is missing", result);
+        throw new Error("Failed to submit aggregated price: Transaction succeeded but txId was not returned.");
+    }
+
+    console.log(`Transaction broadcast successfully. TxID: ${result.txId}`);
+    return { txid: result.txId };
+
   } catch (error: any) {
+    // Catch errors from buildSignAndBroadcastTransaction or other steps
     console.error(`Error submitting aggregated price: ${error.message}`, error);
-    throw new Error(`Failed to submit aggregated price: ${error.message}`);
+    // Ensure the error is re-thrown to be caught by checkAndSubmitOraclePrice
+    throw error; 
   }
 }
 
@@ -296,30 +313,38 @@ export async function checkAndSubmitOraclePrice(params: OracleSubmissionParams):
       return {
         updated: false,
         reason: evaluationResult.reason,
+        priceInSatoshis: evaluationResult.priceInSatoshis,
+        percentChange: evaluationResult.percentChange,
       };
     }
     
     // Step 2: Submit the price update if needed
-    console.log(`Price update required. Reason: ${evaluationResult.reason}. Submitting price: ${evaluationResult.priceInSatoshis} satoshis...`);
+    console.log(`Price update required. Reason: ${evaluationResult.reason}. Submitting price: ${evaluationResult.priceInSatoshis || 0} satoshis...`);
     
+    // submitAggregatedPrice will now throw an error on failure
     const submissionResult = await submitAggregatedPrice({
       priceInSatoshis: evaluationResult.priceInSatoshis || 0
     });
     
-    console.log(`Price update submitted. TxID: ${submissionResult.txid}`);
+    // If submitAggregatedPrice succeeded, submissionResult.txid will be valid
+    console.log(`Price update submitted successfully. TxID: ${submissionResult.txid}`);
     
     // Return success result
     return {
       updated: true,
       txid: submissionResult.txid,
       reason: evaluationResult.reason,
-      percentChange: evaluationResult.percentChange || undefined
+      priceInSatoshis: evaluationResult.priceInSatoshis,
+      percentChange: evaluationResult.percentChange,
     };
+
   } catch (error: any) {
+    // This will catch errors from prepareOracleSubmission or submitAggregatedPrice
     console.error(`Error in checkAndSubmitOraclePrice: ${error.message}`, error);
+    // Ensure the reason reflects the actual error encountered
     return {
       updated: false,
-      reason: `Error: ${error.message}`
+      reason: `Oracle update failed: ${error.message}` // error.message will be from the throw in submitAggregatedPrice or prepareOracleSubmission
     };
   }
 } 

@@ -70,7 +70,8 @@ export interface OracleSubmissionCheckResult {
   updated: boolean;
   txid?: string;
   reason: string;
-  percentChange?: number;
+  priceInSatoshis?: number;
+  percentChange?: number | null;
 }
 
 /**

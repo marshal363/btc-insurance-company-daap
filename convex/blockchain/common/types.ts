@@ -86,13 +86,15 @@ export interface BlockchainReadResponse<T = any> {
 export interface BlockchainWriteResponse {
   success: boolean;
   txId?: string;
-  error?: string;
+  error?: string; // General error message
   data?: any;
   confirmationData?: {
     blockHeight?: number;
     timestamp?: number;
     gasUsed?: number;
   };
+  errorType?: string; // Specific error type, e.g., 'BadNonce'
+  expectedNonce?: number; // For BadNonce errors, the nonce the network expected
 }
 
 /**
