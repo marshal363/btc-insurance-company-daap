@@ -4,14 +4,14 @@
  * This file contains type definitions specific to Liquidity Pool blockchain operations.
  */
 
-import { BlockchainReadResponse, BlockchainWriteResponse, TransactionParams } from "../common/types";
+import { BlockchainReadResponse, BlockchainWriteResponse, TransactionParams, BlockchainError } from "../common/types";
 
 /**
  * Supported token types
  */
 export enum TokenType {
   STX = "STX",
-  SBTC = "sBTC"
+  SBTC = "SBTC"
 }
 
 /**
@@ -206,4 +206,187 @@ export interface LiquidityPoolContractConfig {
     getPoolBalances: string;
     getProviderBalances: string;
   };
+}
+
+// Error codes specific to Liquidity Pool operations
+export enum LiquidityPoolErrorCode {
+  INSUFFICIENT_LIQUIDITY = "406",
+  COLLATERAL_LOCKED = "407",
+  UNAUTHORIZED_ACCESS = "401",
+  TOKEN_NOT_INITIALIZED = "404",
+  TRANSFER_FAILED = "500",
+  INVALID_AMOUNT = "405",
+  PREMIUM_ALREADY_DISTRIBUTED = "409",
+  PREMIUM_NOT_RECORDED = "410",
+  INVALID_PREMIUM_SHARE = "411",
+  POLICY_NOT_FOUND = "408",
+  NETWORK_ERROR = "503",
+  UNKNOWN_ERROR = "999"
+}
+
+// Specific error class for Liquidity Pool operations
+export class LiquidityPoolError extends BlockchainError {
+  constructor(code: LiquidityPoolErrorCode, message: string, details?: any) {
+    super(code, message, details);
+    this.name = 'LiquidityPoolError';
+  }
+}
+
+// Parameter interfaces for transactions
+export interface DepositParams {
+  token: TokenType;
+  amount: number;
+  depositor: string;
+}
+
+export interface WithdrawalParams {
+  token: TokenType;
+  amount: number;
+  recipient: string;
+  includePremium?: boolean;
+}
+
+export interface CollateralParams {
+  token: TokenType;
+  amount: number;
+  policyId: string;
+}
+
+export interface SettlementParams {
+  token: TokenType;
+  amount: number;
+  recipient: string;
+  policyId: string;
+}
+
+export interface PremiumDistributionParams {
+  token: TokenType;
+  amount: number;
+  recipient: string;
+  policyId: string;
+}
+
+export interface ProviderAllocationParams {
+  provider: string;
+  policyId: string;
+  token: TokenType;
+  allocatedAmount: number;
+  premiumShare: number; // Percentage (0-100)
+}
+
+// Response interfaces for read operations
+export interface PoolBalancesResponse {
+  total: number;
+  locked: number;
+  available: number;
+}
+
+export interface PremiumBalancesResponse {
+  total: number;
+  distributed: number;
+  available: number;
+}
+
+export interface ProviderAllocationResponse {
+  token: TokenType;
+  allocatedAmount: number;
+  premiumShare: number;
+  premiumDistributed: boolean;
+}
+
+// Event interfaces
+export interface FundsDepositedEvent {
+  eventType: 'funds-deposited';
+  depositor: string;
+  amount: number;
+  token: TokenType;
+  txId: string;
+}
+
+export interface FundsWithdrawnEvent {
+  eventType: 'funds-withdrawn';
+  withdrawer: string;
+  amount: number;
+  token: TokenType;
+  txId: string;
+}
+
+export interface CollateralLockedEvent {
+  eventType: 'collateral-locked';
+  policyId: string;
+  amountLocked: number;
+  token: TokenType;
+  txId: string;
+}
+
+export interface CollateralReleasedEvent {
+  eventType: 'collateral-released';
+  policyId: string;
+  amountReleased: number;
+  token: TokenType;
+  txId: string;
+}
+
+export interface SettlementPaidEvent {
+  eventType: 'settlement-paid';
+  policyId: string;
+  buyer: string;
+  settlementAmount: number;
+  token: TokenType;
+  txId: string;
+}
+
+export interface PremiumRecordedEvent {
+  eventType: 'premium-recorded';
+  policyId: string;
+  counterparty: string;
+  premiumAmount: number;
+  token: TokenType;
+  txId: string;
+}
+
+export interface PremiumDistributedEvent {
+  eventType: 'premium-distributed';
+  policyId: string;
+  counterparty: string;
+  premiumAmount: number;
+  token: TokenType;
+  txId: string;
+}
+
+export interface ProviderAllocationEvent {
+  eventType: 'provider-allocation-recorded';
+  provider: string;
+  policyId: string;
+  allocatedAmount: number;
+  premiumShare: number;
+  token: TokenType;
+  txId: string;
+}
+
+export interface ProviderPremiumDistributedEvent {
+  eventType: 'provider-premium-distributed';
+  provider: string;
+  policyId: string;
+  premiumAmount: number;
+  token: TokenType;
+  txId: string;
+}
+
+// Union type for all Liquidity Pool events
+export type LiquidityPoolEvent = 
+  | FundsDepositedEvent
+  | FundsWithdrawnEvent
+  | CollateralLockedEvent
+  | CollateralReleasedEvent
+  | SettlementPaidEvent
+  | PremiumRecordedEvent
+  | PremiumDistributedEvent
+  | ProviderAllocationEvent
+  | ProviderPremiumDistributedEvent;
+
+// Transaction response interfaces
+export interface TransactionResponse {
+  txId: string;
+  status: 'pending' | 'submitted' | 'confirmed' | 'failed';
 } 
