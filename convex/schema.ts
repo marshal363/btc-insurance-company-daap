@@ -234,6 +234,11 @@ export default defineSchema({
       timestamp: v.string(), // ISO date string
     }),
 
+    // Fields for quote locking mechanism
+    isLocked: v.optional(v.boolean()),
+    lockedAt: v.optional(v.number()), // Timestamp when the quote was locked
+    lockExpiresAt: v.optional(v.number()), // Timestamp when the lock expires
+
     // Transaction data (populated after purchase/commitment)
     transaction: v.optional(
       v.object({
