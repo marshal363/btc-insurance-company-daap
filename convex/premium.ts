@@ -397,7 +397,8 @@ function calculateProviderBreakEvenPrice({
 // --- PUBLIC FACING QUERIES ---
 
 /**
- * Get buyer premium quote with all details
+ * @deprecated Use api.services.oracle.premiumCalculation.getBuyerPremiumQuote instead
+ * This function is kept for backward compatibility and will be removed in a future release.
  */
 export const getBuyerPremiumQuote = query({
   args: {
@@ -492,7 +493,8 @@ export const getBuyerPremiumQuote = query({
 });
 
 /**
- * Public query to get a yield quote for liquidity providers
+ * @deprecated Use api.services.oracle.premiumCalculation.getProviderYieldQuote instead
+ * This function is kept for backward compatibility and will be removed in a future release.
  */
 export const getProviderYieldQuote = query({
   args: {
@@ -697,5 +699,58 @@ export const initializeDefaultRiskParameters = mutation({
       putParamsId, 
       callParamsId 
     };
+  },
+});
+
+// --- BACKWARD COMPATIBILITY LAYER ---
+
+/**
+ * Proxy implementation that delegates to the new service.
+ * This maintains backward compatibility while we migrate all components.
+ * 
+ * @deprecated Use api.services.oracle.premiumCalculation.getBuyerPremiumQuote instead
+ */
+export const getBuyerPremiumQuoteProxy = query({
+  args: {
+    protectedValuePercentage: v.number(),
+    protectionAmount: v.number(),
+    expirationDays: v.number(),
+    policyType: v.string(),
+    currentPriceOverride: v.optional(v.number()),
+    includeScenarios: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    console.warn(
+      "DEPRECATED: Using premium.ts getBuyerPremiumQuote. Please migrate to services.oracle.premiumCalculation."
+    );
+    // Delegate to new implementation
+    return await ctx.runQuery(
+      internal.services.oracle.premiumCalculation.getBuyerPremiumQuote,
+      args
+    );
+  },
+});
+
+/**
+ * Proxy implementation that delegates to the new service.
+ * This maintains backward compatibility while we migrate all components.
+ * 
+ * @deprecated Use api.services.oracle.premiumCalculation.getProviderYieldQuote instead
+ */
+export const getProviderYieldQuoteProxy = query({
+  args: {
+    commitmentAmountUSD: v.number(),
+    selectedTier: v.string(),
+    selectedPeriodDays: v.number(),
+  },
+  handler: async (ctx, args) => {
+    console.warn(
+      "DEPRECATED: Using premium.ts getProviderYieldQuote. Please migrate to services.oracle.premiumCalculation."
+    );
+    // Delegate to new implementation
+    return await ctx.runQuery(
+      internal.services.oracle.premiumCalculation.getProviderYieldQuote,
+      args
+    );
   },
 }); 

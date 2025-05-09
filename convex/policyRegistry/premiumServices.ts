@@ -3,7 +3,7 @@ import { v } from "convex/values";
 import { QueryCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { CalculatePremiumForCreationParams, PolicyType } from "./types";
-import { calculateBlackScholesPremium } from "../premium"; // Assuming BlackScholes utility is in convex/premium.ts
+import { calculateBlackScholesPremium } from "../services/oracle/premiumCalculation"; // Updated import path
 
 /**
  * Calculates the premium for a new policy at the time of creation.

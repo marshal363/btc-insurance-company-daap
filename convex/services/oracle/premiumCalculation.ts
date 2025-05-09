@@ -15,7 +15,6 @@ import * as math from 'mathjs';
 import { 
   MarketData, 
   RiskParameters, 
-  PremiumComponents,
   PriceScenario,
   BuyerPremiumQuoteResult,
   ProviderYieldQuoteResult,
@@ -27,7 +26,7 @@ import {
  */
 export interface PremiumCalculationParams {
   assetPrice: number;          // Current price of the asset (e.g., BTC price in USD)
-  protectedAmount: number;     // Amount of asset being protected
+  protectionAmount: number;     // Amount of asset being protected (renamed from protectedAmount)
   protectedValue: number;      // Value being protected (e.g., USD value)
   durationDays: number;        // Duration of protection in days
   volatility: number;          // Market volatility as a decimal
@@ -71,6 +70,7 @@ export const calculatePremium = internalQuery({
     expirationDays: v.number(),
     policyType: v.string(),
     currentPrice: v.optional(v.number()),
+    volatility: v.optional(v.number()),
   },
   handler: async (ctx, args): Promise<PremiumCalculationResult> => {
     let currentPrice = args.currentPrice;
@@ -82,11 +82,14 @@ export const calculatePremium = internalQuery({
       currentPrice = aggregatedPrice.price;
     }
     
-    const protectedValue = (currentPrice * args.protectedValuePercentage) / 100;
+    const protectedValue = currentPrice !== undefined 
+      ? (currentPrice * args.protectedValuePercentage) / 100
+      : 0;
     
-    const volatility = await ctx.runQuery(api.services.oracle.priceService.getVolatilityForDuration, { 
-      durationSeconds: args.expirationDays * 24 * 60 * 60,
-    }) || 0.3;
+    const volatility = args.volatility ?? 
+      (await ctx.runQuery(api.services.oracle.priceService.getVolatilityForDuration, { 
+        durationSeconds: args.expirationDays * 24 * 60 * 60,
+      })) ?? 0.3;
     
     const riskParams = await ctx.runQuery(api.premium.getActiveRiskParameters, { 
       assetType: "BTC",
@@ -107,7 +110,9 @@ export const calculatePremium = internalQuery({
     
     const premium = baseRate * timeComponent * volatilityComponent * coverageComponentValue * args.protectionAmount;
     
-    const intrinsicValue = Math.max(0, protectedValue - currentPrice) * args.protectionAmount;
+    const intrinsicValue = currentPrice !== undefined
+      ? Math.max(0, protectedValue - currentPrice) * args.protectionAmount
+      : 0;
     const timeValue = premium * 0.3; 
     const volatilityImpact = premium * 0.7;
     
@@ -267,7 +272,7 @@ export const calculateAndStorePremium = action({
         asset,
         currentPrice: currentPriceForStorage,
         protectedValue: protectedValueForStorage,
-        protectedAmount,
+        protectionAmount,
         expirationDays,
         policyType,
         volatilityUsed: calculationResult.volatilityUsed,
@@ -312,7 +317,7 @@ export const getStoredPremiumCalculation = query({
 /**
  * Calculates premium using Black-Scholes for a PUT option
  */
-function calculateBlackScholesPremium({
+export function calculateBlackScholesPremium({
   currentPrice,  // S
   strikePrice,   // K
   volatility,    // σ
@@ -703,22 +708,26 @@ export const getProviderYieldQuote = query({
     };
 
     // 2. Fetch risk parameters (using existing path for now)
-    let riskParams = await ctx.runQuery(internal.premium.getActiveRiskParameters, { 
+    let riskParams: RiskParameters | null = await ctx.runQuery(internal.premium.getActiveRiskParameters, { 
       assetType: "BTC",
       policyType: "ProviderYield",
     });
     if (!riskParams) {
         console.warn(`No active risk parameters found for BTC/ProviderYield. Using defaults.`);
         riskParams = { 
+            assetType: 'BTC',
+            policyType: 'ProviderYield',
             baseRate: 0.01, 
             volatilityMultiplier: 1.5, 
             durationFactor: 0.5, 
-            coverageFactor: 1.0, 
+            coverageFactor: 1.0,
             tierMultipliers: { conservative: 0.7, balanced: 1.0, aggressive: 1.3 },
             liquidityAdjustment: 0,
             marketTrendAdjustment: 0,
-            assetType: 'BTC',
-            policyType: 'ProviderYield'
+            version: 0,
+            lastUpdated: new Date().toISOString(),
+            updatedBy: "system-default",
+            isActive: true,
         };
     }
 
@@ -778,7 +787,7 @@ export const insertPremiumCalculationEntry = internalMutation({
     asset: v.string(),
     currentPrice: v.number(),
     protectedValue: v.number(), // This is strikePrice in USD
-    protectedAmount: v.number(), // This is amount of asset
+    protectionAmount: v.number(), // This is amount of asset - correct modern name
     expirationDays: v.number(),
     policyType: v.string(),
     volatilityUsed: v.number(),
@@ -798,6 +807,32 @@ export const insertPremiumCalculationEntry = internalMutation({
     })),
   },
   handler: async (ctx, args) => {
-    return await ctx.db.insert("premiumCalculations", args);
+    // Map to the database schema which expects protectedAmount
+    const { protectionAmount, ...restOfArgs } = args;
+    const dbArgs = {
+      ...restOfArgs,
+      protectedAmount: protectionAmount, // Map to the DB field name
+    };
+    return await ctx.db.insert("premiumCalculations", dbArgs);
+  },
+});
+
+export const calculateAndStoreBatchPremiums = internalMutation({
+  args: {
+    premiumParams: v.array(
+      v.object({
+        userId: v.string(),
+        asset: v.string(),
+        protectionAmount: v.number(), // Renamed from protectedAmount
+        protectedValuePercentage: v.number(),
+        expirationDays: v.number(),
+        policyType: v.string(),
+        currentPrice: v.optional(v.number()),
+        volatility: v.optional(v.number()),
+      })
+    ),
+  },
+  handler: async (ctx, args) => {
+    // ... existing code ...
   },
 }); 
