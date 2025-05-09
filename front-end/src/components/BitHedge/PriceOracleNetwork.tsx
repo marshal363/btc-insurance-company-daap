@@ -20,6 +20,22 @@ import { IoInformationCircle } from "react-icons/io5";
 import { useQuery } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
 
+// Define the type for an individual source data entry
+interface SourceDataEntry {
+  _id: string; // Assuming there's an ID from Convex
+  name: string;
+  price: number;
+  timestamp: number;
+  weight: number;
+  // Add any other fields that might be present
+}
+
+// Define the type for aggregated data if not already globally defined
+interface AggregatedPriceInfo {
+  sourceCount?: number;
+  // Add other fields from aggregatedData if used beyond sourceCount
+}
+
 const formatRelativeTime = (timestamp: number): string => {
   const now = Date.now();
   const diffMs = now - timestamp;
@@ -41,10 +57,10 @@ const formatRelativeTime = (timestamp: number): string => {
 };
 
 export default function PriceOracleNetwork() {
-  const latestSourceData = useQuery(api.prices.getLatestSourcePrices);
-  const aggregatedData = useQuery(api.prices.getLatestPrice);
+  const latestSourceData = useQuery<SourceDataEntry[] | null>(api.prices.getLatestSourcePrices);
+  const aggregatedData = useQuery<AggregatedPriceInfo | null>(api.prices.getLatestPrice);
   
-  const sources = latestSourceData ?? [];
+  const sources: SourceDataEntry[] = latestSourceData ?? [];
   const connectedSourcesCount = aggregatedData?.sourceCount ?? 0;
   const isLoadingSources = latestSourceData === undefined;
   const isLoadingAggregated = aggregatedData === undefined;
@@ -88,8 +104,8 @@ export default function PriceOracleNetwork() {
           ) : sources.length === 0 ? (
              <Tr><Td colSpan={4} textAlign="center">No source data available.</Td></Tr>
           ) : (
-            sources.map((source) => (
-              <Tr key={source.name}>
+            sources.map((source: SourceDataEntry) => (
+              <Tr key={source._id}>
                 <Td>
                   <Flex alignItems="center" gap={3}>
                     <Circle size="30px" bg="gray.100">

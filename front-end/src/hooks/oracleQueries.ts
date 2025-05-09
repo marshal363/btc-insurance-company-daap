@@ -162,5 +162,5 @@ interface RangeData {
  */
 export const useCalculate24hRange = (): RangeData | null | undefined => {
   // Returns the data directly, or null if no data, or undefined if loading
-  return useConvexQuery(api.prices.calculate24hRange);
+  return useConvexQuery(api.services.oracle.priceService.calculate24hRange);
 }; 

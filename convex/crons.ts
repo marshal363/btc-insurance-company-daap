@@ -5,22 +5,37 @@ import { internal, api } from "./_generated/api";
 const crons = cronJobs();
 
 // Fetch prices every 5 minutes
-crons.interval("fetch-prices", { minutes: 5 }, internal.prices.fetchPrices as any, {});
+crons.interval(
+  "fetch-prices", 
+  { minutes: 5 }, 
+  internal.services.oracle.priceService.triggerPriceDataFetchingAndAggregation as any,
+  {}
+);
 
 // Prepare Oracle Submission Data every 5 minutes (will eventually trigger threshold check + submission)
 crons.interval(
   "check-and-submit-oracle-price",
   { minutes: 5 }, 
-  internal.blockchainIntegration.checkAndSubmitOraclePrice as any,
+  internal.services.oracle.priceService.checkAndSubmitPrice as any,
   {}
 );
 
 // Fetch historical data every hour (full refresh)
-crons.interval("fetch-historical", { hours: 1 }, internal.prices.fetchHistoricalPrices as any, {});
+crons.interval(
+  "fetch-historical", 
+  { hours: 1 }, 
+  internal.services.oracle.priceService.triggerHistoricalPriceFetching as any,
+  {}
+);
 
 // Update just the latest daily price once per day (more efficient daily updates)
 // Running at 00:15 UTC each day
-crons.daily("fetch-latest-daily", { hourUTC: 0, minuteUTC: 15 }, internal.prices.fetchLatestDailyPrice as any, {});
+crons.daily(
+  "fetch-latest-daily", 
+  { hourUTC: 0, minuteUTC: 15 }, 
+  internal.services.oracle.priceService.triggerLatestDailyPriceFetching as any,
+  {}
+);
 
 // Check transaction status for pending policy transactions every 5 minutes
 // This job implements CV-PR-212 from the implementation roadmap

@@ -6,7 +6,7 @@ import { api } from "@convex/_generated/api";
 import { ProviderYieldQuoteResult } from "@convex/types";
 
 // Define the expected input structure for the Convex query
-// Align this with the args defined in convex/premium.ts -> getProviderYieldQuote
+// Align this with the args defined in convex/services/oracle/premiumCalculation.ts -> getProviderYieldQuote
 interface ProviderQuoteParams {
   commitmentAmountUSD: number; // Ensure USD value is passed for calculation
   selectedTier: string; // e.g., "conservative"
@@ -32,7 +32,7 @@ export const useProviderQuote = (): UseProviderQuoteResult => {
 
   // Use Convex useQuery hook for getProviderYieldQuote
   const quoteData = useQuery(
-    api.premium.getProviderYieldQuote,
+    api.services.oracle.premiumCalculation.getProviderYieldQuote,
     params ? params : "skip"
   );
   

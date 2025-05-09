@@ -40,10 +40,10 @@ export const useBitcoinPrice = (): UseBitcoinPriceResult => {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // Use Convex query to fetch the latest price
-  const latestPrice = useQuery(api.prices.getLatestPrice);
+  const latestPriceDataFromService = useQuery(api.services.oracle.priceService.getLatestPrice);
   
   // Add debug logging
-  console.log("useBitcoinPrice: Latest price data from Convex:", latestPrice);
+  console.log("useBitcoinPrice: Latest price data from Convex service:", latestPriceDataFromService);
 
   // Function to check if cache is valid
   const isCacheValid = (cachedData: CachedPriceData | null): boolean => {
@@ -94,13 +94,13 @@ export const useBitcoinPrice = (): UseBitcoinPriceResult => {
 
   // Update price data when the Convex query returns
   useEffect(() => {
-    console.log("useBitcoinPrice: Effect running with latestPrice:", latestPrice);
+    console.log("useBitcoinPrice: Effect running with latestPriceDataFromService:", latestPriceDataFromService);
     
     // Try to read from cache first
     const cachedData = readFromCache();
     console.log("useBitcoinPrice: Cache data:", cachedData);
     
-    if (latestPrice === undefined) {
+    if (latestPriceDataFromService === undefined) {
       // Still loading from Convex, use cache if valid
       if (isCacheValid(cachedData)) {
         setPriceData(cachedData!);
@@ -112,7 +112,7 @@ export const useBitcoinPrice = (): UseBitcoinPriceResult => {
       return;
     } 
     
-    if (latestPrice === null) {
+    if (latestPriceDataFromService === null) {
       // Error fetching from Convex, use cache if available (even if expired)
       if (cachedData) {
         setPriceData(cachedData);
@@ -129,9 +129,9 @@ export const useBitcoinPrice = (): UseBitcoinPriceResult => {
     
     // Happy path - we have price data from Convex
     const newPriceData: CachedPriceData = {
-      price: latestPrice.price,
-      volatility: latestPrice.volatility || 0.01, // Default to 1% if not provided
-      timestamp: Date.now(),
+      price: latestPriceDataFromService.price,
+      volatility: latestPriceDataFromService.volatility || 0.01, // Default to 1% if not provided
+      timestamp: Date.now(), // Use current timestamp for cache, or latestPriceDataFromService.timestamp if it represents data freshness
     };
     
     setPriceData(newPriceData);
@@ -141,7 +141,7 @@ export const useBitcoinPrice = (): UseBitcoinPriceResult => {
     
     // Write the new data to cache
     writeToCache(newPriceData);
-  }, [latestPrice]);
+  }, [latestPriceDataFromService]);
 
   // Check for staleness periodically
   useEffect(() => {
@@ -158,7 +158,7 @@ export const useBitcoinPrice = (): UseBitcoinPriceResult => {
     currentPrice: priceData.price,
     volatility: priceData.volatility,
     lastUpdated: priceData.timestamp,
-    isLoading: latestPrice === undefined && !isCacheValid(readFromCache()),
+    isLoading: latestPriceDataFromService === undefined && !isCacheValid(readFromCache()),
     isStale,
     hasError,
     errorMessage,

@@ -35,6 +35,23 @@ import HiroWalletContext from "../HiroWalletProvider";
 import { useDevnetWallet } from "@/lib/devnet-wallet-context";
 import { isDevnetEnvironment, isTestnetEnvironment } from "@/lib/contract-utils";
 
+// Define expected type for aggregatedData from the new api.services.oracle.priceService.getLatestPrice
+interface AggregatedPriceData {
+  price: number;
+  timestamp: number;
+  volatility?: number; 
+  sourceCount?: number;
+  range24h?: number; // This might be part of it now
+  // Add other fields if present in the actual return type
+}
+
+// Define expected type for rangeData from useCalculate24hRange
+interface RangeData {
+  high: number;
+  low: number;
+  range: number;
+}
+
 const formatRelativeTime = (timestamp: number): string => {
   const now = Date.now();
   const diffMs = now - timestamp;
@@ -58,9 +75,11 @@ const formatRelativeTime = (timestamp: number): string => {
 export default function BitcoinPriceCard() {
   const [showSources, setShowSources] = useState(false);
   
-  const aggregatedData = useQuery(api.prices.getLatestPrice);
-  const rangeData = useCalculate24hRange();
+  // Update to the new API path for the refactored service
+  const aggregatedData = useQuery<AggregatedPriceData | null>(api.services.oracle.priceService.getLatestPrice);
+  const rangeData: RangeData | null | undefined = useCalculate24hRange();
   
+  console.log("BitcoinPriceCard: Aggregated Data from service:", aggregatedData);
   console.log("Range Data from hook:", rangeData);
 
   const isLoadingAggregatedData = aggregatedData === undefined;

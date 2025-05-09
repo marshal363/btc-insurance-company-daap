@@ -6,14 +6,13 @@ import { Id } from "@convex/_generated/dataModel";
 import { BuyerPremiumQuoteResult } from "@convex/types";
 
 // Define the expected input structure for the Convex query
-// Align this with the args defined in convex/premium.ts -> getBuyerPremiumQuote
+// Align this with the args defined in convex/services/oracle/premiumCalculation.ts -> getBuyerPremiumQuote
 interface BuyerQuoteParams {
   protectedValuePercentage: number;
   protectionAmount: number;
   expirationDays: number;
   policyType: string; // e.g., "PUT"
-  // Add other optional params like includeScenarios if needed
-  currentPriceOverride?: number;
+  currentPriceOverride?: number; // Matches the new definition
   includeScenarios?: boolean;
 }
 
@@ -60,7 +59,7 @@ export const useBuyerQuote = (): UseBuyerQuoteResult => {
 
   // Use Convex useQuery hook.
   const quoteData = useQuery(
-    api.premium.getBuyerPremiumQuote,
+    api.services.oracle.premiumCalculation.getBuyerPremiumQuote,
     params ? params : "skip"
   );
 

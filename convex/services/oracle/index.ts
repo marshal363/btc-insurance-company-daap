@@ -10,6 +10,12 @@ export * from './priceService';
 // Export premium calculation service
 export * from './premiumCalculation';
 
+// Export historical data service
+export * from './historicalData';
+
+// Export volatility service
+export * from './volatilityService';
+
 // Default export for the Oracle service module
 export default {
   price: {
@@ -37,13 +43,13 @@ export default {
       const { calculatePremium } = await import('./premiumCalculation');
       return calculatePremium;
     },
-    calculateAndStorePremium: async () => {
-      const { calculateAndStorePremium } = await import('./premiumCalculation');
-      return calculateAndStorePremium;
+    getBuyerPremiumQuote: async () => {
+      const { getBuyerPremiumQuote } = await import('./premiumCalculation');
+      return getBuyerPremiumQuote;
     },
-    getStoredPremiumCalculation: async () => {
-      const { getStoredPremiumCalculation } = await import('./premiumCalculation');
-      return getStoredPremiumCalculation;
+    getProviderYieldQuote: async () => {
+      const { getProviderYieldQuote } = await import('./premiumCalculation');
+      return getProviderYieldQuote;
     }
   }
 }; 
