@@ -35,6 +35,8 @@ export interface BlockchainContract {
   addresses: Record<NetworkEnvironment, string | null>;
   // Contract interfaces may be defined here or imported from contract-specific type files
   abi?: Record<string, any>;
+  // Optional: Number of decimals for fungible tokens
+  decimals?: number;
   // Contract deployment height for determining history starting point
   deploymentHeight?: Record<NetworkEnvironment, number>;
 }

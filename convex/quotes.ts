@@ -231,7 +231,7 @@ export const expireQuotes = mutation({
 
 // Standard normal cumulative distribution function
 function normDist(x: number): number {
-  return (1 + math.erf(x / math.sqrt(2))) / 2;
+  return (1 + Number(math.erf(x / Number(math.sqrt(2))))) / 2;
 }
 
 interface PremiumComponents {
@@ -274,8 +274,8 @@ function calculateBlackScholesPremiumInternal({
 
   const T = durationDays / 365; // Time to maturity in years
 
-  const d1 = (math.log(currentPrice / strikePrice) + (riskFreeRate + (volatility ** 2) / 2) * T) / (volatility * math.sqrt(T));
-  const d2 = d1 - volatility * math.sqrt(T);
+  const d1 = (Number(math.log(currentPrice / strikePrice)) + (riskFreeRate + (volatility ** 2) / 2) * T) / (volatility * Number(math.sqrt(T)));
+  const d2 = d1 - volatility * Number(math.sqrt(T));
 
   let premiumValue;
   // Assuming policyType is PUT as per typical buyer scenario

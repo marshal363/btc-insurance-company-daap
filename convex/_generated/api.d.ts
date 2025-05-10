@@ -55,6 +55,7 @@ import type * as liquidityPool_premiumOperations from "../liquidityPool/premiumO
 import type * as liquidityPool_providerState from "../liquidityPool/providerState.js";
 import type * as liquidityPool_settlementProcessing from "../liquidityPool/settlementProcessing.js";
 import type * as liquidityPool_transactionManager from "../liquidityPool/transactionManager.js";
+import type * as liquidityPool_transactionPreparation from "../liquidityPool/transactionPreparation.js";
 import type * as liquidityPool_types from "../liquidityPool/types.js";
 import type * as liquidityPool from "../liquidityPool.js";
 import type * as mocks from "../mocks.js";
@@ -145,6 +146,7 @@ declare const fullApi: ApiFromModules<{
   "liquidityPool/providerState": typeof liquidityPool_providerState;
   "liquidityPool/settlementProcessing": typeof liquidityPool_settlementProcessing;
   "liquidityPool/transactionManager": typeof liquidityPool_transactionManager;
+  "liquidityPool/transactionPreparation": typeof liquidityPool_transactionPreparation;
   "liquidityPool/types": typeof liquidityPool_types;
   liquidityPool: typeof liquidityPool;
   mocks: typeof mocks;

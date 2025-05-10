@@ -48,6 +48,34 @@ const LIQUIDITY_POOL_CONTRACT: BlockchainContract = {
 };
 
 /**
+ * STX Token (Native) - configuration for consistency, address is not a contract
+ */
+const STX_TOKEN_CONTRACT: BlockchainContract = {
+  name: 'STX',
+  address: 'STX', // Placeholder for native token
+  addresses: { // Not applicable in the same way as deployed contracts
+    [NetworkEnvironment.MAINNET]: 'STX',
+    [NetworkEnvironment.TESTNET]: 'STX',
+    [NetworkEnvironment.DEVNET]: 'STX',
+  },
+  decimals: 6,
+};
+
+/**
+ * sBTC Token contract configuration
+ */
+const SBTC_TOKEN_CONTRACT: BlockchainContract = {
+  name: 'sbtc-token', // This name is used for lookup via getContractByName
+  address: '', // This will be populated by getSbtcTokenContract based on the environment
+  addresses: {
+    [NetworkEnvironment.MAINNET]: process.env.SBTC_CONTRACT_ADDRESS_MAINNET || "SP3Y2ZSH8P7D50FF03D63M6Q9T6132G35S5K2M7C.sbtc", // Canonical sBTC on mainnet
+    [NetworkEnvironment.TESTNET]: process.env.SBTC_CONTRACT_ADDRESS_TESTNET || "ST1F7QA2MDF17S807EPA36TSS8AMEFY4KA9TVGWXT.sbtc-token", // Project deployed sbtc-token on Testnet
+    [NetworkEnvironment.DEVNET]: process.env.SBTC_CONTRACT_ADDRESS_DEVNET || "ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.sbtc-token", // Project deployed sbtc-token on Devnet
+  },
+  decimals: 8,
+};
+
+/**
  * Get Oracle contract details
  * @param env Specific environment to get details for (defaults to current environment)
  * @returns Oracle contract details with address for the specified environment
@@ -144,6 +172,46 @@ export function getLiquidityPoolContract(env?: NetworkEnvironment): BlockchainCo
 }
 
 /**
+ * Get STX token details
+ * @param env Specific environment to get details for (defaults to current environment)
+ * @returns STX token contract details
+ */
+export function getStxTokenContract(_env?: NetworkEnvironment): BlockchainContract {
+  // STX is native, address and decimals are fixed. Environment might be used for future extensions.
+  return { ...STX_TOKEN_CONTRACT };
+}
+
+/**
+ * Get sBTC token contract details
+ * @param env Specific environment to get details for (defaults to current environment)
+ * @returns sBTC token contract details with address for the specified environment
+ */
+export function getSbtcTokenContract(env?: NetworkEnvironment): BlockchainContract {
+  const networkEnv = env || getNetworkEnvironment();
+
+  // Clone the contract to avoid modifying the original
+  const contract = { ...SBTC_TOKEN_CONTRACT };
+  
+  // Use environment-specific address
+  contract.address = contract.addresses[networkEnv] || '';
+  
+  // Validate
+  if (!contract.address) {
+    console.error(`sBTC token contract address not found for environment: ${networkEnv}`);
+    throw new Error(`sBTC token contract address not configured for ${networkEnv}`);
+  }
+  // Ensure name is set correctly, as it might be used for principalCV
+  if (!contract.name.includes('.')) { // Assuming Clarity contract names include '.'
+      const addressParts = contract.address.split('.');
+      if (addressParts.length === 2) {
+          contract.name = addressParts[1]; // Set name to trait/contract name e.g. "sbtc"
+      }
+  }
+  
+  return contract;
+}
+
+/**
  * Get contract details by name
  * @param contractName Name of the contract to get details for
  * @param env Specific environment to get details for (defaults to current environment)
@@ -163,6 +231,11 @@ export function getContractByName(contractName: string, env?: NetworkEnvironment
     case 'liquiditypool':
     case 'liquidity-pool-vault':
       return getLiquidityPoolContract(env);
+    case 'stx':
+      return getStxTokenContract(env);
+    case 'sbtc':
+    case 'sbtc-token':
+      return getSbtcTokenContract(env);
     default:
       throw new Error(`Unknown contract name: ${contractName}`);
   }
