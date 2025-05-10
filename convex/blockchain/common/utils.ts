@@ -260,4 +260,18 @@ export async function retryWithBackoff<T>(
   }
   
   throw lastError || new Error('Max retries exceeded with no error captured');
+}
+
+/**
+ * Convert USD to cents.
+ * @param usdAmount Amount in USD
+ * @returns Amount in cents
+ */
+export function usdToCents(usdAmount: number): number {
+  if (typeof usdAmount !== 'number' || isNaN(usdAmount)) {
+    // Or throw an error, depending on desired strictness
+    console.warn(`[usdToCents] Invalid input: ${usdAmount}. Returning 0.`);
+    return 0; 
+  }
+  return Math.round(usdAmount * 100);
 } 

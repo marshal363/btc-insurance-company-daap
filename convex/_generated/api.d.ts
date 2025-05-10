@@ -71,6 +71,7 @@ import type * as policyRegistry_queries from "../policyRegistry/queries.js";
 import type * as policyRegistry_reconciliation from "../policyRegistry/reconciliation.js";
 import type * as policyRegistry_settlementServices from "../policyRegistry/settlementServices.js";
 import type * as policyRegistry_transactionManager from "../policyRegistry/transactionManager.js";
+import type * as policyRegistry_transactionPreparation from "../policyRegistry/transactionPreparation.js";
 import type * as policyRegistry_types from "../policyRegistry/types.js";
 import type * as policyRegistry from "../policyRegistry.js";
 import type * as poolTransactionWatcher from "../poolTransactionWatcher.js";
@@ -86,6 +87,7 @@ import type * as services_oracle_premiumCalculation from "../services/oracle/pre
 import type * as services_oracle_priceService from "../services/oracle/priceService.js";
 import type * as services_oracle_volatilityService from "../services/oracle/volatilityService.js";
 import type * as settlementJobs from "../settlementJobs.js";
+import type * as stacksNode from "../stacksNode.js";
 import type * as systemSetup from "../systemSetup.js";
 import type * as testUtils from "../testUtils.js";
 import type * as transactionStatusJobs from "../transactionStatusJobs.js";
@@ -159,6 +161,7 @@ declare const fullApi: ApiFromModules<{
   "policyRegistry/reconciliation": typeof policyRegistry_reconciliation;
   "policyRegistry/settlementServices": typeof policyRegistry_settlementServices;
   "policyRegistry/transactionManager": typeof policyRegistry_transactionManager;
+  "policyRegistry/transactionPreparation": typeof policyRegistry_transactionPreparation;
   "policyRegistry/types": typeof policyRegistry_types;
   policyRegistry: typeof policyRegistry;
   poolTransactionWatcher: typeof poolTransactionWatcher;
@@ -174,6 +177,7 @@ declare const fullApi: ApiFromModules<{
   "services/oracle/priceService": typeof services_oracle_priceService;
   "services/oracle/volatilityService": typeof services_oracle_volatilityService;
   settlementJobs: typeof settlementJobs;
+  stacksNode: typeof stacksNode;
   systemSetup: typeof systemSetup;
   testUtils: typeof testUtils;
   transactionStatusJobs: typeof transactionStatusJobs;
