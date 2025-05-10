@@ -87,6 +87,7 @@ import type * as services_oracle_priceService from "../services/oracle/priceServ
 import type * as services_oracle_volatilityService from "../services/oracle/volatilityService.js";
 import type * as settlementJobs from "../settlementJobs.js";
 import type * as systemSetup from "../systemSetup.js";
+import type * as testUtils from "../testUtils.js";
 import type * as transactionStatusJobs from "../transactionStatusJobs.js";
 import type * as types from "../types.js";
 import type * as users from "../users.js";
@@ -174,6 +175,7 @@ declare const fullApi: ApiFromModules<{
   "services/oracle/volatilityService": typeof services_oracle_volatilityService;
   settlementJobs: typeof settlementJobs;
   systemSetup: typeof systemSetup;
+  testUtils: typeof testUtils;
   transactionStatusJobs: typeof transactionStatusJobs;
   types: typeof types;
   users: typeof users;
