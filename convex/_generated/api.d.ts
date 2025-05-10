@@ -92,6 +92,7 @@ import type * as stacksNode from "../stacksNode.js";
 import type * as systemSetup from "../systemSetup.js";
 import type * as testUtils from "../testUtils.js";
 import type * as transactionStatusJobs from "../transactionStatusJobs.js";
+import type * as transactions from "../transactions.js";
 import type * as types from "../types.js";
 import type * as users from "../users.js";
 
@@ -183,6 +184,7 @@ declare const fullApi: ApiFromModules<{
   systemSetup: typeof systemSetup;
   testUtils: typeof testUtils;
   transactionStatusJobs: typeof transactionStatusJobs;
+  transactions: typeof transactions;
   types: typeof types;
   users: typeof users;
 }>;

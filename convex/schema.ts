@@ -537,7 +537,7 @@ export default defineSchema({
     // Add other preference fields here
     lastUpdated: v.number(), // Timestamp of the last update
   })
-    .index("by_provider", ["provider"]), // Essential for the lookup
+    .index("by_provider", ["provider"]),
 
   pool_status: defineTable({
     singletonId: v.literal("global"), // Ensures only one document
@@ -548,4 +548,68 @@ export default defineSchema({
     lastUpdated: v.number(),
     updatedBy: v.string(), // Admin principal who made the change
   }).index("by_singleton_id", ["singletonId"]), // Crucial for unique() and efficient lookup
+
+  // New table for Transaction Status Tracking (TS-101)
+  transactions: defineTable({
+    // User and context identifiers
+    userId: v.string(), // Stacks Principal of the user who initiated the transaction
+    quoteId: v.id("quotes"), // Link to the quote that initiated this transaction.
+
+    // Transaction type and status
+    type: v.union(
+      v.literal("POLICY_CREATION"),
+      v.literal("CAPITAL_COMMITMENT")
+      // Add other types as needed in the future
+    ),
+    status: v.union(
+      v.literal("PENDING"),      // Transaction initiated, not yet submitted to blockchain
+      v.literal("SUBMITTED"),    // Submitted to blockchain, awaiting confirmation
+      v.literal("CONFIRMED"),    // Confirmed on the blockchain
+      v.literal("FAILED"),       // Failed (either before submission, during, or after)
+      v.literal("REPLACED"),     // If a transaction gets replaced (e.g., speed up)
+      v.literal("EXPIRED")       // If a transaction context (e.g. quote lock) expires before submission
+    ),
+
+    // Blockchain specific details (populated after submission)
+    txHash: v.optional(v.string()),          // The on-chain transaction hash/id
+    blockHeight: v.optional(v.number()),     // Block height of confirmation
+    network: v.optional(v.string()),         // e.g., "mainnet", "testnet", "simnet"
+
+    // Parameters and Data
+    parameters: v.optional(v.object({})), // Store parameters used for the transaction (e.g., from the quote)
+
+    // Timestamps
+    createdAt: v.number(),        // Convex server timestamp when this record was created
+    updatedAt: v.number(),        // Convex server timestamp of the last status update
+    submittedAt: v.optional(v.number()), // Timestamp when actually submitted to blockchain
+    confirmedOrFailedAt: v.optional(v.number()), // Timestamp of confirmation or failure
+
+    // Error handling (TS-104)
+    errorDetails: v.optional(v.object({
+      message: v.string(),                // User-friendly error message
+      code: v.optional(v.string()),       // Internal error code or blockchain error code
+      rawError: v.optional(v.string()),   // Raw error string for debugging
+      retryable: v.optional(v.boolean()), // Indicates if the error might be resolved by a retry
+    })),
+
+    // Optional: for linking back to specific smart contract calls or internal processing steps
+    actionName: v.optional(v.string()), // e.g., "policy-registry.create-policy-entry"
+    relatedId: v.optional(v.string()),  // e.g., onChainPolicyId once available
+
+  })
+  .index("by_userId_and_status", ["userId", "status"])
+  .index("by_quoteId", ["quoteId"])
+  .index("by_txHash", ["txHash"])
+  .index("by_status_and_type", ["status", "type"])
+  .index("by_createdAt", ["createdAt"])
+  .index("by_userId_and_type_and_status", ["userId", "type", "status"]),
+  
+  // Other system tables like crons, feature flags, etc. could go here.
+  // Example: Internal cron job tracking
+  appCronJobHistory: defineTable({
+    jobName: v.string(),
+    lastRun: v.number(),
+    status: v.string(), // e.g., "success", "failure"
+    details: v.optional(v.string()),
+  }).index("by_jobName", ["jobName"]),
 });
