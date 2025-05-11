@@ -346,10 +346,10 @@ export const preparePolicyCreationTransaction = mutation({
 | ------- | ------------------------------------------------------- | ---------- | ------ | ---------------------- | -------- |
 | BF-101  | Add transaction state management to PolicySummary.tsx   | 4          | 🟢     |                        |          |
 | BF-102  | Implement `handleActivateProtection` method             | 8          | 🟢     | BF-101, QB-102, TP-102 |          |
-| BF-103  | Create wallet connection and signature handling         | 6          | 🟢     | BF-101                 |          |
+| BF-103  | Create wallet connection and signature handling         | 6          | 🟡     | BF-101                 |          |
 | BF-104  | Implement transaction submission to blockchain          | 5          | 🟢     | BF-103                 |          |
 | BF-105  | Create transaction status polling mechanism             | 5          | 🟢     | TS-103                 |          |
-| BF-106  | Create `useTransactionStatus` hook                      | 4          | ⬜     | TS-103                 |          |
+| BF-106  | Create `useTransactionStatus` hook                      | 4          | ⚪     | TS-103                 |          |
 | BF-107  | Implement UI state updates based on transaction status  | 5          | 🟢     | BF-105, BF-106         |          |
 | BF-108  | Add error handling and recovery for failed transactions | 6          | 🟡     | BF-102, BF-104         |          |
 | BF-109  | Create unit tests for buyer flow                        | 6          | ⬜     | BF-102, BF-107         |          |
@@ -359,44 +359,46 @@ export const preparePolicyCreationTransaction = mutation({
 - **BF-101 (Add transaction state management to PolicySummary.tsx):**
 
   - Status: 🟢 Completed
-  - Notes: `TransactionContext.tsx` centralizes `activeConvexId`, `blockchainTxId`, `uiStatus` (enum `TransactionUiStatus`), and `errorDetails`. `PolicySummary.tsx` consumes this context.
+  - Notes: `TransactionContext.tsx` effectively centralizes transaction state (`activeConvexId`, `blockchainTxId`, `uiStatus` via `TransactionUiStatus` enum, and `errorDetails`). `PolicySummary.tsx` consumes this context to manage and display transaction progress and outcomes.
 
 - **BF-102 (Implement `handleActivateProtection` method):**
 
   - Status: 🟢 Completed
-  - Notes: The `handleActivateProtection` method in `PolicySummary.tsx` orchestrates the buyer's policy activation flow. It now calls actual backend Convex actions/mutations: `finalizeQuote`, `preparePolicyCreationPackage` (which creates the Convex transaction record and returns its ID and contract call params). Wallet interaction is still mocked.
+  - Notes: The `handleActivateProtection` method in `PolicySummary.tsx` successfully orchestrates the buyer's policy activation. It calls backend Convex actions: `finalizeQuote` and `preparePolicyCreationPackage`. The latter now correctly returns serializable parameters which are then used for frontend transaction construction.
 
 - **BF-103 (Create wallet connection and signature handling):**
 
-  - Status: 🟢 Completed (with mocks)
-  - Notes: Wallet connection status is checked. Mock Stacks Connect functions simulate wallet signature and transaction submission using parameters now sourced from the backend (`preparePolicyCreationPackageAction`). `TransactionContext` handles errors.
+  - Status: 🟡 In Progress
+  - Notes: The immediate "Invalid Clarity Value" and "SerializationError" issues related to preparing parameters for Stacks.js have been resolved by ensuring `functionArgs` are correctly (re)constructed as `ClarityValue` instances on the frontend (`lib/contract-utils.ts`). Full wallet integration (e.g., Hiro Wallet connect, Ledger) beyond the current DevNet mock/direct execution is still pending but the foundational parameter handling is fixed.
 
 - **BF-104 (Implement transaction submission to blockchain):**
 
   - Status: 🟢 Completed
   - Notes:
-    - Part 1 (Capture TxID from wallet): Frontend captures mock `blockchainTxId` and updates context via `handleWalletSubmission`.
-    - Part 2 (Update Convex with TxID): `PolicySummary.tsx` now calls the actual `api.transactions.updateTransactionStatus` Convex mutation to store the `blockchainTxId` (as `txHash`) and set the backend transaction status to `SUBMITTED`.
+    - Frontend successfully receives serializable contract call parameters from the backend (`preparePolicyCreationPackage`).
+    - `lib/contract-utils.ts` (`executeContractCall`) was refactored to include `convertToActualClarityValues`, ensuring `functionArgs` are transformed into an array of `ClarityValue` instances before calling `makeContractCall`.
+    - This resolved the "Invalid Clarity Value" error, and transactions are now being successfully constructed and broadcasted (as evidenced by `blockchainTxHash` being generated).
+    - `PolicySummary.tsx` calls `api.transactions.updateTransactionStatus` to store the `blockchainTxHash` and update the backend transaction status to `SUBMITTED`.
 
 - **BF-105 (Create transaction status polling mechanism):**
 
   - Status: 🟢 Completed
-  - Notes: Polling logic using `useQuery` and backend query `api.transactions.pollTransactionStatus` is implemented in `TransactionContext.tsx`. The frontend mapping of backend transaction status (from `polledTxData.status`, e.g., "PENDING", "SUBMITTED", "CONFIRMED", "FAILED") to the frontend's `TransactionUiStatus` enum is now implemented with real logic, replacing the previous simulation. This includes handling error details from the backend. Actual changes to backend status (e.g., to CONFIRMED based on chain events) are part of Phase 3.
+  - Notes: Polling logic using `useQuery` and the backend query `api.transactions.pollTransactionStatus` is implemented and functional within `TransactionContext.tsx`. The frontend correctly maps backend transaction statuses (e.g., "PENDING", "SUBMITTED") to the frontend's `TransactionUiStatus` enum, providing real-time (via polling) updates. This includes handling `errorDetails` from the backend if a transaction fails.
 
 - **BF-106 (Create `useTransactionStatus` hook):**
 
-  - Status: ⬜ Not Started
-  - Notes: The plan includes this hook. Current polling logic is in `TransactionContext.tsx`. Further discussion may be needed to decide if extracting it to a separate hook is still the preferred approach given the context's current capabilities.
+  - Status: ⚪ Deferred
+  - Notes: The current polling and status management logic is integrated within `TransactionContext.tsx`. While a dedicated `useTransactionStatus` hook was planned, the context currently provides the necessary functionality. This task is deferred, and can be revisited if a standalone hook offers significant advantages or is needed for other components.
 
 - **BF-107 (Implement UI state updates based on transaction status):**
 
   - Status: 🟢 Completed
-  - Notes: UI in `PolicySummary.tsx` reacts to `transactionUiStatus` from `TransactionContext`. This is now driven by the real status mapping implemented in BF-105, based on polled data from the backend.
+  - Notes: The UI in `PolicySummary.tsx` dynamically updates based on `transactionUiStatus` sourced from `TransactionContext`. This now reflects actual transaction states derived from backend polling, an improvement over previous mock states.
 
 - **BF-108 (Add error handling and recovery for failed transactions):**
 
   - Status: 🟡 In Progress
-  - Notes: Basic error display from context is present. Error handling has improved with real backend calls and polling status mapping. Comprehensive error categorization and user recovery options are pending.
+  - Notes: Basic error display from `TransactionContext` (which now receives `errorDetails` from backend polling) is implemented. The critical runtime errors during transaction preparation and submission ("Invalid Clarity Value", Convex serialization errors) have been resolved. More nuanced error categorization, user-friendly messages for different failure scenarios (e.g., insufficient funds, contract errors), and specific recovery options (e.g., retry) are still areas for enhancement.
 
 - **BF-109 (Create unit tests for buyer flow):**
   - Status: ⬜ Not Started

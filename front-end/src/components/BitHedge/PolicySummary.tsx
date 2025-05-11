@@ -45,35 +45,15 @@ import { useDevnetWallet } from "@/lib/devnet-wallet-context";
 import {
   isDevnetEnvironment,
   isTestnetEnvironment,
+  executeContractCall,
+  openContractCall,
 } from "@/lib/contract-utils"; 
 import type { ContractCallRegularOptions, FinishedTxData } from "@stacks/connect";
-import { STACKS_MAINNET, STACKS_TESTNET, STACKS_DEVNET } from "@stacks/network";
-import { standardPrincipalCV, uintCV, stringAsciiCV } from "@stacks/transactions";
+import { STACKS_MAINNET, STACKS_TESTNET, STACKS_DEVNET, StacksNetwork } from "@stacks/network";
 import type { Id } from "../../../../convex/_generated/dataModel";
+import type { api as ApiType } from "@/../../convex/_generated/api";
 
-// Mock contract-utils if not readily available or for focused testing
-const mockOpenContractCall = async (options: ContractCallRegularOptions & { onFinish?: (data: FinishedTxData) => void, onCancel?: () => void }) => {
-  console.log("Mocked openContractCall with options:", options);
-  await new Promise(resolve => setTimeout(resolve, 2500)); // Simulate wallet interaction
-  const MOCK_TX_ID = `0x_testnet_mock_tx_${Date.now()}`;
-  if (options.onFinish) {
-    const mockStacksTransaction = {} as any; // Explicitly 'any' for the mock
-    options.onFinish({ txId: MOCK_TX_ID, txRaw: "mock_raw_tx_data", stacksTransaction: mockStacksTransaction });
-  }
-  return { txId: MOCK_TX_ID };
-};
-
-interface MinimalDevnetWallet {
-  stxAddress?: string;
-}
-
-const mockExecuteContractCall = async (options: ContractCallRegularOptions, devnetWallet: MinimalDevnetWallet | null) => {
-  console.log("Mocked executeContractCall with options:", options, "for devnet wallet:", devnetWallet?.stxAddress);
-  await new Promise(resolve => setTimeout(resolve, 1000));
-  const MOCK_TX_ID = `0x_devnet_mock_tx_${Date.now()}`;
-  return { txid: MOCK_TX_ID }; // Note: often 'txid' not 'txId' from direct calls
-};
-// --- End Wallet and Stacks Imports ---
+// Mock functions removed
 
 // --- Import TransactionContext ---
 import { useTransactionContext, TransactionUiStatus } from "@/contexts/TransactionContext";
@@ -105,16 +85,14 @@ export default function BuyerPolicySummary() {
   const {
     activeConvexId,
     blockchainTxId,
-    uiStatus: transactionUiStatus, // Renamed to avoid conflict with any local uiStatus
+    uiStatus: transactionUiStatus,
     errorDetails: transactionErrorDetails,
     initiateTransaction,
     handleWalletSubmission,
     handleBackendError,
     handleWalletError,
-    // handleChainError, // For later use with actual polling
-    // handlePollingError, // For later use
     handleSuccess,
-    setUiStatus, // For more granular control if needed
+    setUiStatus,
   } = useTransactionContext();
 
   const isActivatingProtection = 
@@ -153,13 +131,12 @@ export default function BuyerPolicySummary() {
   const neumorphicBorderRadius = "xl";
 
   const saveQuoteMutation = useMutation(api.quotes.saveQuote);
-  // Define Convex mutation hooks for activating protection
   const finalizeQuoteMutation = useMutation(api.quotes.finalizeQuote);
-  const preparePolicyCreationPackageAction = useAction(api.policyRegistry.preparePolicyCreationPackage);
-  const updateTransactionStatusMutation = useMutation(api.transactions.updateTransactionStatus); // For BF-104 part 2
+  const preparePolicyCreationPackageAction = useAction(api.policyRegistry.transactionPreparation.preparePolicyCreationPackage);
+  const updateTransactionStatusMutation = useMutation(api.transactions.updateTransactionStatus);
 
   // Wallet Contexts (BF-103)
-  const { mainnetAddress, testnetAddress, /* authenticate: connectHiroWallet, */ isWalletConnected: isHiroWalletConnected } = useContext(HiroWalletContext);
+  const { mainnetAddress, testnetAddress, isWalletConnected: isHiroWalletConnected } = useContext(HiroWalletContext);
   const { currentWallet: devnetWallet } = useDevnetWallet();
 
   const handleSaveQuote = async () => {
@@ -216,7 +193,6 @@ export default function BuyerPolicySummary() {
     }
   };
 
-  // BF-102: Implement handleActivateProtection method
   const handleActivateProtection = async () => {
     if (!buyerQuoteData) {
       toast({
@@ -269,17 +245,6 @@ export default function BuyerPolicySummary() {
       return;
     }
 
-    // resetTransactionState(); // initiateTransaction already calls reset
-    // setIsActivatingProtection(true); // Handled by context
-    // setActivationError(null); // Handled by context
-    // setActiveConvexTransactionId(null); // Handled by context
-    // setBlockchainTxId(null); // Handled by context
-
-    // The MOCK_CONVEX_TRANSACTION_ID will be set by the actual backend call later.
-    // For now, initiateTransaction will set the status to PREPARING_BACKEND.
-    // We will simulate the ID being set after the "backend preparation" step.
-    // initiateTransaction("placeholder_convex_id" as Id<"transactions">
-
     let actualConvexTransactionId: Id<"transactions"> | null = null;
     let actualContractCallParams: ContractCallRegularOptions | null = null;
 
@@ -292,7 +257,6 @@ export default function BuyerPolicySummary() {
     });
 
     try {
-      // ---- Step 1/5: Finalize Quote (Real Backend Call) ----
       toast.update("activation-process", {
         title: "Step 1/5: Finalizing Quote",
         description: "Locking in your quote details with the server...",
@@ -300,7 +264,7 @@ export default function BuyerPolicySummary() {
       });
       
       const finalizeResult = await finalizeQuoteMutation({ quoteId: savedQuoteId as Id<"quotes">, lockForTransaction: true });
-      if (!finalizeResult || (finalizeResult as any).error) { // Basic error check
+      if (!finalizeResult || (finalizeResult as any).error) {
         const errorMsg = (finalizeResult as any)?.error || "Failed to finalize quote on the backend.";
         throw new Error(errorMsg);
       }
@@ -311,7 +275,6 @@ export default function BuyerPolicySummary() {
           duration: 2000,
       });
 
-      // ---- Step 2/5: Prepare Transaction Package (Real Backend Call) ---- 
       toast.update("activation-process", {
         title: "Step 2/5: Preparing Transaction",
         description: "Requesting transaction details from the server... (This may take a moment)",
@@ -320,18 +283,18 @@ export default function BuyerPolicySummary() {
 
       const preparationResult = await preparePolicyCreationPackageAction({ 
         quoteId: savedQuoteId as Id<"quotes">,
-        buyerAddress: currentWalletAddress, 
+        userStxAddress: currentWalletAddress,
         networkUsed: currentStacksNetwork,
       });
 
-      if (!preparationResult || preparationResult.error || !preparationResult.newTransactionId || !preparationResult.contractCallParameters) {
-        const errorMsg = preparationResult?.error || "Failed to prepare transaction package from backend.";
+      if (!preparationResult || (preparationResult as any).error || !preparationResult.newTransactionId || !preparationResult.contractCallParameters) {
+        const errorMsg = (preparationResult as any)?.error || "Failed to prepare transaction package from backend.";
         console.error("Transaction preparation error details:", preparationResult);
         throw new Error(errorMsg);
       }
       
       actualConvexTransactionId = preparationResult.newTransactionId;
-      actualContractCallParams = preparationResult.contractCallParameters; 
+      actualContractCallParams = preparationResult.contractCallParameters as ContractCallRegularOptions; 
       
       if (actualConvexTransactionId) {
         initiateTransaction(actualConvexTransactionId); 
@@ -347,7 +310,17 @@ export default function BuyerPolicySummary() {
           duration: 2000,
       }); 
 
-      // ---- Step 3/5: Wallet Connection & Signature ----
+      if (actualContractCallParams && typeof actualContractCallParams.network === 'string') {
+        const networkString = (actualContractCallParams.network as string).toLowerCase();
+        if (networkString === 'mainnet') actualContractCallParams.network = STACKS_MAINNET;
+        else if (networkString === 'testnet') actualContractCallParams.network = STACKS_TESTNET;
+        else if (networkString === 'devnet') actualContractCallParams.network = STACKS_DEVNET;
+        else {
+            console.warn(`Unknown network string '${actualContractCallParams.network}' from backend. Defaulting to STACKS_DEVNET as per currentStacksNetwork variable.`);
+            actualContractCallParams.network = STACKS_DEVNET;
+        }
+      }
+
       toast.update("activation-process", {
         title: "Step 3/5: Awaiting Wallet Signature",
         description: "Please check your Stacks wallet to approve the transaction.",
@@ -357,42 +330,24 @@ export default function BuyerPolicySummary() {
       let submittedTxId: string | null = null;
       try {
         if (!actualContractCallParams) {
-          throw new Error("Contract call parameters are missing after preparation.");
+          throw new Error("Contract call parameters are missing or invalid after preparation and network conversion.");
         }
         
-        let networkForWalletCall = actualContractCallParams.network;
-        if (typeof actualContractCallParams.network === 'string') {
-            const networkString = actualContractCallParams.network.toLowerCase();
-            if (networkString === 'mainnet') networkForWalletCall = STACKS_MAINNET;
-            else if (networkString === 'testnet') networkForWalletCall = STACKS_TESTNET;
-            else if (networkString === 'devnet') networkForWalletCall = STACKS_DEVNET;
-            else {
-                console.warn(`Unknown network string '${actualContractCallParams.network}' from backend. Defaulting to testnet for mock.`);
-                networkForWalletCall = STACKS_TESTNET; 
-            }
-        }
-
-        const contractCallOptionsForWallet: ContractCallRegularOptions = {
-            ...(actualContractCallParams as any), 
-            network: networkForWalletCall,
-        };
+        const contractCallOptionsForWallet: ContractCallRegularOptions = actualContractCallParams;
 
         if (currentStacksNetwork === "devnet") {
           if (!devnetWallet) throw new Error("Devnet wallet not found for signing.");
-          const devnetResult = await mockExecuteContractCall(contractCallOptionsForWallet, devnetWallet);
+          const devnetResult = await executeContractCall(contractCallOptionsForWallet, devnetWallet);
           submittedTxId = devnetResult.txid;
         } else {
-          submittedTxId = await new Promise<string>((resolve, reject) => {
-            mockOpenContractCall({
-              ...contractCallOptionsForWallet,
-              onFinish: (data: FinishedTxData) => {
-                resolve(data.txId);
-              },
-              onCancel: () => {
-                reject(new Error("Transaction was cancelled by the user in wallet."));
-              },
-            }).catch(reject);
+          const result = await openContractCall({
+            ...contractCallOptionsForWallet,
+            onFinish: (data: FinishedTxData) => {
+            },
+            onCancel: () => {
+            },
           });
+          submittedTxId = result.txid;
         }
 
         if (!submittedTxId) {
@@ -421,7 +376,6 @@ export default function BuyerPolicySummary() {
         throw walletError; 
       }
       
-      // ---- Step 4/5: Backend Sync of Blockchain Tx (BF-104 Part 2) ----
       toast.update("activation-process", {
         title: "Step 4/5: Syncing with Backend", 
         description: `Submitting TxID ${blockchainTxId || submittedTxId?.substring(0,15)}... to backend.`, 
@@ -430,43 +384,35 @@ export default function BuyerPolicySummary() {
       
       if (actualConvexTransactionId && (blockchainTxId || submittedTxId)) {
         try {
-          const backendTxIdToUpdateWith = blockchainTxId || submittedTxId; // blockchainTxId is from context, should be set by handleWalletSubmission
+          const backendTxIdToUpdateWith = blockchainTxId || submittedTxId;
           if (!backendTxIdToUpdateWith) {
-            // This should not happen if wallet submission was successful and set the context
             throw new Error("Blockchain transaction ID is missing for backend update.");
           }
 
           console.log(`Calling updateTransactionStatus: convexTxId=${actualConvexTransactionId}, blockchainTxHash=${backendTxIdToUpdateWith}`);
           await updateTransactionStatusMutation({
-            transactionId: actualConvexTransactionId, // This is Id<"transactions">
-            newStatus: "SUBMITTED", // Directly use the backend status string
+            transactionId: actualConvexTransactionId,
+            newStatus: "SUBMITTED",
             txHash: backendTxIdToUpdateWith,
           });
 
-          toast.update("activation-process", { // Update the main toast once backend sync is done
+          toast.update("activation-process", {
             title: "Step 4/5: Backend Synced",
             description: "Backend updated with blockchain transaction. Waiting for on-chain confirmation.",
-            status: "loading", // Still loading, as we are now waiting for polling to confirm
+            status: "loading",
           });
 
         } catch (backendUpdateError) {
           console.error("Backend update failed after wallet submission:", backendUpdateError);
           const errorMsg = backendUpdateError instanceof Error ? backendUpdateError.message : "Failed to update backend with transaction hash.";
-          // We have a general error handler below, but we can set a specific toast here if needed
-          // For now, let the main toast reflect the overall failure if this happens.
-          // Potentially call handleBackendError or a more specific error like handleChainSyncError if defined in context.
-          handleBackendError(`Backend sync error: ${errorMsg}`); // Update context with this specific error
-          throw new Error(`Backend sync error: ${errorMsg}`); // Re-throw to be caught by the main try-catch which updates the primary toast
+          handleBackendError(`Backend sync error: ${errorMsg}`);
+          throw new Error(`Backend sync error: ${errorMsg}`);
         }
       } else {
-        // This case means actualConvexTransactionId or the blockchainTxId is missing, which is an issue.
         console.warn("Cannot update backend: Missing Convex transaction ID or blockchain transaction ID.");
-        // Optionally, throw an error here too if this state is considered fatal for the flow.
-        // For now, the flow will continue to polling, which will likely not find the tx or its correct state.
       }
 
-      // ---- Step 5/5: Polling for Blockchain Confirmation (Handled by TransactionContext) ----
-       console.log(`BF-105: TransactionContext is now polling for Convex ID: ${actualConvexTransactionId}. Current UI status from context: ${transactionUiStatus}`);
+      console.log(`BF-105: TransactionContext is now polling for Convex ID: ${actualConvexTransactionId}. Current UI status from context: ${transactionUiStatus}`);
 
     } catch (err) {
       console.error("Error activating protection:", err);
@@ -703,7 +649,6 @@ export default function BuyerPolicySummary() {
            onClick={handleActivateProtection}
            isLoading={isActivatingProtection}
            isDisabled={isLoading || !!error || !quoteData || isSaving || isActivatingProtection 
-            // || !isHiroWalletConnected (conditionally for non-devnet) - add this check if desired for non-devnet
             }
            minWidth="200px"
          >

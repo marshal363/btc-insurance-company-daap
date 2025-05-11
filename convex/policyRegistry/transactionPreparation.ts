@@ -3,32 +3,75 @@ import { v } from "convex/values";
 import { Id, Doc } from "../_generated/dataModel";
 import { api, internal } from "../_generated/api"; // Import api and internal
 import { stxToMicroStx, btcToSatoshis, usdToCents } from "../blockchain/common/utils"; // Import conversion utils
-import { getLiquidityPoolContract } from "../blockchain/common/contracts"; // Import for counterparty address
+import { getLiquidityPoolContract, getContractByName } from "../blockchain/common/contracts"; // Import for counterparty and policy registry
+import { 
+    getStacksNetwork, // Import the function
+} from "../blockchain/common/network"; 
+import { NetworkEnvironment } from "../blockchain/common/types"; // Corrected import for NetworkEnvironment
+import { type StacksNetwork } from "@stacks/network"; // Import type directly
+import {
+  uintCV,
+  stringAsciiCV,
+  standardPrincipalCV,
+  someCV,
+  noneCV,
+  ClarityValue,
+  AnchorMode,
+  PostConditionMode,
+  type ContractCallOptions
+} from "@stacks/transactions";
 // Assuming QB-101, QB-102, QB-103 (quote fetching & locking) are handled elsewhere.
 // We will also need a way to get current burn-block-height for expirationHeight calculation.
 
-// TP-103 (Refined): Define the parameters for the policy-registry.create-policy-entry smart contract call.
-const policyCreationContractCallParams = v.object({
-  owner: v.string(), // Stacks principal of the policyholder
-  counterparty: v.string(), // Stacks principal of the counterparty (e.g., liquidity pool)
-  protectedValue: v.number(), // strike price in cents
-  protectionAmount: v.number(), // protection amount in satoshis
-  expirationHeight: v.number(), // Target Stacks block height for expiration
-  premium: v.number(), // premium in microSTX
-  policyType: v.union(v.literal("PUT"), v.literal("CALL")), // "PUT" or "CALL" (string-ascii 4 in contract)
+// Define a new interface for the serializable structure returned to the frontend
+interface SerializableFunctionArg {
+  cvFunction: string; // e.g., "uintCV", "standardPrincipalCV", "stringAsciiCV"
+  rawValue: any;
+}
+
+interface SerializableContractCallOptions {
+  contractAddress: string;
+  contractName: string;
+  functionName: string;
+  functionArgs: SerializableFunctionArg[];
+  network?: string;
+  anchorMode: number; // AnchorMode enum (e.g., AnchorMode.Any which is 3)
+  postConditionMode?: number; // PostConditionMode enum (e.g., PostConditionMode.Deny which is 2)
+  fee?: any; // Using any for now, can be refined if fee structure is fixed
+  // senderAddress is NOT part of what we prepare for the frontend (wallet provides it)
+}
+
+// Schema for the serializable contract call options
+const serializableContractCallOptionsSchema = v.object({
+  contractAddress: v.string(),
+  contractName: v.string(),
+  functionName: v.string(),
+  functionArgs: v.array(v.object({
+    cvFunction: v.string(),
+    rawValue: v.any(),
+  })),
+  network: v.optional(v.string()),
+  anchorMode: v.number(),
+  postConditionMode: v.optional(v.number()),
+  fee: v.optional(v.any()),
 });
 
-export type PolicyCreationContractCallParams = typeof policyCreationContractCallParams.type;
+// This type is what the frontend will receive and use.
+// The frontend will need to reconstruct ClarityValues from functionArgs.
+// export type FrontendContractCallParams = ContractCallOptions; // KEEPING OLD FOR REFERENCE, BUT WE'LL USE SerializableContractCallOptions in the package
 
 // Define the full transaction package returned to the frontend.
-// This includes the contract call params and any other relevant info like quoteId.
-const policyCreationTransactionPackage = v.object({
-  newTransactionId: v.id("transactions"), // Added: ID of the created transaction record
-  contractCallParameters: policyCreationContractCallParams, // Renamed from contractCallParams for clarity
+const policyCreationTransactionPackageSchema = v.object({ // Renamed for clarity
+  newTransactionId: v.id("transactions"), 
+  contractCallParameters: serializableContractCallOptionsSchema, // Use the new serializable schema
   quoteId: v.id("quotes"), 
 });
 
-export type PolicyCreationTransactionPackage = typeof policyCreationTransactionPackage.type;
+export type PolicyCreationTransactionPackage = {
+  newTransactionId: Id<"transactions">;
+  contractCallParameters: SerializableContractCallOptions; // This is what the frontend gets
+  quoteId: Id<"quotes">;
+};
 
 const AVG_STACKS_BLOCKS_PER_DAY = 144; // Stacks: ~144 blocks/day (1 block ~10 mins)
 
@@ -38,9 +81,8 @@ export const internalPreparePolicyCreationTransaction = internalMutation({
     quoteId: v.id("quotes"), 
     userStxAddress: v.string(), 
     currentBurnBlockHeight: v.number(),
-    networkUsed: v.string(), // Added: To store the network info in the transaction record
+    networkUsed: v.string(), // e.g., "devnet", "testnet", "mainnet"
   },
-  // Explicitly typing the handler's return type
   handler: async (ctx, args): Promise<PolicyCreationTransactionPackage> => {
     const { quoteId, userStxAddress, currentBurnBlockHeight, networkUsed } = args;
     console.log(`[TransactionPreparationInternal] Preparing policy creation for quoteId: ${quoteId}, BurnHeight: ${currentBurnBlockHeight}`);
@@ -89,46 +131,79 @@ export const internalPreparePolicyCreationTransaction = internalMutation({
         throw new Error("Missing protectedValuePercentage in quote.buyerParamsSnapshot");
     }
 
-    const owner = userStxAddress;
+    const ownerAddress = userStxAddress;
     
     // Get counterparty address from centralized contract config
     const liquidityPoolContract = getLiquidityPoolContract(); // Uses current env by default
-    const counterparty = liquidityPoolContract.address;
+    const counterpartyAddress = liquidityPoolContract.address;
 
-    if (!counterparty) {
-      console.error("CRITICAL: Liquidity Pool (Counterparty) STX_ADDRESS could not be determined from contract configuration.");
+    if (!counterpartyAddress) {
+      console.error("CRITICAL: Liquidity Pool (Counterparty) STX_ADDRESS could not be determined.");
       throw new Error("System configuration error: Counterparty address is not configured correctly.");
     }
 
-    const calculatedStrikePriceUSD = (quote.marketDataSnapshot.btcPrice * quote.buyerParamsSnapshot.protectedValuePercentage) / 100;
-    // Use imported conversion functions
-    const protectedValue = usdToCents(calculatedStrikePriceUSD); 
-    const protectionAmount = btcToSatoshis(quote.buyerParamsSnapshot.protectionAmount); 
-    const premium = stxToMicroStx(quote.quoteResult.premium); 
+    const strikePriceUSD = (quote.marketDataSnapshot.btcPrice * quote.buyerParamsSnapshot.protectedValuePercentage) / 100;
+    const amountBTC = quote.buyerParamsSnapshot.protectionAmount;
+    const premiumSTX = quote.quoteResult.premium; // Premium is in STX
+    const expirationDays = quote.buyerParamsSnapshot.expirationDays;
+    const policyTypeString = quote.buyerParamsSnapshot.policyType; // "PUT" or "CALL"
+    // TODO: Determine positionType, collateralToken, settlementToken based on conventions or quote data
+    // For now, using placeholders or typical values for a BTC PUT option buyer.
+    const positionTypeString = "LONG_PUT"; // Example for buyer
+    const collateralTokenString = "BTC";    // Example
+    const settlementTokenString = "STX";  // Example, premium paid in STX, settlement could be STX or sBTC based on policy.
 
-    const expirationHeight = currentBurnBlockHeight + (quote.buyerParamsSnapshot.expirationDays * AVG_STACKS_BLOCKS_PER_DAY);
-    const policyType = quote.buyerParamsSnapshot.policyType as "PUT" | "CALL";
+    // Get Contract Details
+    const policyRegistryContract = getContractByName("policy-registry");
+    const contractAddress = policyRegistryContract.address;
+    const contractName = policyRegistryContract.name;
+    const functionName = "create-policy-entry"; // From policyRegistry/writer.ts
 
-    const contractCallParams: PolicyCreationContractCallParams = {
-      owner,
-      counterparty,
-      protectedValue,
-      protectionAmount,
-      expirationHeight,
-      premium,
-      policyType,
+    // Construct SERIALIZABLE functionArgs
+    const serializableFunctionArgs: SerializableFunctionArg[] = [
+      { cvFunction: "standardPrincipalCV", rawValue: ownerAddress },
+      { cvFunction: "standardPrincipalCV", rawValue: counterpartyAddress },
+      { cvFunction: "uintCV", rawValue: usdToCents(strikePriceUSD) },
+      { cvFunction: "uintCV", rawValue: btcToSatoshis(amountBTC) },
+      { cvFunction: "uintCV", rawValue: currentBurnBlockHeight + (expirationDays * AVG_STACKS_BLOCKS_PER_DAY) },
+      { cvFunction: "uintCV", rawValue: stxToMicroStx(premiumSTX) },
+      { cvFunction: "stringAsciiCV", rawValue: policyTypeString },
+    ];
+
+    // Assemble ContractCallOptions for the frontend
+    // This now uses the SerializableContractCallOptions structure
+    const serializableContractCallParams: SerializableContractCallOptions = {
+      contractAddress,
+      contractName,
+      functionName,
+      functionArgs: serializableFunctionArgs,
+      network: networkUsed, // This is the string like "devnet", "testnet"
+      anchorMode: AnchorMode.Any, // This is an enum, typically a number
+      postConditionMode: PostConditionMode.Deny, // This is an enum, typically a number
+      // fee can be omitted to use wallet defaults
     };
 
-    // Assuming userStxAddress can be used as or mapped to a userId for the transactions table.
-    // If your system uses a separate Convex userId (e.g., from ctx.auth), that should be used.
-    const userIdForTransaction = userStxAddress; // Placeholder - VERIFY THIS LOGIC
+    // Store semantic parameters for backend use (unchanged from previous logic)
+    const storedParameters = {
+      owner: ownerAddress,
+      counterparty: counterpartyAddress,
+      protectedValue: usdToCents(strikePriceUSD), 
+      protectionAmount: btcToSatoshis(amountBTC), 
+      expirationHeight: currentBurnBlockHeight + (expirationDays * AVG_STACKS_BLOCKS_PER_DAY),
+      premium: stxToMicroStx(premiumSTX), // Storing in microSTX for consistency
+      policyType: policyTypeString,
+      // Add other semantic fields if needed for backend records
+      positionType: positionTypeString,
+      collateralToken: collateralTokenString,
+      settlementToken: settlementTokenString,
+    };
 
+    const userIdForTransaction = userStxAddress; 
     const newTransactionId = await ctx.runMutation(api.transactions.createTransaction, {
       quoteId: quoteId,
       type: "POLICY_CREATION", 
-      // 'status' is not passed as createTransaction defaults it to PENDING.
       network: networkUsed, 
-      parameters: JSON.stringify(contractCallParams), 
+      parameters: storedParameters, // Store the semantic parameters
       userId: userIdForTransaction, 
     });
 
@@ -137,11 +212,11 @@ export const internalPreparePolicyCreationTransaction = internalMutation({
     }
 
     const transactionPackage: PolicyCreationTransactionPackage = {
-      newTransactionId: newTransactionId as Id<"transactions">, // Cast if createTransaction returns string
-      contractCallParameters: contractCallParams, // Use the locally built contractCallParams
+      newTransactionId: newTransactionId,
+      contractCallParameters: serializableContractCallParams, // Return the serializable options
       quoteId: quoteId,
     };
-    console.log("[TransactionPreparationInternal] Prepared transaction package with new Tx ID:", transactionPackage);
+    console.log("[TransactionPreparationInternal] Prepared transaction package with new Tx ID:", transactionPackage.newTransactionId);
 
     return transactionPackage;
   },

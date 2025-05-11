@@ -204,7 +204,13 @@ export default defineSchema({
       // Buyer result fields
       premium: v.optional(v.number()),
       premiumPercentage: v.optional(v.number()),
+      annualizedPremium: v.optional(v.number()),
       breakEvenPrice: v.optional(v.number()),
+      factorsBreakdown: v.optional(v.object({
+        intrinsicValue: v.optional(v.number()),
+        timeValue: v.optional(v.number()),
+        volatilityImpact: v.optional(v.number()),
+      })),
       // Provider result fields
       estimatedYield: v.optional(v.number()),
       annualizedYieldPercentage: v.optional(v.number()),
@@ -214,6 +220,7 @@ export default defineSchema({
 
     // Risk parameters used for this specific quote calculation
     riskParamsSnapshot: v.object({
+      assetType: v.optional(v.string()),
       baseRate: v.number(),
       volatilityMultiplier: v.number(),
       durationFactor: v.number(),
@@ -225,6 +232,13 @@ export default defineSchema({
           aggressive: v.optional(v.number()),
         })
       ),
+      isActive: v.optional(v.boolean()),
+      lastUpdated: v.optional(v.string()),
+      liquidityAdjustment: v.optional(v.number()),
+      marketTrendAdjustment: v.optional(v.number()),
+      policyType: v.optional(v.string()),
+      updatedBy: v.optional(v.string()),
+      version: v.optional(v.number()),
     }),
 
     // Market data at quote time
@@ -576,7 +590,19 @@ export default defineSchema({
     network: v.optional(v.string()),         // e.g., "mainnet", "testnet", "simnet"
 
     // Parameters and Data
-    parameters: v.optional(v.object({})), // Store parameters used for the transaction (e.g., from the quote)
+    parameters: v.optional(v.object({ // Store parameters used for the transaction (e.g., from the quote)
+      owner: v.optional(v.string()),
+      counterparty: v.optional(v.string()),
+      protectedValue: v.optional(v.number()),
+      protectionAmount: v.optional(v.number()),
+      expirationHeight: v.optional(v.number()),
+      premium: v.optional(v.number()),
+      policyType: v.optional(v.string()),
+      collateralToken: v.optional(v.string()),
+      positionType: v.optional(v.string()),
+      settlementToken: v.optional(v.string()),
+      // Add any other relevant parameters that might be stored
+    })), 
 
     // Timestamps
     createdAt: v.number(),        // Convex server timestamp when this record was created

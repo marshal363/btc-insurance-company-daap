@@ -214,7 +214,18 @@ export const createTransaction = mutation({
         userId: v.string(),
         quoteId: v.id("quotes"), 
         type: v.string(), // Expects TransactionType
-        parameters: v.optional(v.object({})),
+        parameters: v.optional(v.object({
+            owner: v.optional(v.string()),
+            counterparty: v.optional(v.string()),
+            protectedValue: v.optional(v.number()),
+            protectionAmount: v.optional(v.number()),
+            expirationHeight: v.optional(v.number()),
+            premium: v.optional(v.number()),
+            policyType: v.optional(v.string()),
+            collateralToken: v.optional(v.string()),
+            positionType: v.optional(v.string()),
+            settlementToken: v.optional(v.string()),
+        })),
         network: v.optional(v.string()),
     },
     handler: async (ctx, args) => {

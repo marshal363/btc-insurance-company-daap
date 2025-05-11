@@ -7,6 +7,9 @@ import {
   ClarityValue,
   PostCondition,
   PostConditionMode,
+  uintCV,
+  stringAsciiCV,
+  standardPrincipalCV,
 } from "@stacks/transactions";
 import { generateWallet } from "@stacks/wallet-sdk";
 import { DevnetWallet } from "./devnet-wallet-context";
@@ -26,6 +29,39 @@ export const isMainnetEnvironment = () =>
 
 export type Network = "mainnet" | "testnet" | "devnet";
 
+// Helper function to convert serializable args to actual ClarityValue instances
+function convertToActualClarityValues(
+  serializableArgs: Array<{ cvFunction: string; rawValue: string | number; }>
+): ClarityValue[] {
+  if (!serializableArgs) {
+    return []; // Or handle as an error, depending on expected behavior
+  }
+  return serializableArgs.map(arg => {
+    switch (arg.cvFunction) {
+      case "uintCV":
+        // Ensure rawValue is a number or bigint for uintCV
+        return uintCV(BigInt(arg.rawValue)); // Stacks.js uintCV often prefers BigInt
+      case "standardPrincipalCV":
+        return standardPrincipalCV(arg.rawValue as string);
+      case "stringAsciiCV":
+        return stringAsciiCV(arg.rawValue as string);
+      // Add cases for other CV types your application might use:
+      // case "someCV":
+      //   // someCV itself takes a ClarityValue, so this might need nested conversion
+      //   // or a more complex rawValue structure if 'some' is involved.
+      //   // For simplicity, assuming rawValue is directly usable or pre-converted if nested.
+      //   return someCV(convertToActualClarityValues([arg.rawValue as { cvFunction: string; rawValue: any; }])[0]);
+      // case "noneCV":
+      //   return noneCV();
+      // case "bufferCV":
+      //   return bufferCV(Buffer.from(arg.rawValue, 'hex')); // Example if rawValue is hex string for buffer
+      default:
+        console.error(`[convertToActualClarityValues] Unknown cvFunction type: ${arg.cvFunction}`, arg);
+        throw new Error(`Unknown cvFunction type: ${arg.cvFunction}`);
+    }
+  });
+}
+
 export const executeContractCall = async (
   txOptions: ContractCallRegularOptions,
   currentWallet: DevnetWallet | null
@@ -42,7 +78,7 @@ export const executeContractCall = async (
     ...txOptions,
     network: DEVNET_NETWORK,
     senderKey: wallet.accounts[0].stxPrivateKey,
-    functionArgs: txOptions.functionArgs as ClarityValue[],
+    functionArgs: convertToActualClarityValues(txOptions.functionArgs as unknown as Array<{ cvFunction: string; rawValue: string | number; }>),
     postConditions: txOptions.postConditions as PostCondition[],
     postConditionMode: PostConditionMode.Allow,
     fee: 1000,
