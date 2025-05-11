@@ -236,4 +236,33 @@ export const createTransaction = mutation({
         });
         return transactionId;
     }
+});
+
+/**
+ * BF-105: New query for polling transaction status by its Convex ID.
+ * Returns the transaction document or null if not found.
+ * The frontend will then map these fields to its TransactionUiStatus enum.
+ */
+export const pollTransactionStatus = query({
+  args: { transactionId: v.id("transactions") },
+  handler: async (ctx, args) => {
+    const transaction = await ctx.db.get(args.transactionId);
+    if (!transaction) {
+      // Option 1: Return null, frontend useQuery will receive null.
+      return null; 
+      // Option 2: Throw an error if a transaction ID is provided but not found.
+      // throw new Error(`Transaction not found for polling: ${args.transactionId}`);
+    }
+    // We return the relevant parts of the transaction document that the frontend needs.
+    // The frontend's TransactionContext expects `status` and `errorDetails` (can be an object).
+    return {
+      status: transaction.status, // This is the backend status string (e.g., "PENDING", "CONFIRMED", "FAILED")
+      errorDetails: transaction.errorDetails, // This is the error object/string stored in the DB
+      // Include any other fields the frontend might need from the transaction document for display or logic
+      type: transaction.type,
+      blockchainTxId: transaction.txHash,
+      // Note: The frontend `TransactionUiStatus` is a UI-specific enum.
+      // The mapping from `transaction.status` (backend) to `TransactionUiStatus` (frontend) happens in TransactionContext.tsx.
+    };
+  },
 }); 

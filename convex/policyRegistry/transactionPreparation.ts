@@ -23,9 +23,9 @@ export type PolicyCreationContractCallParams = typeof policyCreationContractCall
 // Define the full transaction package returned to the frontend.
 // This includes the contract call params and any other relevant info like quoteId.
 const policyCreationTransactionPackage = v.object({
-  contractCallParams: policyCreationContractCallParams,
-  quoteId: v.id("quotes"), // To link back to the finalized quote
-  // Add any other UI-relevant info or identifiers if needed later
+  newTransactionId: v.id("transactions"), // Added: ID of the created transaction record
+  contractCallParameters: policyCreationContractCallParams, // Renamed from contractCallParams for clarity
+  quoteId: v.id("quotes"), 
 });
 
 export type PolicyCreationTransactionPackage = typeof policyCreationTransactionPackage.type;
@@ -37,11 +37,12 @@ export const internalPreparePolicyCreationTransaction = internalMutation({
   args: {
     quoteId: v.id("quotes"), 
     userStxAddress: v.string(), 
-    currentBurnBlockHeight: v.number(), // Added arg
+    currentBurnBlockHeight: v.number(),
+    networkUsed: v.string(), // Added: To store the network info in the transaction record
   },
   // Explicitly typing the handler's return type
   handler: async (ctx, args): Promise<PolicyCreationTransactionPackage> => {
-    const { quoteId, userStxAddress, currentBurnBlockHeight } = args;
+    const { quoteId, userStxAddress, currentBurnBlockHeight, networkUsed } = args;
     console.log(`[TransactionPreparationInternal] Preparing policy creation for quoteId: ${quoteId}, BurnHeight: ${currentBurnBlockHeight}`);
 
     const quote: Doc<"quotes"> | null = await ctx.db.get(quoteId);
@@ -118,11 +119,29 @@ export const internalPreparePolicyCreationTransaction = internalMutation({
       policyType,
     };
 
+    // Assuming userStxAddress can be used as or mapped to a userId for the transactions table.
+    // If your system uses a separate Convex userId (e.g., from ctx.auth), that should be used.
+    const userIdForTransaction = userStxAddress; // Placeholder - VERIFY THIS LOGIC
+
+    const newTransactionId = await ctx.runMutation(api.transactions.createTransaction, {
+      quoteId: quoteId,
+      type: "POLICY_CREATION", 
+      // 'status' is not passed as createTransaction defaults it to PENDING.
+      network: networkUsed, 
+      parameters: JSON.stringify(contractCallParams), 
+      userId: userIdForTransaction, 
+    });
+
+    if (!newTransactionId) {
+        throw new Error("Failed to create a transaction record in the backend.");
+    }
+
     const transactionPackage: PolicyCreationTransactionPackage = {
-      contractCallParams,
+      newTransactionId: newTransactionId as Id<"transactions">, // Cast if createTransaction returns string
+      contractCallParameters: contractCallParams, // Use the locally built contractCallParams
       quoteId: quoteId,
     };
-    console.log("[TransactionPreparationInternal] Prepared transaction package:", transactionPackage);
+    console.log("[TransactionPreparationInternal] Prepared transaction package with new Tx ID:", transactionPackage);
 
     return transactionPackage;
   },
@@ -133,8 +152,10 @@ export const preparePolicyCreationPackage = action({
     args: {
         quoteId: v.id("quotes"), 
         userStxAddress: v.string(), 
+        networkUsed: v.string(), // Added: Frontend should pass this based on current wallet network
     },
-    handler: async (ctx, args) => {
+    // Update return type promise for the action as well
+    handler: async (ctx, args): Promise<PolicyCreationTransactionPackage> => {
         console.log(`[PolicyCreationAction] Initiating policy creation package for quoteId: ${args.quoteId}`);
 
         // Step 1: Fetch current burn block height
@@ -151,6 +172,7 @@ export const preparePolicyCreationPackage = action({
             quoteId: args.quoteId,
             userStxAddress: args.userStxAddress,
             currentBurnBlockHeight: currentBurnBlockHeight,
+            networkUsed: args.networkUsed, // Pass networkUsed down
         });
         
         console.log(`[PolicyCreationAction] Successfully prepared transaction package for quoteId: ${args.quoteId}`);

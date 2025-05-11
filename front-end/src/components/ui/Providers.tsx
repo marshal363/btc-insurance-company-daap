@@ -6,6 +6,7 @@ import { DevnetWalletProvider } from "../DevnetWalletProvider";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { HiroWalletProvider } from "../HiroWalletProvider";
 import { ConvexClientProvider } from "./ConvexClientProvider";
+import { TransactionProvider } from "@/contexts/TransactionContext";
 
 const queryClient = new QueryClient();
 
@@ -16,9 +17,11 @@ export function Providers({ children }: { children: React.ReactNode }) {
       <ChakraProvider theme={theme}>
         <ColorModeScript initialColorMode="light" />
         <ConvexClientProvider>
-          <HiroWalletProvider>
-            <DevnetWalletProvider>{children}</DevnetWalletProvider>
-          </HiroWalletProvider>
+          <TransactionProvider>
+            <HiroWalletProvider>
+              <DevnetWalletProvider>{children}</DevnetWalletProvider>
+            </HiroWalletProvider>
+          </TransactionProvider>
         </ConvexClientProvider>
       </ChakraProvider>
     </QueryClientProvider>
