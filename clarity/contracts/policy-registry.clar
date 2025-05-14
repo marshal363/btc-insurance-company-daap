@@ -1,108 +1,128 @@
-;; BitHedge Policy Registry Contract
-;; Version: 1.0
-;; Implementation based on: @docs/backend-new/provisional-2/policy-registry-specification-guidelines.md
+;; BitHedge European-Style Policy Registry Contract
+;; Version: 0.1 (Phase 1 Development)
 
-;; --- Constants and Error Codes ---
+;; --- Constants and Error Codes (SH-101) ---
 (define-constant CONTRACT-OWNER tx-sender)
-(define-constant ERR-NOT-FOUND (err u404))
 (define-constant ERR-UNAUTHORIZED (err u401))
-(define-constant ERR-ALREADY-EXISTS (err u409))
-(define-constant ERR-INVALID-STATUS (err u400))
-(define-constant ERR-NOT-ACTIVE (err u403))
-(define-constant ERR-EXPIRED (err u410))
-(define-constant ERR-POLICY-LIMIT-REACHED (err u1005)) ;; Max policies per owner reached
+(define-constant ERR-NOT-FOUND (err u404))
 (define-constant ERR-INVALID-POLICY-TYPE (err u1001))
 (define-constant ERR-ZERO-PROTECTED-VALUE (err u1002))
 (define-constant ERR-ZERO-PROTECTION-AMOUNT (err u1003))
 (define-constant ERR-EXPIRATION-IN-PAST (err u1004))
+(define-constant ERR-POLICY-LIMIT-REACHED (err u1005))
 (define-constant ERR-NOT-YET-EXPIRED (err u1006))
-(define-constant ERR-INSUFFICIENT-LIQUIDITY (err u502))
-(define-constant ERR-PREMIUM-ALREADY-DISTRIBUTED (err u1007))
+(define-constant ERR-INSUFFICIENT-LIQUIDITY (err u502)) ;; From Liquidity Pool check-liquidity
+(define-constant ERR-LOCK-COLLATERAL-FAILED (err u503)) ;; From Liquidity Pool lock-collateral
+(define-constant ERR-RECORD-PREMIUM-FAILED (err u504)) ;; From Liquidity Pool record-premium-payment
+(define-constant ERR-INVALID-STATUS-TRANSITION (err u1007))
+(define-constant ERR-NOT-ACTIVE (err u1008))
+(define-constant ERR-INVALID-RISK-TIER (err u1009))
+(define-constant ERR-COUNTERPARTY_IS_OWNER (err u1010))
+(define-constant ERR-ZERO-PREMIUM (err u1011))
+(define-constant ERR-CHECK-LIQUIDITY-FAILED (err u505)) ;; Specific error for check-liquidity call failure
+(define-constant ERR-LP_PRINCIPAL_NOT_SET (err u601))
 
-;; Status constants
+;; Status Constants (SH-101)
 (define-constant STATUS-ACTIVE "Active")
-(define-constant STATUS-EXERCISED "Exercised")
+(define-constant STATUS-SETTLED "Settled") ;; European style: settled or expired
 (define-constant STATUS-EXPIRED "Expired")
 
-;; Policy type constants
+;; Policy Type Constants (SH-101)
 (define-constant POLICY-TYPE-PUT "PUT")
-(define-constant POLICY-TYPE-CALL "CALL")
+(define-constant POLICY-TYPE-CALL "CALL") ;; For future use
 
-;; Position type constants
+;; Position Type Constants (SH-101) - based on spec
 (define-constant POSITION-LONG-PUT "LONG_PUT")
-(define-constant POSITION-SHORT-PUT "SHORT_PUT")
+(define-constant POSITION-SHORT-PUT "SHORT_PUT") ;; Counterparty is LP
 (define-constant POSITION-LONG-CALL "LONG_CALL")
-(define-constant POSITION-SHORT-CALL "SHORT_CALL")
+(define-constant POSITION-SHORT-CALL "SHORT_CALL") ;; Counterparty is LP
 
-;; Token constants (PR-116: Add token constants)
+;; Token Constants (SH-101) - for identifying asset types
 (define-constant TOKEN-STX "STX")
-(define-constant TOKEN-SBTC "sBTC")
+(define-constant TOKEN-SBTC "sBTC") ;; This is a string identifier, not a principal here
 (define-constant ASSET-BTC "BTC")
 
-;; --- Data Structures ---
+;; --- Data Structures (PR-101, PR-105) ---
 
-;; Policy entry - the core data structure
+;; Main storage for policy details
 (define-map policies
-  { id: uint }                              ;; Key: unique policy ID
+  { id: uint } ;; Unique policy ID
   {
-    owner: principal,                       ;; Policy owner (buyer) - Protective Peter for LONG_PUT
-    counterparty: principal,                ;; Counterparty (typically the pool) - Income Irene for SHORT_PUT
-    protected-value: uint,                  ;; Strike price in base units (e.g., satoshis for BTC)
-    protection-amount: uint,                ;; Amount being protected in base units
-    expiration-height: uint,                ;; Block height when policy expires
-    premium: uint,                          ;; Premium amount paid in base units
-    policy-type: (string-ascii 4),          ;; "PUT" or "CALL"
-    position-type: (string-ascii 9),        ;; "LONG_PUT", "SHORT_PUT", "LONG_CALL", or "SHORT_CALL"
-    collateral-token: (string-ascii 4),     ;; PR-116: Token used as collateral ("STX" or "sBTC")
-    protected-asset: (string-ascii 4),      ;; PR-116: Asset being protected ("BTC")
-    settlement-token: (string-ascii 4),     ;; PR-116: Token used for settlement if exercised
-    status: (string-ascii 10),              ;; "Active", "Exercised", "Expired"
-    creation-height: uint,                  ;; Block height when policy was created
-    premium-distributed: bool               ;; Whether premium has been distributed to counterparty
+    owner: principal, ;; Policy owner (buyer)
+    counterparty: principal, ;; Counterparty (Liquidity Pool Vault contract)
+    protected-value: uint, ;; Strike price in base units (e.g., satoshis for BTC)
+    protection-amount: uint, ;; Amount being protected in base units
+    expiration-height: uint, ;; Block height when policy expires
+    premium: uint, ;; Premium amount paid by owner (input to create-policy)
+    policy-type: (string-ascii 4), ;; "PUT" or "CALL"
+    position-type: (string-ascii 9), ;; e.g., "LONG_PUT" (owner's perspective)
+    ;; counterparty-position-type: (string-ascii 9), ;; e.g., "SHORT_PUT" (LP's perspective)
+    collateral-token: (string-ascii 4), ;; Token used as collateral (e.g., "STX", "sBTC")
+    protected-asset: (string-ascii 4), ;; Asset being protected (e.g., "BTC")
+    settlement-token: (string-ascii 4), ;; Token used for settlement if exercised
+    status: (string-ascii 10), ;; "Active", "Settled", "Expired"
+    creation-height: uint, ;; Block height when policy was created
+    risk-tier: (string-ascii 32), ;; Risk tier selected by owner
+    ;; Fields to be populated during/after expiration (Phase 2)
+    premium-distributed-to-lp: bool, ;; Whether premium has been formally distributed/accounted for by LP (Phase 2)
+    settlement-price-at-expiration: (optional uint), ;; Price at expiration if settled (Phase 2)
+    settlement-amount-paid: (optional uint), ;; Amount settled if in-the-money (Phase 2)
+    is-processed-post-expiration: bool, ;; Flag to ensure one-time processing post-expiration (Phase 2)
   }
 )
 
 ;; Index of policies by owner
 (define-map policies-by-owner
   { owner: principal }
-  { policy-ids: (list 50 uint) } ;; Max 50 policies indexed per owner
+  { policy-ids: (list 50 uint) } ;; Max 50 policies indexed per owner for gas efficiency
 )
 
-;; Index of policies by counterparty
+;; Index of policies by counterparty (which will be the Liquidity Pool Vault contract)
 (define-map policies-by-counterparty
   { counterparty: principal }
-  { policy-ids: (list 50 uint) } ;; Max 50 policies indexed per counterparty
+  { policy-ids: (list 200 uint) } ;; LP can be counterparty to many policies
 )
 
-;; --- Data Variables ---
+;; Index of policies by expiration height (crucial for European style processing)
+(define-map policies-by-expiration-height
+  { height: uint }
+  { policy-ids: (list 200 uint) } ;; Potentially many policies expiring at the same height
+)
 
-;; Counter for policy IDs
+;; Stores details of settled policies (populated in Phase 2)
+(define-map policy-settlements
+  { policy-id: uint }
+  {
+    settlement-price: uint,
+    settlement-amount: uint,
+    settlement-height: uint,
+    settlement-timestamp: uint, ;; For off-chain reference
+  }
+)
+
+;; Queue for policies whose premiums are ready for distribution to providers via LP (populated in Phase 2)
+(define-map pending-premium-distributions
+  { policy-id: uint }
+  { ready-for-distribution: bool }
+)
+
+;; --- Data Variables (PR-102, PR-107) ---
 (define-data-var policy-id-counter uint u0)
 
-;; Backend authorized principal - for automated operations
-;; Defaults to the contract deployer initially
 (define-data-var backend-authorized-principal principal tx-sender)
+;; Oracle principal: For now, price is off-chain. This is for potential future on-chain oracle integration.
+(define-data-var oracle-principal principal tx-sender)
+(define-data-var liquidity-pool-vault-principal principal tx-sender)
 
-;; Principal of the Oracle contract (must be set after deployment)
-(define-data-var oracle-principal principal tx-sender) ;; Placeholder, set via set-oracle-principal
-
-;; Principal of the Liquidity Pool Vault contract (must be set after deployment)
-(define-data-var liquidity-pool-vault-principal principal tx-sender) ;; Placeholder
-
-;; --- Administrative Functions ---
-
-;; Set the backend authorized principal
-;; Can only be called by the contract deployer (contract owner)
+;; --- Administrative Functions (Placeholders for PR-102, PR-107, to be defined in Step 1.4) ---
 (define-public (set-backend-authorized-principal (new-principal principal))
   (begin
-    (asserts! (is-eq tx-sender CONTRACT-OWNER) ERR-UNAUTHORIZED) ;; Use CONTRACT-OWNER instead of contract-deployer
+    (asserts! (is-eq tx-sender CONTRACT-OWNER) ERR-UNAUTHORIZED)
     (var-set backend-authorized-principal new-principal)
     (ok true)
   )
 )
 
-;; Set the Oracle contract principal
-;; Can only be called by the contract deployer (contract owner)
 (define-public (set-oracle-principal (new-principal principal))
   (begin
     (asserts! (is-eq tx-sender CONTRACT-OWNER) ERR-UNAUTHORIZED)
@@ -111,498 +131,213 @@
   )
 )
 
-;; Set the Liquidity Pool Vault contract principal
-;; Can only be called by the contract deployer (contract owner)
 (define-public (set-liquidity-pool-vault-principal (new-principal principal))
   (begin
     (asserts! (is-eq tx-sender CONTRACT-OWNER) ERR-UNAUTHORIZED)
+    ;; Ensure the principal being set is not the deployer of this contract itself if it needs to be distinct
+    (asserts! (not (is-eq new-principal CONTRACT-OWNER)) ERR-LP_PRINCIPAL_NOT_SET)
     (var-set liquidity-pool-vault-principal new-principal)
     (ok true)
   )
 )
 
-;; --- Policy Management Functions ---
+;; --- Policy Management Functions (Placeholders for PR-103, PR-110, to be defined in Step 1.4) ---
 
-;; Create a new policy entry
-;; Can be called by any user (typically the policy buyer)
-(define-public (create-policy-entry
-  (owner principal)
-  (counterparty principal)
+;; Private helper to determine collateral and settlement tokens based on policy type.
+(define-private (get-collateral-and-settlement-tokens (policy-type (string-ascii 4)))
+  (if (is-eq policy-type POLICY-TYPE-PUT)
+    {
+      collateral: TOKEN-STX,
+      settlement: TOKEN-STX,
+    }
+    ;; Example: PUT backed by STX, pays out in STX
+    ;; For CALL, assuming sBTC collateral and sBTC payout. Adjust if different.
+    {
+      collateral: TOKEN-SBTC,
+      settlement: TOKEN-SBTC,
+    }
+  )
+)
+
+;; Private helper to calculate required collateral (simplified for now)
+(define-private (calculate-required-collateral
+    (policy-type (string-ascii 4))
   (protected-value uint)
   (protection-amount uint)
-  (expiration-height uint)
-  (premium uint)
-  (policy-type (string-ascii 4)))
+    (risk-tier (string-ascii 32))
+  )
+  ;; In a full implementation, this might also query risk-tier-parameters from LP-Vault
+  ;; or use a shared parameter contract to adjust collateral based on risk-tier.
+  ;; For Phase 1, European options typically collateralize the max potential payout.
+  ;; For a PUT, max payout is protection-amount if strike is hit and asset value goes to 0 (simplified).
+  ;; For a CALL, collateral would be the asset itself (e.g. sBTC).
+  (if (is-eq policy-type POLICY-TYPE-PUT)
+    protection-amount ;; Simplification: PUT collateral is full protection amount in the collateral token (e.g. STX)
+    protection-amount ;; Simplification: CALL collateral could be the protection_amount of the underlying asset (e.g. sBTC amount)
+  )
+)
 
-  (let
-    (
-      ;; Get next policy ID and increment counter
+(define-public (create-protection-policy
+    (owner-principal principal) ;; The buyer of the policy
+    (protected-value-asset uint) ;; Strike price, e.g., BTC price in USD * 10^8
+    (protection-amount-asset uint) ;; Amount of asset being protected, e.g., BTC amount in satoshis
+  (expiration-height uint)
+    (policy-type (string-ascii 4)) ;; "PUT" or "CALL"
+    (input-premium uint) ;; Premium paid by the user for this policy
+    (risk-tier (string-ascii 32))
+  )
+  (let (
       (policy-id (var-get policy-id-counter))
       (next-id (+ policy-id u1))
-      ;; PR-121: Determine position types based on policy type
-      (owner-position-type (if (is-eq policy-type POLICY-TYPE-PUT) 
+      (lp-principal (var-get liquidity-pool-vault-principal))
+      (token-details (get-collateral-and-settlement-tokens policy-type))
+      (collateral-token-id (get collateral token-details))
+      (settlement-token-id (get settlement token-details))
+      (current-block-height burn-block-height)
+      (owner-pos-type (if (is-eq policy-type POLICY-TYPE-PUT)
                               POSITION-LONG-PUT 
-                              POSITION-LONG-CALL))
-      (counterparty-position-type (if (is-eq policy-type POLICY-TYPE-PUT) 
-                                    POSITION-SHORT-PUT 
-                                    POSITION-SHORT-CALL))
-      ;; PR-116: Determine collateral and settlement tokens based on policy type
-      (collateral-token (if (is-eq policy-type POLICY-TYPE-PUT) TOKEN-STX TOKEN-SBTC))
-      (settlement-token (if (is-eq policy-type POLICY-TYPE-PUT) TOKEN-STX TOKEN-SBTC))
-      (protected-asset ASSET-BTC)
+        POSITION-LONG-CALL
+      ))
+      ;; (lp-pos-type (if (is-eq policy-type POLICY-TYPE-PUT) POSITION-SHORT-PUT POSITION-SHORT-CALL))
+      ;; PR-110: Basic parameter validation
+      (required-collateral (calculate-required-collateral policy-type protected-value-asset
+        protection-amount-asset risk-tier
+      ))
     )
-    (begin
-      ;; Basic validation
-      (asserts! (or (is-eq policy-type POLICY-TYPE-PUT) (is-eq policy-type POLICY-TYPE-CALL))
-                ERR-INVALID-POLICY-TYPE)
-      (asserts! (> protected-value u0) ERR-ZERO-PROTECTED-VALUE)
-      (asserts! (> protection-amount u0) ERR-ZERO-PROTECTION-AMOUNT)
-      (asserts! (> expiration-height burn-block-height) ERR-EXPIRATION-IN-PAST)
-
-      ;; Ensure sufficient liquidity in the pool (PR-111)
-      (asserts! (unwrap! (check-liquidity-for-policy protected-value protection-amount policy-type) (err u502)) ;; Error u502 for liquidity check failure
-                ERR-INSUFFICIENT-LIQUIDITY)
-      
-      ;; Lock collateral in the pool (PR-111)
-      (unwrap! (lock-policy-collateral policy-id protected-value protection-amount policy-type) (err u503)) ;; Error u503 for lock failure
-
-      ;; Insert the policy entry
-      (map-set policies
-        { id: policy-id }
-        {
-          owner: owner,
-          counterparty: counterparty,
-          protected-value: protected-value,
-          protection-amount: protection-amount,
-          expiration-height: expiration-height,
-          premium: premium,
-          policy-type: policy-type,
-          position-type: owner-position-type,  ;; Set position type for the owner (buyer)
-          collateral-token: collateral-token,  ;; PR-116: Add collateral token tracking
-          protected-asset: protected-asset,    ;; PR-116: Add protected asset tracking
-          settlement-token: settlement-token,  ;; PR-116: Add settlement token tracking
-          status: STATUS-ACTIVE,
-          creation-height: burn-block-height,
-          premium-distributed: false
-        }
-      )
-
-      ;; Update owner index
-      (match (map-get? policies-by-owner { owner: owner })
-        existing-entry
-        (let
-          (
-            (existing-ids (get policy-ids existing-entry))
-            (new-list (append existing-ids policy-id))
-            (checked-list (unwrap! (as-max-len? new-list u50) ERR-POLICY-LIMIT-REACHED))
-          )
-          (map-set policies-by-owner
-            { owner: owner }
-            { policy-ids: checked-list }
-          )
-        )
-        ;; No existing policies, create new list
-        (map-set policies-by-owner
-          { owner: owner }
-          { policy-ids: (list policy-id) }
-        )
-      )
-
-      ;; Update counterparty index
-      (match (map-get? policies-by-counterparty { counterparty: counterparty })
-        existing-entry
-        (let
-          (
-            (existing-ids (get policy-ids existing-entry))
-            (new-list (append existing-ids policy-id))
-            (checked-list (unwrap! (as-max-len? new-list u50) ERR-POLICY-LIMIT-REACHED))
-          )
-          (map-set policies-by-counterparty
-            { counterparty: counterparty }
-            { policy-ids: checked-list }
-          )
-        )
-        ;; No existing policies, create new list
-        (map-set policies-by-counterparty
-          { counterparty: counterparty }
-          { policy-ids: (list policy-id) }
-        )
-      )
-
-      ;; Update counter
-      (var-set policy-id-counter next-id)
-
-      ;; Enhanced event for policy creation (PR-119 partial: improve event data)
-      (print {
-        event: "policy-created",
-        policy-id: policy-id,
-        owner: owner,
-        counterparty: counterparty,
-        expiration-height: expiration-height,
-        protected-value: protected-value,
-        protection-amount: protection-amount,
-        policy-type: policy-type,
-        position-type: owner-position-type,
-        counterparty-position-type: counterparty-position-type, ;; PR-121: Include counterparty position
-        collateral-token: collateral-token,    ;; PR-116: Include in event
-        settlement-token: settlement-token,    ;; PR-116: Include in event
-        protected-asset: protected-asset,      ;; PR-116: Include in event
-        premium: premium
-      })
-
-      ;; Return the created policy ID
-      (ok policy-id)
+    (asserts! (not (is-eq lp-principal tx-sender)) ERR-LP_PRINCIPAL_NOT_SET)
+    ;; Ensure LP principal is set and not default
+    (asserts! (not (is-eq owner-principal lp-principal))
+      ERR-COUNTERPARTY_IS_OWNER
     )
+    (asserts! (is-valid-policy-type policy-type) ERR-INVALID-POLICY-TYPE)
+    (asserts! (> protected-value-asset u0) ERR-ZERO-PROTECTED-VALUE)
+    (asserts! (> protection-amount-asset u0) ERR-ZERO-PROTECTION-AMOUNT)
+    (asserts! (> input-premium u0) ERR-ZERO-PREMIUM)
+    (asserts! (> expiration-height current-block-height) ERR-EXPIRATION-IN-PAST)
+    (asserts! (is-valid-risk-tier risk-tier) ERR-INVALID-RISK-TIER)
+    ;; Interaction with Liquidity Pool Vault
+    (unwrap!
+      (contract-call? lp-principal check-liquidity required-collateral
+        collateral-token-id risk-tier expiration-height
+      )
+      ERR-CHECK-LIQUIDITY-FAILED
+    )
+    (unwrap!
+      (contract-call? lp-principal lock-collateral policy-id required-collateral
+        collateral-token-id risk-tier expiration-height owner-principal
+      )
+      ERR-LOCK-COLLATERAL-FAILED
+    )
+    (unwrap!
+      (contract-call? lp-principal record-premium-payment policy-id input-premium
+        collateral-token-id expiration-height owner-principal
+      )
+      ERR-RECORD-PREMIUM-FAILED
+    )
+    ;; Store policy
+    (map-set policies { id: policy-id } {
+      owner: owner-principal,
+      counterparty: lp-principal,
+      protected-value: protected-value-asset,
+      protection-amount: protection-amount-asset,
+      expiration-height: expiration-height,
+      premium: input-premium,
+      policy-type: policy-type,
+      position-type: owner-pos-type,
+      collateral-token: collateral-token-id,
+      protected-asset: ASSET-BTC, ;; Assuming BTC for now
+      settlement-token: settlement-token-id,
+      status: STATUS-ACTIVE,
+      creation-height: current-block-height,
+      risk-tier: risk-tier,
+      premium-distributed-to-lp: false,
+      settlement-price-at-expiration: none,
+      settlement-amount-paid: none,
+      is-processed-post-expiration: false,
+    })
+    ;; Update indices
+    (let ((owner-policies (default-to { policy-ids: (list) }
+        (map-get? policies-by-owner { owner: owner-principal })
+      )))
+      (map-set policies-by-owner { owner: owner-principal } { policy-ids: (unwrap!
+        (as-max-len? (append (get policy-ids owner-policies) policy-id) u50)
+        ERR-POLICY-LIMIT-REACHED
+      ) }
+      )
+    )
+    (let ((lp-policies (default-to { policy-ids: (list) }
+        (map-get? policies-by-counterparty { counterparty: lp-principal })
+      )))
+      (map-set policies-by-counterparty { counterparty: lp-principal } { policy-ids: (unwrap! (as-max-len? (append (get policy-ids lp-policies) policy-id) u200)
+        ERR-POLICY-LIMIT-REACHED
+      ) }
+      )
+    )
+    (let ((exp-policies (default-to { policy-ids: (list) }
+        (map-get? policies-by-expiration-height { height: expiration-height })
+      )))
+      (map-set policies-by-expiration-height { height: expiration-height } { policy-ids: (unwrap!
+        (as-max-len? (append (get policy-ids exp-policies) policy-id) u200)
+        ERR-POLICY-LIMIT-REACHED
+      ) }
+      )
+    )
+    (var-set policy-id-counter next-id)
+    (print {
+      event: "policy-created",
+      policy-id: policy-id,
+      owner: owner-principal,
+      counterparty: lp-principal,
+      policy_type: policy-type,
+      risk_tier: risk-tier,
+      premium: input-premium,
+      expiration_height: expiration-height,
+      protected_value: protected-value-asset,
+      protection_amount: protection-amount-asset,
+      collateral_token: collateral-token-id,
+      required_collateral: required-collateral,
+    })
+    (ok policy-id)
   )
 )
 
-;; Update policy status
-;; Can be called by the policy owner to activate (exercise)
-;; Can be called by the backend authorized principal to expire
-(define-public (update-policy-status
-  (policy-id uint)
-  (new-status (string-ascii 10)))
-
-  (let
-    (
-      ;; Get the policy entry
-      (policy (unwrap! (map-get? policies { id: policy-id }) ERR-NOT-FOUND))
-      (previous-status (get status policy))
-      (current-owner (get owner policy))
-      (expiration (get expiration-height policy))
-    )
-    (begin
-      ;; Validate the status transition and authorization
-      (asserts!
-        (or
-          ;; Owner can activate (exercise) an active policy that is not expired
-          (and (is-eq tx-sender current-owner)
-               (is-eq previous-status STATUS-ACTIVE)
-               (is-eq new-status STATUS-EXERCISED)
-               (< burn-block-height expiration))
-
-          ;; Backend can expire an active policy that is past expiration
-          (and (is-eq tx-sender (var-get backend-authorized-principal))
-               (is-eq previous-status STATUS-ACTIVE)
-               (is-eq new-status STATUS-EXPIRED)
-               (>= burn-block-height expiration)))
-        ERR-UNAUTHORIZED ;; Covers invalid transitions, permissions, or expiry checks
-      )
-
-      ;; Update the policy status
-      (map-set policies
-        { id: policy-id }
-        (merge policy { status: new-status })
-      )
-
-      ;; Enhanced event emission (PR-119 partial: improve event data)
-      (print {
-        event: "policy-status-updated",
-        policy-id: policy-id,
-        new-status: new-status,
-        previous-status: previous-status,
-        block-height: burn-block-height,
-        owner: (get owner policy),
-        counterparty: (get counterparty policy),
-        policy-type: (get policy-type policy),
-        position-type: (get position-type policy),
-        collateral-token: (get collateral-token policy),    ;; PR-116: Include in event
-        settlement-token: (get settlement-token policy),    ;; PR-116: Include in event
-        protected-asset: (get protected-asset policy)       ;; PR-116: Include in event
-      })
-
-      (ok true)
-    )
-  )
+;; --- Read-Only Functions (Placeholders for PR-106, to be defined in Step 1.4) ---
+(define-read-only (get-policy (id uint))
+  (map-get? policies { id: id })
 )
 
-;; Process premium distribution for an expired policy
-;; Can be called by the backend authorized principal or the counterparty
-(define-public (process-expired-policy-premium (policy-id uint))
-  (let
-    (
-      ;; Get the policy entry
-      (policy (unwrap! (map-get? policies { id: policy-id }) ERR-NOT-FOUND))
-      (policy-status (get status policy))
-      (counterparty-principal (get counterparty policy))
-      (premium-already-distributed (get premium-distributed policy))
-    )
-    (begin
-      ;; Verify caller authorization
-      (asserts! (or (is-eq tx-sender (var-get backend-authorized-principal))
-                   (is-eq tx-sender counterparty-principal))
-                ERR-UNAUTHORIZED)
-      
-      ;; Verify policy is expired and premium not yet distributed
-      (asserts! (is-eq policy-status STATUS-EXPIRED) ERR-NOT-ACTIVE)
-      (asserts! (not premium-already-distributed) ERR-PREMIUM-ALREADY-DISTRIBUTED)
-      
-      ;; Mark premium as distributed
-      (map-set policies
-        { id: policy-id }
-        (merge policy { premium-distributed: true })
-      )
-      
-      ;; PR-119: Enhanced premium distribution event emission
-      (print {
-        event: "premium-distribution-initiated",
-        policy-id: policy-id,
-        owner: (get owner policy),
-        counterparty: counterparty-principal,
-        premium-amount: (get premium policy),
-        policy-type: (get policy-type policy),
-        position-type: (get position-type policy),
-        collateral-token: (get collateral-token policy),
-        settlement-token: (get settlement-token policy),
-        protected-asset: (get protected-asset policy),
-        expiration-height: (get expiration-height policy),
-        creation-height: (get creation-height policy)
-      })
-      
-      (ok true)
-    )
-  )
-)
-
-;; --- Batch Operations ---
-
-;; Expire multiple policies in a single transaction
-;; Can only be called by the backend authorized principal
-(define-public (expire-policies-batch (policy-ids (list 50 uint)))
-  (begin
-    ;; Verify caller is authorized
-    (asserts! (is-eq tx-sender (var-get backend-authorized-principal))
-              ERR-UNAUTHORIZED)
-
-    ;; For now, we're implementing a simplified version that just returns success
-    ;; A more complex implementation with fold will be added in a future update
-    (print { event: "batch-expire-attempt", policy-count: (len policy-ids) })
-    (ok true)
-  )
-)
-
-;; Try to expire a single policy - internal helper for batch operation
-;; Returns (ok true) if successful or skipped, error only on unexpected issues.
-(define-private (try-expire-policy (policy-id uint))
-  (match (map-get? policies { id: policy-id })
-    ;; Policy found
-    policy 
-    (let
-      (
-        (current-status (get status policy))
-        (expiration (get expiration-height policy))
-      )
-      ;; Only expire if active and past expiration height
-      (if (and (is-eq current-status STATUS-ACTIVE)
-                (>= burn-block-height expiration))
-          (begin
-            ;; Update the policy status
-            (map-set policies
-              { id: policy-id }
-              (merge policy { status: STATUS-EXPIRED })
-            )
-            ;; Log the status change with enhanced event (PR-119 partial)
-            (print {
-              event: "policy-status-updated",
-              policy-id: policy-id,
-              new-status: STATUS-EXPIRED,
-              previous-status: current-status,
-              block-height: burn-block-height,
-              owner: (get owner policy),
-              counterparty: (get counterparty policy),
-              policy-type: (get policy-type policy),
-              position-type: (get position-type policy),
-              collateral-token: (get collateral-token policy),
-              settlement-token: (get settlement-token policy),
-              protected-asset: (get protected-asset policy)
-            })
-            (ok true) ;; Indicate successful update
-          )
-          ;; No update needed (already non-active or not expired)
-          (ok false)
-      )
-    )
-    ;; Policy not found - this is considered a normal case in batch expiration
-    (ok false)
-  )
-)
-
-;; --- Read-Only Functions (PR-107 Completion for basic reads) ---
-
-;; Get a policy by ID
-(define-read-only (get-policy (policy-id uint))
-  (map-get? policies { id: policy-id }))
-
-;; Get the total number of policies
 (define-read-only (get-policy-count)
-  (var-get policy-id-counter))
+  (ok (var-get policy-id-counter))
+)
 
-;; Get policy IDs for an owner
 (define-read-only (get-policy-ids-by-owner (owner principal))
-  (default-to { policy-ids: (list) }
-              (map-get? policies-by-owner { owner: owner })))
+  (map-get? policies-by-owner { owner: owner })
+)
 
-;; Get policy IDs for a counterparty (Income Irene)
 (define-read-only (get-policy-ids-by-counterparty (counterparty principal))
-  (default-to { policy-ids: (list) }
-              (map-get? policies-by-counterparty { counterparty: counterparty })))
+  (map-get? policies-by-counterparty { counterparty: counterparty })
+)
 
-;; Check if a policy is active
-(define-read-only (is-policy-active (policy-id uint))
-  (match (map-get? policies { id: policy-id })
-    policy (ok (is-eq (get status policy) STATUS-ACTIVE))
-    (err ERR-NOT-FOUND) ;; Returns (err u404) if not found
+(define-read-only (get-policies-by-expiration-height (height uint))
+  (map-get? policies-by-expiration-height { height: height })
+)
+
+(define-read-only (get-liquidity-pool-vault-principal)
+  (ok (var-get liquidity-pool-vault-principal))
+)
+
+;; --- Utility Functions (SH-103) ---
+(define-private (is-valid-policy-type (p-type (string-ascii 4)))
+  (or (is-eq p-type POLICY-TYPE-PUT) (is-eq p-type POLICY-TYPE-CALL))
+)
+
+(define-private (is-valid-risk-tier (tier (string-ascii 32)))
+  ;; In Phase 1, we just check against defined constants. Later, this might query LP vault or a shared contract.
+  (or
+    (is-eq tier RISK-TIER-CONSERVATIVE)
+    (is-eq tier RISK-TIER-BALANCED)
+    (is-eq tier RISK-TIER-AGGRESSIVE)
   )
 )
 
-;; PR-116: Get the collateral token for a policy
-(define-read-only (get-collateral-token (policy-id uint))
-  (match (map-get? policies { id: policy-id })
-    policy (ok (get collateral-token policy))
-    (err ERR-NOT-FOUND)
-  )
-)
-
-;; PR-116: Get the settlement token for a policy
-(define-read-only (get-settlement-token (policy-id uint))
-  (match (map-get? policies { id: policy-id })
-    policy (ok (get settlement-token policy))
-    (err ERR-NOT-FOUND)
-  )
-)
-
-;; PR-116: Get the protected asset for a policy
-(define-read-only (get-protected-asset (policy-id uint))
-  (match (map-get? policies { id: policy-id })
-    policy (ok (get protected-asset policy))
-    (err ERR-NOT-FOUND)
-  )
-)
-
-;; PR-116: Check if premium has been distributed for a policy
-(define-read-only (is-premium-distributed (policy-id uint))
-  (match (map-get? policies { id: policy-id })
-    policy (ok (get premium-distributed policy))
-    (err ERR-NOT-FOUND)
-  )
-)
-
-;; --- Advanced Read-Only Functions ---
-
-;; Get the current BTC price from the Oracle contract
-;; Currently implemented as a placeholder to avoid dependency issues
-(define-read-only (get-current-btc-price)
-  ;; This is a placeholder implementation to avoid dependency issues.
-  ;; In production, this would call the oracle contract.
-  ;; During deployment, the actual contract call will be configured after all contracts are deployed.
-  (ok u30000) ;; Return a fixed test price during development
-)
-
-;; Check if a policy is exercisable based on the current Oracle price
-(define-read-only (is-policy-exercisable (policy-id uint))
-  (let (
-      (policy (unwrap! (map-get? policies { id: policy-id }) ERR-NOT-FOUND))
-      ;; Since get-current-btc-price now returns (ok uint) instead of using match,
-      ;; we need to handle it differently
-      (current-price (unwrap! (get-current-btc-price) (err u501))) ;; Error u501 for Oracle price fetch error
-    )
-    ;; Check if the policy is active first
-    (asserts! (is-eq (get status policy) STATUS-ACTIVE) ERR-NOT-ACTIVE)
-    ;; Check if it's expired
-    (asserts! (< burn-block-height (get expiration-height policy)) ERR-EXPIRED)
-
-    (if (is-eq (get policy-type policy) POLICY-TYPE-PUT)
-      ;; PUT: Exercisable if current price < protected value
-      (ok (< current-price (get protected-value policy)))
-      ;; CALL: Exercisable if current price > protected value
-      (ok (> current-price (get protected-value policy)))
-    )
-  )
-)
-
-;; Calculate the settlement amount for a policy based on a given price
-;; Note: This uses a provided price, not necessarily the live Oracle price
-(define-read-only (calculate-settlement-amount (policy-id uint) (settlement-price uint))
-  (let ((policy (unwrap! (map-get? policies { id: policy-id }) ERR-NOT-FOUND)))
-    (ok 
-      (if (is-eq (get policy-type policy) POLICY-TYPE-PUT)
-        ;; PUT: max(0, strike - settlement_price) * amount / strike
-        (if (>= settlement-price (get protected-value policy))
-          u0
-          (/ (* (- (get protected-value policy) settlement-price) (get protection-amount policy)) (get protected-value policy)))
-        ;; CALL: max(0, settlement_price - strike) * amount / strike
-        (if (<= settlement-price (get protected-value policy))
-          u0
-          (/ (* (- settlement-price (get protected-value policy)) (get protection-amount policy)) (get protected-value policy)))
-      )
-    )
-  )
-)
-
-;; Check if the Liquidity Pool has sufficient collateral for a potential policy (PR-111)
-;; Currently implemented as a placeholder to avoid circular dependency
-(define-read-only (check-liquidity-for-policy
-  (protected-value uint)
-  (protection-amount uint)
-  (policy-type (string-ascii 4)))
-  ;; This is a placeholder implementation to avoid circular dependency.
-  ;; In production, this would call the liquidity-pool-vault contract.
-  ;; During deployment, the actual contract call will be configured after both contracts are deployed.
-  (ok true) ;; Always return success during development/testing
-)
-
-;; --- Integration Points ---
-
-;; Placeholder comment: Integration with Liquidity Pool
-;; - Premium payments associated with create-policy-entry would likely involve
-;;   a call *to* the Liquidity Pool contract from the user or backend
-;;   before calling create-policy-entry here, or handled via composed transactions.
-;; - Settlement payments triggered by update-policy-status (Exercised) would involve
-;;   a call *from* this contract (or backend reacting to the event) *to* the Liquidity Pool
-;;   to release funds.
-
-;; Placeholder comment: Integration with Oracle
-;; - The is-policy-exercisable function requires the current price as an argument.
-;;   The caller (likely Convex backend) would fetch this from the Oracle contract
-;;   before calling this read-only function.
-;; - Direct calls *from* this contract *to* the Oracle might be added later
-;;   if on-chain validation during state transitions (e.g., exercise) is required,
-;;   but this is avoided in the current "On-Chain Light" design. 
-
-;; --- Private Functions ---
-
-;; Request collateral lock from the Liquidity Pool contract (PR-111)
-;; Currently implemented as a placeholder to avoid circular dependency
-(define-private (lock-policy-collateral
-  (policy-id uint)
-  (protected-value uint)
-  (protection-amount uint)
-  (policy-type (string-ascii 4)))
-  ;; This is a placeholder implementation to avoid circular dependency.
-  ;; In production, this would call the liquidity-pool-vault contract.
-  ;; During deployment, the actual contract call will be configured after both contracts are deployed.
-  (ok true) ;; Always return success during development/testing
-)
-
-;; Calculate required collateral amount based on policy parameters
-(define-private (calculate-required-collateral
-  (policy-type (string-ascii 4)) 
-  (protected-value uint) 
-  (protection-amount uint))
-  ;; Simplified: Assume PUT requires full protection amount in collateral token
-  ;; Assume CALL requires a fraction (e.g., 50%) - adjust based on risk model
-  (if (is-eq policy-type POLICY-TYPE-PUT)
-    protection-amount
-    (/ protection-amount u2) ;; Example: 50% for CALL
-  )
-)
-
-;; PR-116: Determine the required token ID based on policy type
-(define-private (get-token-id-for-policy (policy-type (string-ascii 4)))
-  ;; For PUT options, collateral is STX (to pay out if BTC price drops)
-  ;; For CALL options, collateral is sBTC (to deliver if BTC price rises)
-  (if (is-eq policy-type POLICY-TYPE-PUT)
-    TOKEN-STX
-    TOKEN-SBTC
-  )
-) 
+(print { message: "European-Policy-Registry.clar updated for Phase 1, Step 1.4" })

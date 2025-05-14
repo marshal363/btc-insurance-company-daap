@@ -2,362 +2,535 @@
 
 ## Project Overview
 
-This development plan outlines the tasks required to implement BitHedge's European-style options architecture on the Stacks blockchain. The project involves building two primary smart contracts (Policy Registry and Liquidity Pool Vault) that will enable the creation, management, and settlement of European-style Bitcoin options (settlement only at expiration).
+This development plan outlines the tasks required to implement BitHedge's European-style options architecture on the Stacks blockchain. The project involves building a suite of smart contracts, including two primary contracts (Policy Registry and Liquidity Pool Vault) and supporting contracts for parameters, mathematical operations, oracle price feeds, and verification services. This system will enable the creation, management, and settlement of European-style Bitcoin options (settlement only at expiration).
 
 ### Project Objectives
 
-1. Implement a gas-efficient, robust European-style options platform
-2. Support the complete policy lifecycle for both buyers and sellers
-3. Create mechanisms for efficient capital utilization with expiration-focused design
-4. Implement comprehensive verification systems to ensure correctness
-5. Optimize for batch processing to reduce gas costs
-6. Align implementation with Bitcoin-native mental models
+1.  Implement a gas-efficient, robust, and secure European-style options platform.
+2.  Support the complete policy lifecycle for both buyers (protection seekers) and sellers (liquidity providers).
+3.  Create mechanisms for efficient capital utilization with an expiration-focused design.
+4.  Implement comprehensive verification systems to ensure correctness and system integrity.
+5.  Optimize for batch processing to reduce gas costs and enhance scalability.
+6.  Align implementation with Bitcoin-native mental models and user expectations.
+7.  Establish a modular architecture with clear separation of concerns between contracts.
 
 ### Key Components
 
-1. **Policy Registry Contract**: Manages policy creation, expiration, and settlement
-2. **Liquidity Pool Vault Contract**: Handles capital management and premium distribution
-3. **Risk Tier System**: Maps user protection preferences to provider risk tolerance
-4. **Settlement and Verification System**: Ensures correct allocation and settlement
+1.  **BitHedgePolicyRegistryContract**: Manages policy creation, expiration batch processing, and settlement coordination.
+2.  **BitHedgeLiquidityPoolVaultContract**: Handles provider capital management, collateral allocation, premium distribution, and settlement execution.
+3.  **BitHedgeParametersContract**: Stores system configuration values, risk tier parameters, fee structures, and authorized principals.
+4.  **BitHedgeMathLibraryContract**: Provides standardized fixed-point math operations and financial calculations (premiums, settlement amounts).
+5.  **BitHedgePriceOracleContract**: Delivers reliable Bitcoin price data for premium calculation and settlement processing, with mechanisms for data validation and manipulation resistance.
+6.  **BitHedgeVerificationContract**: Contains functions for verifying system invariants, data integrity across contracts, and correctness of critical operations.
+7.  **Risk Tier System**: Maps user protection preferences to provider risk tolerance, influencing collateral requirements and premium calculations.
+8.  **Settlement and Verification System**: Ensures correct allocation, settlement impact tracking, and premium distribution.
 
 ### Development Approach
 
-The implementation will follow a phased approach, starting with core functionality and progressively adding more advanced features. Each phase will include thorough testing and documentation.
+The implementation will follow a phased approach, starting with foundational contracts and core functionality, and progressively adding more advanced features and integrations. Each phase will include thorough unit, integration, and system testing, along with comprehensive documentation.
 
 ## Development Phases and Tasks
 
 ### Phase 1: Foundation and Core Functionality
 
-#### Policy Registry Contract
+#### BitHedgeParametersContract
 
-| Task ID | Description | Dependencies | Complexity | Estimated Days |
-|---------|-------------|--------------|------------|----------------|
-| PR-101 | Define core data structures (policies, indices) | None | Medium | 2 |
-| PR-102 | Implement policy ID counter and admin functions | PR-101 | Low | 1 |
-| PR-103 | Implement policy creation function | PR-101, PR-102 | High | 3 |
-| PR-104 | Implement policy status tracking | PR-101 | Medium | 2 |
-| PR-105 | Develop expiration-height based policy indexing | PR-101 | Medium | 2 |
-| PR-106 | Implement basic policy read functions | PR-101, PR-104 | Low | 1 |
-| PR-107 | Create contract principal management functions | PR-102 | Low | 1 |
-| PR-108 | Add contract integration points with Liquidity Pool | PR-101, LP-101 | Medium | 2 |
-| PR-109 | Implement basic verification helper functions | PR-101, PR-103 | Medium | 2 |
-| PR-110 | Develop policy parameter validation system | PR-103 | Medium | 2 |
+| Task ID | Description                                                                                                          | Dependencies | Complexity | Estimated Days | References                                                                                                                                                                                                                          |
+| ------- | -------------------------------------------------------------------------------------------------------------------- | ------------ | ---------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PA-101  | Define core data structures (system-parameters, fee-structure stubs, authorized-roles)                               | None         | Medium     | 1.5            | [@bithedge-smart-contract-architecture.md#BitHedgeParametersContract], [@bithedge-contract-architecture.md#2.4-BitHedgeParametersContract.clar]                                                                                     |
+| PA-102  | Implement basic get/set functions for system parameters (protected access)                                           | PA-101       | Medium     | 1.5            | [@bithedge-smart-contract-architecture.md#BitHedgeParametersContract], [@bithedge-contract-architecture.md#2.4-BitHedgeParametersContract.clar]                                                                                     |
+| PA-103  | Implement role management functions (grant-role, revoke-role, has-role)                                              | PA-101       | Medium     | 2              | [@bithedge-smart-contract-architecture.md#Role-Based-Access-Control], [@BitHedge-Advanced-Clarity-Patterns.md#Role-Based-Access-Control-RBAC], [@BitHedge-Senior-Clarity-Technical-Analysis.md#4-Multi-Level-Access-Control-System] |
+| PA-104  | Define initial set of global error codes and constants for the system                                                | None         | Low        | 1              | [@clarity-best-practices.md#1.-Standardized-Error-Handling]                                                                                                                                                                         |
+| PA-105  | Define data structure for risk tier parameters (name, collateral-ratio, premium-multiplier, max-exposure-percentage) | PA-101       | Medium     | 1              | [@bithedge-european-architecture-spec.md#2.3-Risk-Tier-System-Mapping], [@bithedge-liquidity-premium-management.md#2.1-Provider-Capital-Commitment-Process], [@bithedge-contract-architecture.md#1.2-BitHedgeLiquidityPool.clar]    |
 
-#### Liquidity Pool Vault Contract
+#### BitHedgeMathLibraryContract
 
-| Task ID | Description | Dependencies | Complexity | Estimated Days |
-|---------|-------------|--------------|------------|----------------|
-| LP-101 | Define core data structures (token balances, provider records) | None | Medium | 2 |
-| LP-102 | Implement admin and principal management functions | LP-101 | Low | 1 |
-| LP-103 | Create capital deposit functions | LP-101, LP-102 | Medium | 2 |
-| LP-104 | Implement capital withdrawal functions | LP-101, LP-103 | Medium | 2 |
-| LP-105 | Develop basic collateral locking mechanism | LP-101 | High | 3 |
-| LP-106 | Implement token balance tracking | LP-101, LP-103 | Medium | 2 |
-| LP-107 | Create contract integration points with Policy Registry | LP-101, PR-101 | Medium | 2 |
-| LP-108 | Implement provider balance tracking | LP-101, LP-103 | Medium | 2 |
-| LP-109 | Develop liquidity availability checking function | LP-101, LP-105, LP-106 | Medium | 2 |
-| LP-110 | Implement token type management | LP-101, LP-106 | Low | 1 |
+| Task ID | Description                                                                                                           | Dependencies | Complexity | Estimated Days | References                                                                                                                                                                                                                      |
+| ------- | --------------------------------------------------------------------------------------------------------------------- | ------------ | ---------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ML-101  | Define core mathematical constants (e.g., ONE_8 for fixed-point precision)                                            | None         | Low        | 0.5            | [@bithedge-smart-contract-architecture.md#BitHedgeMathLibraryContract], [@BitHedge-Advanced-Clarity-Patterns.md#Fixed-Point-Arithmetic], [@BitHedge-Senior-Clarity-Technical-Analysis.md#2-Fixed-Point-Math-for-Option-Pricing] |
+| ML-102  | Implement fixed-point math operations (mul-down, div-down, add, sub)                                                  | ML-101       | Medium     | 2              | [@BitHedge-Advanced-Clarity-Patterns.md#Fixed-Point-Arithmetic], [@BitHedge-Senior-Clarity-Technical-Analysis.md#2-Fixed-Point-Math-for-Option-Pricing], [@clarity-best-practices.md#Mathematical-Precision-and-Decimals]       |
+| ML-103  | Implement basic premium _verification_ function stub (interface definition, basic inputs including submitted premium) | ML-101       | Low        | 1              | [@bithedge-liquidity-premium-management.md#3.1-Premium-Calculation-Logic], [@bithedge-contract-architecture.md#2.3-BitHedgeMathLibrary.clar]                                                                                    |
+| ML-104  | Implement basic settlement amount calculation function stub (interface definition, basic inputs)                      | ML-101       | Low        | 1              | [@bithedge-european-style-implementation.md#4.2-Settlement-Amount-Calculation], [@bithedge-contract-architecture.md#2.3-BitHedgeMathLibrary.clar]                                                                               |
 
-#### Shared Components
+#### Policy Registry Contract (BitHedgePolicyRegistryContract)
 
-| Task ID | Description | Dependencies | Complexity | Estimated Days |
-|---------|-------------|--------------|------------|----------------|
-| SH-101 | Define error codes and constants | None | Low | 1 |
-| SH-102 | Design and implement risk tier constants | None | Low | 1 |
-| SH-103 | Create common utility functions | SH-101 | Low | 1 |
-| SH-104 | Design basic testing framework | PR-101, LP-101 | Medium | 2 |
-| SH-105 | Implement first integration test cases | PR-103, LP-105, SH-104 | Medium | 2 |
+| Task ID | Description                                                                                                                                                                                     | Dependencies                           | Complexity | Estimated Days | References                                                                                                                                                                                                                                                |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- | ---------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PR-101  | Define core data structures (policies map with submitted_premium field, policy-id-counter, indices: by-owner, by-expiration-height)                                                             | PA-104                                 | Medium     | 2              | [@bithedge-smart-contract-architecture.md#1.-Policy-Registry-Contract-Architecture-European-Style-Options], [@bithedge-european-style-implementation.md#3.1-Policy-Data-Structures], [@bithedge-contract-architecture.md#1.1-BitHedgePolicyRegistry.clar] |
+| PR-102  | Implement policy ID counter and basic admin functions (e.g., setting contract addresses from PA, owner checks linked to PA-103)                                                                 | PR-101, PA-103, PA-102                 | Medium     | 1.5            | [@modular-interactions.md#1.-Contract-Reference-Mechanisms]                                                                                                                                                                                               |
+| PR-103  | Implement `create-protection-policy` (accepts owner, protected-value, protection-amount, expiration-height, policy-type, risk-tier, _submitted-premium_; calls ML-103 for premium verification) | PR-101, PR-102, LP-109, PA-105, ML-103 | High       | 4              | [@bithedge-european-style-implementation.md#3.2-Policy-Creation], [@bithedge-liquidity-premium-management.md#2.2-Liquidity-Verification-System], [@bithedge-european-architecture-spec.md#3.1-Policy-Creation-Flow]                                       |
+| PR-104  | Implement policy status tracking and updates (`Active`, `PendingSettlement`, `Settled`, `Expired`)                                                                                              | PR-101                                 | Medium     | 1.5            | [@bithedge-european-style-implementation.md#3.3-Policy-Lifecycle-Management]                                                                                                                                                                              |
+| PR-105  | Develop `policies-by-expiration-height` indexing logic within `create-protection-policy`                                                                                                        | PR-101, PR-103                         | Medium     | 1.5            | [@BitHedge-Advanced-Clarity-Patterns.md#1.-Expiration-Focused-Architecture-Implementation], [@bithedge-european-architecture-spec.md#2.1-Policy-Registry-Contract-Data-Model]                                                                             |
+| PR-106  | Implement basic policy read functions (`get-policy`, `get-policies-by-owner`, `get-policies-by-expiration-height`)                                                                              | PR-101, PR-104, PR-105                 | Medium     | 1.5            | [@bithedge-european-style-implementation.md#3.4-Policy-Read-Functions]                                                                                                                                                                                    |
+| PR-107  | Add contract integration points (stubs for calling LP, PO)                                                                                                                                      | PR-101                                 | Medium     | 1              | [@modular-interactions.md#2.-Architecture-Patterns-for-Contract-Interactions]                                                                                                                                                                             |
+| PR-108  | Develop policy parameter validation within `create-protection-policy` (e.g., positive values, expiration in future, valid risk tier string)                                                     | PR-103, PA-105                         | Medium     | 2              | [@clarity-best-practices.md#Essential-Best-Practices#4.-Safety-Mechanisms]                                                                                                                                                                                |
+| PR-109  | Implement pre-policy liquidity verification call to LP's `check-liquidity` within `create-protection-policy`                                                                                    | PR-103, LP-109                         | Medium     | 1              | [@bithedge-liquidity-premium-management.md#2.2-Liquidity-Verification-System], [@bithedge-european-architecture-spec.md#3.1-Policy-Creation-Flow]                                                                                                         |
+
+#### Liquidity Pool Vault Contract (BitHedgeLiquidityPoolVaultContract)
+
+| Task ID | Description                                                                                                                                                          | Dependencies                   | Complexity | Estimated Days | References                                                                                                                                                                                                                                                        |
+| ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ | ---------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| LP-101  | Define core data structures (token-balances, provider-balances, provider-allocations, premium-balances, expiration-exposure stubs, expiration-liquidity-needs stubs) | PA-104, PA-105                 | Medium     | 3              | [@bithedge-smart-contract-architecture.md#2.-Liquidity-Pool-Vault-Contract-Architecture-European-Style], [@bithedge-liquidity-premium-management.md#2.1-Provider-Capital-Commitment-Process], [@bithedge-contract-architecture.md#1.2-BitHedgeLiquidityPool.clar] |
+| LP-102  | Implement admin functions (e.g., setting PR address from PA, owner checks linked to PA-103)                                                                          | LP-101, PA-103, PA-102         | Low        | 1              | [@modular-interactions.md#1.-Contract-Reference-Mechanisms]                                                                                                                                                                                                       |
+| LP-103  | Implement `deposit-capital` function (provider deposits funds, includes risk-tier selection)                                                                         | LP-101, LP-102, LP-110, PA-105 | Medium     | 2.5            | [@bithedge-liquidity-premium-management.md#2.1-Provider-Capital-Commitment-Process], [@bithedge-european-architecture-spec.md#3.3-Provider-Capital-Management-Flow]                                                                                               |
+| LP-104  | Implement `withdraw-capital` function (basic version, checks `available-amount`)                                                                                     | LP-101, LP-103                 | Medium     | 2              | [@bithedge-liquidity-premium-management.md#2.1-Provider-Capital-Commitment-Process], [@bithedge-european-architecture-spec.md#3.3-Provider-Capital-Management-Flow]                                                                                               |
+| LP-105  | Implement `lock-collateral` (initial version, called by PR; tracks policy-id, amount, token, risk-tier, expiration-height)                                           | LP-101, LP-108, LP-109, PA-105 | High       | 3.5            | [@bithedge-liquidity-premium-management.md#2.3-Capital-Allocation-Algorithm], [@bithedge-european-style-implementation.md#4.1-Collateral-Management], [@bithedge-european-architecture-spec.md#3.1-Policy-Creation-Flow#Data-passed-during-collateral-locking]    |
+| LP-106  | Implement token balance tracking (total, available, locked) updated by deposit, withdraw, lock collateral functions                                                  | LP-101, LP-103, LP-104, LP-105 | Medium     | 2              | [@bithedge-liquidity-premium-management.md#2.1-Provider-Capital-Commitment-Process#3.-Capital-Tracking], [@bithedge-european-architecture-spec.md#2.2-Liquidity-Pool-Vault-Data-Model#Token-Balance-Tracking]                                                     |
+| LP-107  | Add contract integration points (callable by PR, e.g. `lock-collateral`, `check-liquidity`)                                                                          | LP-101                         | Medium     | 1              | [@modular-interactions.md#2.-Architecture-Patterns-for-Contract-Interactions]                                                                                                                                                                                     |
+| LP-108  | Implement provider balance tracking (deposited, allocated, available, earned/pending premiums stubs)                                                                 | LP-101, LP-103, LP-104, LP-105 | Medium     | 2.5            | [@bithedge-liquidity-premium-management.md#2.1-Provider-Capital-Commitment-Process#3.-Capital-Tracking], [@bithedge-european-architecture-spec.md#2.2-Liquidity-Pool-Vault-Data-Model#Provider-Balance-Tracking]                                                  |
+| LP-109  | Implement `check-liquidity` (initial version: checks overall `available-balance` for the token, placeholder for risk-tier and expiration-height specific checks)     | LP-101, LP-106, LP-108         | Medium     | 2              | [@bithedge-liquidity-premium-management.md#2.2-Liquidity-Verification-System], [@bithedge-european-architecture-spec.md#3.1-Policy-Creation-Flow#Data-passed-during-liquidity-check]                                                                              |
+| LP-110  | Implement token type management (`initialize-token`, `is-token-supported`, sBTC contract principal storage)                                                          | LP-101                         | Medium     | 1.5            | [@BitHedge-Advanced-Clarity-Patterns.md#Support-for-Multiple-Token-Types-SIP-010-and-SIP-009], [@clarity/contracts/liquidity-pool-vault.clar#Token-Management-Functions-LP-110]                                                                                   |
+| LP-111  | Fix Linter Error in `deposit-capital` related to contract call                                                                                                       | LP-103                         | Low        | 0.5            | N/A                                                                                                                                                                                                                                                               |
+
+#### BitHedgePriceOracleContract (Stubs for Phase 1)
+
+| Task ID | Description                                                                                | Dependencies   | Complexity | Estimated Days | References                                                                                                                                                                                     |
+| ------- | ------------------------------------------------------------------------------------------ | -------------- | ---------- | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PO-101  | Define core data structures (price data map stub, price sources map stub)                  | PA-104         | Low        | 1              | [@bithedge-smart-contract-architecture.md#BitHedgePriceOracleContract], [@bithedge-contract-architecture.md#2.2-BitHedgePriceOracle.clar]                                                      |
+| PO-102  | Implement basic `get-current-bitcoin-price` function stub (returns a constant for testing) | PO-101         | Low        | 0.5            | [@bithedge-european-style-implementation.md#5.1-Oracle-Integration-for-Policy-Creation], [@BitHedge-Senior-Clarity-Technical-Analysis.md#1-Oracle-Implementation--Price-Feed-Security]         |
+| PO-103  | Implement basic `get-bitcoin-price-at-height` function stub (returns a constant)           | PO-101         | Low        | 0.5            | [@bithedge-european-style-implementation.md#5.2-Oracle-Integration-for-Settlement], [@BitHedge-Senior-Clarity-Technical-Analysis.md#1-Oracle-Implementation--Price-Feed-Security]              |
+| PO-104  | Define admin functions for managing authorized updaters (link to PA-103)                   | PO-101, PA-103 | Low        | 1              | [@BitHedge-Advanced-Clarity-Patterns.md#6.-Oracle-Security-and-Decentralization], [@BitHedge-Senior-Clarity-Technical-Analysis.md#1-Oracle-Implementation--Price-Feed-Security#Recommendation] |
+
+#### Shared Components (SH)
+
+| Task ID | Description                                                                                                                                     | Dependencies                                   | Complexity | Estimated Days | References                                                                                                                                                      |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- | ---------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| SH-101  | Establish standardized event emission structures and initial set of events (e.g., policy created, capital deposited)                            | PA-104                                         | Low        | 1              | [@BitHedge-Advanced-Clarity-Patterns.md#7.-Event-Emission-and-Off-Chain-Indexing], [@BitHedge-Senior-Clarity-Technical-Analysis.md#7-Event-Driven-Architecture] |
+| SH-102  | Design basic testing framework; Write unit tests for PA-10x, ML-10x functions                                                                   | PA-101, ML-101                                 | Medium     | 2.5            | [@clarity-best-practices.md#Testing-Strategies#Unit-Testing]                                                                                                    |
+| SH-103  | Implement first integration test cases: PR `create-policy` -> LP `check-liquidity` & `lock-collateral`; LP `deposit-capital`/`withdraw-capital` | PR-103, LP-103, LP-104, LP-105, LP-109, SH-102 | High       | 3.5            | [@modular-interactions.md#5.-Implementation-Example-Complete-Interaction-Flow], [@clarity-best-practices.md#Testing-Strategies#Integration-Testing]             |
 
 #### Phase 1 Milestones
 
-- **M1.1**: Core data structures defined (PR-101, LP-101)
-- **M1.2**: Basic capital management functions implemented (LP-103, LP-104, LP-106)
-- **M1.3**: Policy creation flow working (PR-103, PR-108, LP-105, LP-109)
-- **M1.4**: Contracts can be deployed and basic functions tested (SH-105)
+- **M1.1**: Core data structures for all foundational contracts (PR, LP, PA, ML, PO stubs) defined and implemented. Global constants and error codes (PA) established.
+- **M1.2**: Basic capital management (deposit, withdraw) in LP, including token initialization and linter error fix, is functional and tested.
+- **M1.3**: Policy creation flow in PR, including pre-liquidity check, parameter validation, and basic collateral locking in LP, is working. `policies-by-expiration-height` indexed.
+- **M1.4**: ParametersContract (PA) for admin roles and basic system params, and MathLibrary (ML) for fixed-point math and calculation stubs, are testable. PriceOracle (PO) stubs are in place.
+- **M1.5**: Initial integration tests for policy creation, capital deposit/withdrawal, and collateral locking pass. Basic event emissions are verified.
 
-### Phase 2: Settlement, Expiration, and Verification
+### Phase 2: Settlement, Expiration, and Core Oracle/Verification Logic
 
-#### Policy Registry Contract
+#### BitHedgeParametersContract
 
-| Task ID | Description | Dependencies | Complexity | Estimated Days |
-|---------|-------------|--------------|------------|----------------|
-| PR-201 | Implement single policy expiration processing | PR-103, PR-104 | High | 3 |
-| PR-202 | Develop in-the-money determination system | PR-201 | Medium | 2 |
-| PR-203 | Implement settlement amount calculation | PR-202 | Medium | 2 |
-| PR-204 | Add settlement tracking data structures | PR-201 | Medium | 2 |
-| PR-205 | Develop premium distribution queuing system | PR-201 | Medium | 2 |
-| PR-206 | Implement basic batch expiration processor | PR-201, PR-204 | High | 3 |
-| PR-207 | Add policy expiration verification system | PR-201, PR-206 | Medium | 2 |
-| PR-208 | Develop settlement distribution mechanism | PR-203, PR-204 | High | 3 |
-| PR-209 | Implement external price fetching from Oracle | PR-202 | Medium | 2 |
-| PR-210 | Create premium distribution processor | PR-205 | High | 3 |
+| Task ID | Description                                                                                                              | Dependencies   | Complexity | Estimated Days | References                                                                                                                                                                                                                                                                            |
+| ------- | ------------------------------------------------------------------------------------------------------------------------ | -------------- | ---------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PA-201  | Implement functions to get/set risk tier parameters (collateral-ratio, premium-multiplier, etc., protected by PA-103)    | PA-105, PA-103 | Medium     | 2              | [@bithedge-european-architecture-spec.md#4.1-Risk-Tier-Implementation], [@bithedge-liquidity-premium-management.md#2.1-Provider-Capital-Commitment-Process#2.-Risk-Tier-Assignment], [@bithedge-contract-architecture.md#1.2-BitHedgeLiquidityPool.clar#Risk-Tier-Parameter-Registry] |
+| PA-202  | Define detailed fee structures (e.g., policy creation fee, settlement fee) and management functions (get/set, protected) | PA-101, PA-103 | Medium     | 1.5            | [@bithedge-smart-contract-architecture.md#BitHedgeParametersContract]                                                                                                                                                                                                                 |
 
-#### Liquidity Pool Vault Contract
+#### BitHedgeMathLibraryContract
 
-| Task ID | Description | Dependencies | Complexity | Estimated Days |
-|---------|-------------|--------------|------------|----------------|
-| LP-201 | Implement provider allocation mechanism | LP-105, LP-108 | High | 3 |
-| LP-202 | Develop premium recording system | LP-101, LP-106 | Medium | 2 |
-| LP-203 | Implement settlement processing | LP-105, LP-201 | High | 3 |
-| LP-204 | Add provider settlement impact tracking | LP-201, LP-203 | High | 3 |
-| LP-205 | Develop provider expiration exposure tracking | LP-201 | Medium | 2 |
-| LP-206 | Implement premium distribution to providers | LP-202, LP-201 | High | 3 |
-| LP-207 | Create premium claiming function for providers | LP-202, LP-206 | Medium | 2 |
-| LP-208 | Add collateral release mechanism | LP-105, LP-203 | Medium | 2 |
-| LP-209 | Develop verification functions for settlement | LP-203, LP-204 | Medium | 2 |
-| LP-210 | Implement verification functions for premium distribution | LP-206 | Medium | 2 |
+| Task ID | Description                                                                                                                                                                         | Dependencies           | Complexity | Estimated Days | References                                                                                                                                                                                                                                                               |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | ---------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| ML-201  | Implement full premium _verification_ logic (integrating risk tier params from PA, submitted premium, time to expiry, and potentially simplified oracle inputs for bounds checking) | ML-103, PA-201, PO-202 | High       | 3              | [@bithedge-liquidity-premium-management.md#3.1-Premium-Calculation-Logic], [@bithedge-european-architecture-spec.md#3.1-Policy-Creation-Flow#Premium-recording-data], [@bithedge-contract-architecture.md#2.3-BitHedgeMathLibrary.clar]                                  |
+| ML-202  | Implement full settlement amount calculation logic for PUT and CALL options                                                                                                         | ML-104                 | Medium     | 2              | [@bithedge-european-style-implementation.md#4.2-Settlement-Amount-Calculation], [@bithedge-european-architecture-spec.md#3.2-Expiration-Settlement-Flow-European-Style#Settlement-amount-calculation], [@bithedge-contract-architecture.md#2.3-BitHedgeMathLibrary.clar] |
+| ML-203  | Add utility function stubs for Time-Weighted Average Price (TWAP) calculation (logic to be refined with Oracle)                                                                     | ML-101                 | Medium     | 1              | [@BitHedge-Advanced-Clarity-Patterns.md#Time-Weighted-Average-Price-TWAP-Oracles], [@BitHedge-Senior-Clarity-Technical-Analysis.md#1-Oracle-Implementation--Price-Feed-Security#Recommendation]                                                                          |
 
-#### Shared Components
+#### Policy Registry Contract (BitHedgePolicyRegistryContract)
 
-| Task ID | Description | Dependencies | Complexity | Estimated Days |
-|---------|-------------|--------------|------------|----------------|
-| SH-201 | Implement expiration event structure | PR-201, LP-203 | Medium | 2 |
-| SH-202 | Design verification helper functions | PR-207, LP-209, LP-210 | Medium | 2 |
-| SH-203 | Create settlement test cases | PR-208, LP-203, LP-204 | Medium | 2 |
-| SH-204 | Implement premium distribution test cases | PR-210, LP-206, LP-207 | Medium | 2 |
-| SH-205 | Create system state verification test framework | SH-202 | High | 3 |
+| Task ID | Description                                                                                                                        | Dependencies                           | Complexity | Estimated Days | References                                                                                                                                                                                                                                                                                 |
+| ------- | ---------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- | ---------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| PR-201  | Implement `process-single-policy-at-expiration` (fetches price from PO, calls ML for settlement, determines ITM/OTM)               | PR-104, PO-202, ML-202, LP-203, LP-206 | High       | 3.5            | [@bithedge-european-style-implementation.md#3.5-Policy-Expiration-and-Settlement], [@bithedge-european-architecture-spec.md#3.2-Expiration-Settlement-Flow-European-Style], [@bithedge-contract-architecture.md#1.1-BitHedgePolicyRegistry.clar#Key-Functions]                             |
+| PR-202  | Develop `is-policy-in-the-money` logic (internal, uses PO price and policy data)                                                   | PR-101, PO-202                         | Medium     | 1.5            | [@bithedge-european-style-implementation.md#4.2-Settlement-Amount-Calculation#Determining-In-The-Money-ITM-Status], [@bithedge-european-architecture-spec.md#3.2-Expiration-Settlement-Flow-European-Style#In-The-Money-ITM-determination]                                                 |
+| PR-203  | Integrate ML-202 for settlement amount calculation within `process-single-policy-at-expiration`                                    | PR-201, ML-202                         | Low        | 0.5            | [@modular-interactions.md#3.-Multi-Step-Process-Coordination]                                                                                                                                                                                                                              |
+| PR-204  | Add `policy-settlements` map for tracking detailed settlement records (price, amount, height, timestamp)                           | PR-101, PR-201                         | Medium     | 1.5            | [@bithedge-european-style-implementation.md#3.1-Policy-Data-Structures#Settlement-Tracking], [@bithedge-european-architecture-spec.md#2.1-Policy-Registry-Contract-Data-Model#Settlement-Tracking]                                                                                         |
+| PR-205  | Develop `pending-premium-distributions` map and queuing logic for OTM policies identified in PR-201                                | PR-101, PR-201                         | Medium     | 2              | [@bithedge-liquidity-premium-management.md#3.2-Premium-Distribution-for-OTM-Policies], [@bithedge-european-architecture-spec.md#2.1-Policy-Registry-Contract-Data-Model#Premium-Distribution-Queue]                                                                                        |
+| PR-206  | Implement `process-expiration-batch` (fold over `policies-by-expiration-height`, call PR-201 for each, use PO price for the batch) | PR-105, PR-201, PO-202                 | High       | 3.5            | [@BitHedge-Advanced-Clarity-Patterns.md#1.-Expiration-Focused-Architecture-Implementation#Expiration-batch-processing-capability], [@bithedge-european-style-implementation.md#3.6-Batch-Expiration-Processing], [@bithedge-european-architecture-spec.md#4.3-Batch-Expiration-Processing] |
+| PR-207  | Implement `distribute-premium` for a single OTM policy (marks for distribution, calls LP-206)                                      | PR-205, LP-206                         | High       | 3              | [@bithedge-liquidity-premium-management.md#3.2-Premium-Distribution-for-OTM-Policies], [@bithedge-european-architecture-spec.md#3.2-Expiration-Settlement-Flow-European-Style#Premium-distribution-data]                                                                                   |
+| PR-208  | Develop settlement initiation call to LP (`process-settlement-at-expiration` in LP) for ITM policies from PR-201                   | PR-201, LP-203                         | Medium     | 1              | [@modular-interactions.md#3.-Multi-Step-Process-Coordination]                                                                                                                                                                                                                              |
+| PR-209  | Integrate with PO for fetching reliable expiration price (handle potential Oracle issues gracefully) in PR-201/PR-206              | PR-201, PR-206, PO-201, PO-202         | Medium     | 2.5            | [@bithedge-european-style-implementation.md#5.2-Oracle-Integration-for-Settlement], [@BitHedge-Advanced-Clarity-Patterns.md#6.-Oracle-Security-and-Decentralization#Key-Recommendations]                                                                                                   |
+| PR-210  | Add Oracle price freshness verification (e.g., price not older than X blocks) in `create-protection-policy`                        | PR-103, PO-201                         | Medium     | 1.5            | [@BitHedge-Advanced-Clarity-Patterns.md#6.-Oracle-Security-and-Decentralization#Key-Recommendations], [@BitHedge-Senior-Clarity-Technical-Analysis.md#1-Oracle-Implementation--Price-Feed-Security#Recommendation]                                                                         |
+
+#### Liquidity Pool Vault Contract (BitHedgeLiquidityPoolVaultContract)
+
+| Task ID | Description                                                                                                                                         | Dependencies                   | Complexity | Estimated Days | References                                                                                                                                                                                                                                                                                      |
+| ------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ | ---------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| LP-201  | Implement initial provider allocation mechanism for `lock-collateral` (e.g., simple proportional based on available capital in specified risk tier) | LP-105, LP-108, PA-201         | High       | 3.5            | [@bithedge-liquidity-premium-management.md#2.3-Capital-Allocation-Algorithm], [@bithedge-european-architecture-spec.md#3.1-Policy-Creation-Flow#Provider-allocation-selection-process], [@bithedge-contract-architecture.md#1.2-BitHedgeLiquidityPool.clar#Key-Functions]                       |
+| LP-202  | Implement `record-premium-payment` (called by PR during policy creation, updates `premium-balances` map)                                            | LP-101, PR-103                 | Medium     | 2              | [@bithedge-liquidity-premium-management.md#3.3-Premium-Collection-and-Management], [@bithedge-european-architecture-spec.md#3.1-Policy-Creation-Flow#Premium-recording-data]                                                                                                                    |
+| LP-203  | Implement `process-settlement-at-expiration` (called by PR, transfers funds to policy owner, updates balances)                                      | LP-105, LP-201, LP-106         | High       | 3.5            | [@bithedge-european-style-implementation.md#4.3-Settlement-Execution-by-Liquidity-Pool], [@bithedge-liquidity-premium-management.md#4.1-Settlement-Payout-for-ITM-Policies], [@bithedge-european-architecture-spec.md#3.2-Expiration-Settlement-Flow-European-Style#Settlement-processing-data] |
+| LP-204  | Add `settlement-impacts` map and logic to track each provider's contribution during settlement (updates provider balances)                          | LP-201, LP-203                 | High       | 3.5            | [@bithedge-liquidity-premium-management.md#4.2-Settlement-Impact-on-Providers], [@BitHedge-Advanced-Clarity-Patterns.md#3.-Settlement-Impact-Tracking], [@bithedge-european-architecture-spec.md#4.4-Settlement-Impact-Tracking]                                                                |
+| LP-205  | Develop `provider-expiration-exposure` map & logic to track exposure per provider per expiration height (updated in lock/release collateral)        | LP-101, LP-201, LP-208         | Medium     | 3              | [@bithedge-liquidity-premium-management.md#2.5-Expiration-Specific-Liquidity-Pools-ESLPs], [@bithedge-european-architecture-spec.md#2.2-Liquidity-Pool-Vault-Data-Model#Provider-Expiration-Exposure]                                                                                           |
+| LP-206  | Implement `distribute-premium-to-providers` (called by PR for OTM policies, updates provider `earned-premiums`)                                     | LP-202, LP-201, LP-108         | High       | 3.5            | [@bithedge-liquidity-premium-management.md#3.4-Premium-Distribution-to-Providers], [@bithedge-european-architecture-spec.md#4.5-Premium-Distribution-System]                                                                                                                                    |
+| LP-207  | Create `claim-pending-premiums` function for providers to withdraw their `earned-premiums`                                                          | LP-108, LP-206                 | Medium     | 2              | [@bithedge-liquidity-premium-management.md#3.5-Claiming-Premiums]                                                                                                                                                                                                                               |
+| LP-208  | Add `release-collateral` mechanism (for OTM expirations and remaining collateral after ITM settlement)                                              | LP-105, LP-203, LP-205, LP-204 | Medium     | 3              | [@bithedge-european-style-implementation.md#4.1-Collateral-Management#Collateral-Release], [@bithedge-european-architecture-spec.md#4.5-Premium-Distribution-System#Release-collateral-for-all-providers]                                                                                       |
+| LP-209  | Implement `expiration-liquidity-needs` map (basic tracking of total collateral required per expiration height, updated in lock/release)             | LP-101, LP-105, LP-208         | Medium     | 2              | [@bithedge-liquidity-premium-management.md#2.5-Expiration-Specific-Liquidity-Pools-ESLPs], [@bithedge-european-architecture-spec.md#2.2-Liquidity-Pool-Vault-Data-Model#Expiration-Liquidity-Needs]                                                                                             |
+
+#### BitHedgePriceOracleContract
+
+| Task ID | Description                                                                                                 | Dependencies           | Complexity | Estimated Days | References                                                                                                                                                                                                                                                                       |
+| ------- | ----------------------------------------------------------------------------------------------------------- | ---------------------- | ---------- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PO-201  | Implement `update-bitcoin-price` (protected by PA-103, stores price with timestamp, source details)         | PO-101, PO-104, PA-103 | Medium     | 3              | [@bithedge-smart-contract-architecture.md#BitHedgePriceOracleContract], [@BitHedge-Advanced-Clarity-Patterns.md#6.-Oracle-Security-and-Decentralization], [@BitHedge-Senior-Clarity-Technical-Analysis.md#1-Oracle-Implementation--Price-Feed-Security#Recommendation]           |
+| PO-202  | Implement full `get-current-bitcoin-price` (with staleness check against `burn-block-height`)               | PO-101, PO-201         | Medium     | 2              | [@bithedge-european-style-implementation.md#5.1-Oracle-Integration-for-Policy-Creation], [@BitHedge-Senior-Clarity-Technical-Analysis.md#1-Oracle-Implementation--Price-Feed-Security]                                                                                           |
+| PO-203  | Implement full `get-bitcoin-price-at-height` (lookup from stored prices, handle missing data)               | PO-101                 | Medium     | 2              | [@bithedge-european-style-implementation.md#5.2-Oracle-Integration-for-Settlement], [@BitHedge-Senior-Clarity-Technical-Analysis.md#1-Oracle-Implementation--Price-Feed-Security]                                                                                                |
+| PO-204  | Implement price source registry (add/remove sources, basic weights - stubs for now)                         | PO-101, PO-104         | Medium     | 2              | [@BitHedge-Advanced-Clarity-Patterns.md#6.-Oracle-Security-and-Decentralization#Key-Recommendations], [@bithedge-contract-architecture.md#2.2-BitHedgePriceOracle.clar#Key-Functions]                                                                                            |
+| PO-205  | Implement basic TWAP calculation logic (using ML-203 stubs, for a given range of blocks from stored prices) | PO-203, ML-203         | Medium     | 2.5            | [@BitHedge-Advanced-Clarity-Patterns.md#Time-Weighted-Average-Price-TWAP-Oracles], [@BitHedge-Senior-Clarity-Technical-Analysis.md#1-Oracle-Implementation--Price-Feed-Security#Recommendation], [@bithedge-contract-architecture.md#2.2-BitHedgePriceOracle.clar#Key-Functions] |
+
+#### BitHedgeVerificationContract (Initial Setup)
+
+| Task ID | Description                                                                                                                                          | Dependencies                   | Complexity | Estimated Days | References                                                                                                                                                                                             |
+| ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ | ---------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| VC-201  | Define core data structures (`verification-results` map, `verification-parameters` map stubs)                                                        | PA-104                         | Low        | 1              | [@bithedge-smart-contract-architecture.md#BitHedgeVerificationContract], [@bithedge-contract-architecture.md#2.5-BitHedgeVerificationContract.clar]                                                    |
+| VC-202  | Implement basic admin functions for managing verification parameters (link to PA-103)                                                                | VC-201, PA-103                 | Low        | 1              | [@bithedge-smart-contract-architecture.md#BitHedgeVerificationContract], [@bithedge-contract-architecture.md#2.5-BitHedgeVerificationContract.clar]                                                    |
+| VC-203  | Implement `verify-pool-balance-integrity` (read-only: checks LP total token balances against sum of provider deposits and contract-held premiums)    | VC-201, LP-106, LP-108, LP-202 | Medium     | 2.5            | [@bithedge-european-architecture-spec.md#5.1-Core-Verification-Functions#Verify-Pool-Balance-Integrity], [@bithedge-contract-architecture.md#2.5-BitHedgeVerificationContract.clar#Key-Functions]      |
+| VC-204  | Implement `verify-policy-allocation-integrity` (read-only: checks sum of provider allocations for a specific policy against its required collateral) | VC-201, PR-101, LP-201         | Medium     | 2.5            | [@bithedge-european-architecture-spec.md#5.1-Core-Verification-Functions#Verify-Policy-Allocation-Integrity], [@bithedge-contract-architecture.md#2.5-BitHedgeVerificationContract.clar#Key-Functions] |
+
+#### Shared Components (SH)
+
+| Task ID | Description                                                                                                             | Dependencies                                                           | Complexity | Estimated Days | References                                                                                                                                                      |
+| ------- | ----------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- | ---------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| SH-201  | Define detailed event structures for expiration, settlement, premium distribution, oracle updates, verification results | SH-101                                                                 | Medium     | 2              | [@BitHedge-Advanced-Clarity-Patterns.md#7.-Event-Emission-and-Off-Chain-Indexing], [@BitHedge-Senior-Clarity-Technical-Analysis.md#7-Event-Driven-Architecture] |
+| SH-202  | Develop test cases for full settlement and premium distribution flows (ITM & OTM scenarios)                             | PR-201, PR-206, PR-207, LP-203, LP-206, SH-103, PO-202, ML-201, ML-202 | High       | 4              | [@clarity-best-practices.md#Testing-Strategies#Integration-Testing], [@bithedge-european-architecture-spec.md#7.2-Testing-Strategy#Integration-Testing]         |
+| SH-203  | Implement integration tests for PriceOracle price updates, retrievals, and staleness checks                             | PO-201, PO-202, SH-103                                                 | Medium     | 2.5            | [@clarity-best-practices.md#Testing-Strategies#Integration-Testing], [@bithedge-european-architecture-spec.md#7.2-Testing-Strategy#Integration-Testing]         |
+| SH-204  | Implement initial VerificationContract test cases (triggering VC-203, VC-204 under various states)                      | VC-203, VC-204, SH-103                                                 | Medium     | 2.5            | [@clarity-best-practices.md#Testing-Strategies#Integration-Testing], [@bithedge-european-architecture-spec.md#7.2-Testing-Strategy#Integration-Testing]         |
 
 #### Phase 2 Milestones
 
-- **M2.1**: Expiration processing implemented (PR-201, PR-206)
-- **M2.2**: Settlement system working (PR-208, LP-203, LP-204)
-- **M2.3**: Premium distribution implemented (PR-210, LP-206, LP-207)
-- **M2.4**: Full verification system functioning (PR-207, LP-209, LP-210, SH-205)
+- **M2.1**: Single policy expiration (PR) and settlement (LP) logic is functional for ITM policies, including fetching prices from PriceOracle (PO) and calculations from MathLibrary (ML). Settlement records (PR) and provider impacts (LP) are tracked.
+- **M2.2**: Batch expiration processing (PR) for multiple policies is implemented. OTM policies correctly queue for premium distribution via LP.
+- **M2.3**: Core PriceOracle (PO) update and retrieval mechanisms are robust, including staleness checks. Basic TWAP calculation stub is available. Risk tier and fee parameters are manageable via ParametersContract (PA).
+- **M2.4**: Initial VerificationContract (VC) checks for pool balance integrity and policy allocation integrity are functional and testable.
+- **M2.5**: Comprehensive integration tests for ITM/OTM policy lifecycles, oracle interactions, and basic verification checks pass. Event emissions (SH) are verified.
 
-### Phase 3: Risk Tier System and Advanced Features
+### Phase 3: Advanced Risk Tier System, Liquidity Management, and Verification
 
-#### Policy Registry Contract
+#### BitHedgeParametersContract
 
-| Task ID | Description | Dependencies | Complexity | Estimated Days |
-|---------|-------------|--------------|------------|----------------|
-| PR-301 | Implement full risk tier system | PR-103, PR-110 | High | 3 |
-| PR-302 | Develop tier-specific parameter calculation | PR-301 | Medium | 2 |
-| PR-303 | Enhance batch expiration processing | PR-206 | High | 3 |
-| PR-304 | Optimize gas usage in policy creation | PR-103 | Medium | 2 |
-| PR-305 | Implement batch premium distribution | PR-210 | Medium | 2 |
-| PR-306 | Add explicit verification for risk tier matching | PR-301, PR-207 | Medium | 2 |
-| PR-307 | Develop enhanced settlement price determination | PR-202, PR-209 | Medium | 2 |
-| PR-308 | Implement policy renewal mechanism | PR-103, PR-201 | Medium | 2 |
-| PR-309 | Add emergency expiration mechanisms | PR-201, PR-206 | Medium | 2 |
-| PR-310 | Create advanced event emission system | PR-103, PR-201, PR-210 | Medium | 2 |
+| Task ID | Description                                                                                                                                      | Dependencies   | Complexity | Estimated Days | References                                                                                                                                                                                                                    |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | -------------- | ---------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PA-301  | Finalize all system limits and thresholds (e.g., max policies per user, max allocation per provider, batch sizes) and their management functions | PA-101, PA-103 | Medium     | 2              | [@bithedge-smart-contract-architecture.md#BitHedgeParametersContract], [@BitHedge-Advanced-Clarity-Patterns.md#System-Parameters-and-Upgradability], [@bithedge-contract-architecture.md#2.4-BitHedgeParametersContract.clar] |
+| PA-302  | Implement parameters for provider incentives for expiration coverage                                                                             | PA-101, PA-103 | Medium     | 1.5            | [@bithedge-liquidity-premium-management.md#5.1-Incentives-for-Liquidity-Providers]                                                                                                                                            |
 
-#### Liquidity Pool Vault Contract
+#### BitHedgeMathLibraryContract
 
-| Task ID | Description | Dependencies | Complexity | Estimated Days |
-|---------|-------------|--------------|------------|----------------|
-| LP-301 | Implement risk tier parameters | LP-201 | High | 3 |
-| LP-302 | Develop tier-based allocation strategy | LP-201, LP-301 | High | 3 |
-| LP-303 | Add expiration-focused liquidity management | LP-201, LP-205 | High | 3 |
-| LP-304 | Implement expiration liquidity needs tracking | LP-303 | Medium | 2 |
-| LP-305 | Develop provider selection algorithm | LP-201, LP-302 | High | 3 |
-| LP-306 | Optimize batch settlement processing | LP-203 | Medium | 2 |
-| LP-307 | Add batch premium distribution optimization | LP-206 | Medium | 2 |
-| LP-308 | Implement balance reconciliation mechanisms | LP-108, LP-201 | Medium | 2 |
-| LP-309 | Develop enhanced verification system | LP-209, LP-210 | Medium | 2 |
-| LP-310 | Create emergency liquidity provision mechanisms | LP-303, LP-304 | Medium | 2 |
+| Task ID | Description                                                                                                     | Dependencies | Complexity | Estimated Days | References                                                                                                                                                                                                       |
+| ------- | --------------------------------------------------------------------------------------------------------------- | ------------ | ---------- | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ML-301  | Add advanced financial calculations if required (e.g., volatility adjustments to premium if oracle provides it) | ML-201       | Medium     | 2.5            | [@bithedge-liquidity-premium-management.md#3.1.1-Advanced-Premium-Calculation-Considerations], [@bithedge-contract-architecture.md#2.3-BitHedgeMathLibrary.clar]                                                 |
+| ML-302  | Rigorous testing, documentation, and gas optimization for all math functions                                    | All ML tasks | Medium     | 2              | [@clarity-best-practices.md#Gas-Optimization], [@BitHedge-Advanced-Clarity-Patterns.md#Gas-Considerations-and-Optimization-Techniques], [@bithedge-european-architecture-spec.md#6.-Gas-Optimization-Techniques] |
 
-#### Shared Components
+#### Policy Registry Contract (BitHedgePolicyRegistryContract)
 
-| Task ID | Description | Dependencies | Complexity | Estimated Days |
-|---------|-------------|--------------|------------|----------------|
-| SH-301 | Implement full risk tier test suite | PR-301, LP-301 | Medium | 2 |
-| SH-302 | Develop gas optimization measurement tools | PR-304, LP-306, LP-307 | Medium | 2 |
-| SH-303 | Create large-scale batch processing tests | PR-303, PR-305, LP-306, LP-307 | High | 3 |
-| SH-304 | Implement verification system integration tests | PR-306, LP-309 | Medium | 2 |
-| SH-305 | Develop provider-buyer interaction scenarios | PR-301, LP-302 | Medium | 2 |
+| Task ID | Description                                                                                                                                     | Dependencies                                   | Complexity | Estimated Days | References                                                                                                                                                                                                                                                                         |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- | ---------- | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PR-301  | Integrate full risk tier system from PA-201 into `create-protection-policy` for _premium verification_ (via ML) and collateral calculation      | PR-103, PA-201, ML-201                         | High       | 3              | [@bithedge-european-architecture-spec.md#4.1-Risk-Tier-Implementation], [@bithedge-liquidity-premium-management.md#2.1-Provider-Capital-Commitment-Process#2.-Risk-Tier-Assignment], [@bithedge-contract-architecture.md#1.1-BitHedgePolicyRegistry.clar#Key-Functions]            |
+| PR-302  | Implement policy creation limits per user/global based on PA-301                                                                                | PR-103, PA-301                                 | Medium     | 1.5            | [@bithedge-smart-contract-architecture.md#BitHedgeParametersContract], [@BitHedge-Advanced-Clarity-Patterns.md#System-Parameters-and-Upgradability]                                                                                                                                |
+| PR-303  | Enhance batch expiration processing with configurable batch sizes (from PA-301) and implement robust continuation logic for large batches       | PR-206, PA-301                                 | High       | 3.5            | [@BitHedge-Advanced-Clarity-Patterns.md#1.-Expiration-Focused-Architecture-Implementation#Expiration-batch-processing-capability], [@bithedge-european-style-implementation.md#3.6-Batch-Expiration-Processing], [@bithedge-european-architecture-spec.md#6.1-Batch-Processing]    |
+| PR-304  | Optimize gas usage significantly in `create-protection-policy` (especially premium verification call) and `process-expiration-batch`            | PR-103, PR-206, ML-201                         | High       | 3              | [@clarity-best-practices.md#Gas-Optimization], [@BitHedge-Advanced-Clarity-Patterns.md#Gas-Considerations-and-Optimization-Techniques], [@bithedge-european-architecture-spec.md#6.-Gas-Optimization-Techniques]                                                                   |
+| PR-305  | Implement `distribute-premium-batch` (fold over `pending-premium-distributions`, call PR-207) with batch size from PA-301                       | PR-207, PR-205, PA-301                         | Medium     | 3              | [@bithedge-liquidity-premium-management.md#3.2-Premium-Distribution-for-OTM-Policies#Batch-Premium-Distribution], [@BitHedge-Advanced-Clarity-Patterns.md#5.-Optimized-Batch-Operations], [@bithedge-european-architecture-spec.md#6.1-Batch-Processing#Batch-distribute-premiums] |
+| PR-306  | Add explicit calls to VC for risk tier matching verification (during creation) and settlement/premium sum verification (after batch processing) | PR-301, PR-206, PR-305, VC-302, VC-303, VC-305 | Medium     | 2.5            | [@bithedge-european-architecture-spec.md#5.-Verification-Mechanisms], [@modular-interactions.md#Using-a-Dedicated-Verification-Contract], [@bithedge-contract-architecture.md#3.2-BitHedgeVerificationContract.clar]                                                               |
+| PR-307  | Develop enhanced settlement price determination using TWAP from PO-303 in PR-201/PR-206                                                         | PR-201, PR-206, PO-303                         | Medium     | 2              | [@BitHedge-Advanced-Clarity-Patterns.md#Time-Weighted-Average-Price-TWAP-Oracles], [@BitHedge-Senior-Clarity-Technical-Analysis.md#1-Oracle-Implementation--Price-Feed-Security#Recommendation]                                                                                    |
+| PR-308  | Implement policy renewal mechanism (interface for users to signal renewal, creates new policy based on old one with new params)                 | PR-103, PR-201                                 | Medium     | 2.5            | [@bithedge-european-style-implementation.md#3.3-Policy-Lifecycle-Management#Policy-Renewal]                                                                                                                                                                                        |
+| PR-309  | Design and implement emergency expiration mechanisms (admin-triggered full/partial expiration, authorized via PA-103)                           | PR-201, PR-206, PA-103                         | Medium     | 2.5            | [@BitHedge-Advanced-Clarity-Patterns.md#Emergency-Mechanisms-and-Circuit-Breakers], [@clarity-best-practices.md#Essential-Best-Practices#4.-Safety-Mechanisms#Circuit-breakers]                                                                                                    |
+| PR-310  | Implement comprehensive event emission for all state changes, administrative actions, and critical operations, adhering to SH-201               | All PR tasks, SH-201                           | Medium     | 2              | [@BitHedge-Advanced-Clarity-Patterns.md#7.-Event-Emission-and-Off-Chain-Indexing], [@BitHedge-Senior-Clarity-Technical-Analysis.md#7-Event-Driven-Architecture]                                                                                                                    |
+
+#### Liquidity Pool Vault Contract (BitHedgeLiquidityPoolVaultContract)
+
+| Task ID | Description                                                                                                                                                 | Dependencies                                   | Complexity | Estimated Days | References                                                                                                                                                                                                                                                                                                 |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- | ---------- | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| LP-301  | Fully implement risk tier parameter usage (collateral ratios from PA-201) in `lock-collateral` and `check-liquidity`                                        | LP-105, LP-109, PA-201                         | High       | 3              | [@bithedge-european-architecture-spec.md#4.1-Risk-Tier-Implementation], [@bithedge-liquidity-premium-management.md#2.1-Provider-Capital-Commitment-Process#2.-Risk-Tier-Assignment], [@bithedge-contract-architecture.md#1.2-BitHedgeLiquidityPool.clar#Risk-Tier-Parameter-Registry]                      |
+| LP-302  | Develop advanced tier-based provider selection algorithm for `lock-collateral` (prioritizing tiers, available capital, exposure)                            | LP-201, LP-301, PA-201                         | High       | 4              | [@bithedge-liquidity-premium-management.md#2.3-Capital-Allocation-Algorithm#1.-Allocation-Strategy-Selection], [@bithedge-european-architecture-spec.md#3.1-Policy-Creation-Flow#Provider-allocation-selection-process], [@bithedge-contract-architecture.md#1.2-BitHedgeLiquidityPool.clar#Key-Functions] |
+| LP-303  | Implement `prepare-liquidity-for-expirations` (callable by admin, updates `expiration-liquidity-needs.is-liquidity-prepared`)                               | LP-209, LP-205, PA-103                         | High       | 3.5            | [@bithedge-liquidity-premium-management.md#2.5-Expiration-Specific-Liquidity-Pools-ESLPs#Preparing-Liquidity-for-Expiration], [@bithedge-european-architecture-spec.md#4.2-Expiration-Focused-Liquidity-Management]                                                                                        |
+| LP-304  | Enhance `expiration-liquidity-needs` map to include `risk-tier-distribution` of collateral and update logic in lock/release                                 | LP-209                                         | Medium     | 2.5            | [@bithedge-liquidity-premium-management.md#2.5-Expiration-Specific-Liquidity-Pools-ESLPs], [@bithedge-european-architecture-spec.md#2.2-Liquidity-Pool-Vault-Data-Model#Expiration-Liquidity-Needs]                                                                                                        |
+| LP-305  | Implement fair premium distribution algorithm within `distribute-premium-to-providers` (e.g., weighted by allocation amount, risk, time capital was locked) | LP-206                                         | High       | 3.5            | [@bithedge-liquidity-premium-management.md#3.4.1-Fair-Premium-Distribution-Algorithm], [@bithedge-european-architecture-spec.md#3.2-Expiration-Settlement-Flow-European-Style#Provider-premium-share-calculation]                                                                                          |
+| LP-306  | Optimize batch settlement processing (if LP directly handles batches or supports PR's batching efficiently)                                                 | LP-203                                         | Medium     | 2.5            | [@BitHedge-Advanced-Clarity-Patterns.md#5.-Optimized-Batch-Operations], [@bithedge-european-architecture-spec.md#6.1-Batch-Processing]                                                                                                                                                                     |
+| LP-307  | Optimize interaction with `distribute-premium-batch` from PR                                                                                                | LP-206                                         | Medium     | 2              | [@modular-interactions.md#Optimizing-Inter-Contract-Calls], [@bithedge-european-architecture-spec.md#6.1-Batch-Processing]                                                                                                                                                                                 |
+| LP-308  | Implement robust balance reconciliation helper functions (read-only, for verification by VC or admin)                                                       | LP-108, LP-201, LP-106                         | Medium     | 2              | [@bithedge-european-architecture-spec.md#5.1-Core-Verification-Functions#Verify-Provider-Balance-Integrity], [@bithedge-contract-architecture.md#4.1-System-Verification-and-Integrity-Checks]                                                                                                             |
+| LP-309  | Add explicit calls to VC for verifying provider balance integrity, settlement impacts, and premium distribution correctness                                 | LP-204, LP-108, LP-305, VC-301, VC-302, VC-303 | Medium     | 3              | [@bithedge-european-architecture-spec.md#5.-Verification-Mechanisms], [@modular-interactions.md#Using-a-Dedicated-Verification-Contract], [@bithedge-contract-architecture.md#3.2-BitHedgeVerificationContract.clar]                                                                                       |
+| LP-310  | Design emergency liquidity mechanisms (e.g., access to a protocol reserve if any, admin controls for unlocking capital under strict conditions)             | LP-303, PA-103                                 | Medium     | 2.5            | [@BitHedge-Advanced-Clarity-Patterns.md#Emergency-Mechanisms-and-Circuit-Breakers], [@clarity-best-practices.md#Essential-Best-Practices#4.-Safety-Mechanisms#Circuit-breakers]                                                                                                                            |
+| LP-311  | Implement provider dropout handling in premium/settlement distribution (e.g., revert problematic portion or allocate to remaining providers if fair)        | LP-305, LP-204                                 | Medium     | 2.5            | [@bithedge-liquidity-premium-management.md#4.3-Handling-Edge-Cases-e.g.-Provider-Dropout]                                                                                                                                                                                                                  |
+| LP-312  | Implement unclaimed premium management (e.g., after a certain period, unclaimed premiums go to treasury or are re-distributed; define in PA)                | LP-207, PA-101                                 | Medium     | 2              | [@bithedge-liquidity-premium-management.md#3.6-Unclaimed-Premiums]                                                                                                                                                                                                                                         |
+| LP-313  | Implement provider incentives for covering specific expiration heights (using parameters from PA-302, affects premium share)                                | LP-103, LP-305, PA-302                         | Medium     | 2.5            | [@bithedge-liquidity-premium-management.md#5.1-Incentives-for-Liquidity-Providers]                                                                                                                                                                                                                         |
+
+#### BitHedgePriceOracleContract
+
+| Task ID | Description                                                                                                                                | Dependencies   | Complexity | Estimated Days | References                                                                                                                                                                                                                                                                                                                                                    |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------ | -------------- | ---------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PO-301  | Implement multi-source price aggregation (e.g., median or weighted average of `update-bitcoin-price` submissions from whitelisted sources) | PO-201, PO-204 | High       | 3.5            | [@BitHedge-Advanced-Clarity-Patterns.md#6.-Oracle-Security-and-Decentralization#Key-Recommendations], [@bithedge-smart-contract-architecture.md#BitHedgePriceOracleContract], [@BitHedge-Senior-Clarity-Technical-Analysis.md#1-Oracle-Implementation--Price-Feed-Security#Recommendation], [@bithedge-contract-architecture.md#2.2-BitHedgePriceOracle.clar] |
+| PO-302  | Implement deviation checks between sources and circuit breakers if prices diverge too much or are stale                                    | PO-301         | Medium     | 2.5            | [@BitHedge-Advanced-Clarity-Patterns.md#6.-Oracle-Security-and-Decentralization#Key-Recommendations], [@BitHedge-Senior-Clarity-Technical-Analysis.md#1-Oracle-Implementation--Price-Feed-Security#Recommendation]                                                                                                                                            |
+| PO-303  | Implement full TWAP calculation logic (e.g., for last N blocks before expiration) and storage/retrieval for settlement prices              | PO-205, ML-203 | High       | 3.5            | [@BitHedge-Advanced-Clarity-Patterns.md#Time-Weighted-Average-Price-TWAP-Oracles], [@BitHedge-Senior-Clarity-Technical-Analysis.md#1-Oracle-Implementation--Price-Feed-Security#Recommendation], [@bithedge-contract-architecture.md#2.2-BitHedgePriceOracle.clar#Key-Functions]                                                                              |
+| PO-304  | Design and document Oracle redundancy and fallback mechanisms (e.g., what happens if primary sources fail)                                 | PO-301         | Medium     | 2              | [@BitHedge-Advanced-Clarity-Patterns.md#6.-Oracle-Security-and-Decentralization#Oracle-Redundancy-and-Fallback]                                                                                                                                                                                                                                               |
+
+#### BitHedgeVerificationContract
+
+| Task ID | Description                                                                                                                                                                         | Dependencies                           | Complexity | Estimated Days | References                                                                                                                                                                                                                                                                                      |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- | ---------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| VC-301  | Implement full `verify-provider-balance-integrity` (checks sum of provider's allocations against their `allocated-amount`)                                                          | VC-201, LP-108, LP-201                 | Medium     | 3              | [@bithedge-european-architecture-spec.md#5.1-Core-Verification-Functions#Verify-Provider-Balance-Integrity], [@bithedge-contract-architecture.md#2.5-BitHedgeVerificationContract.clar#Key-Functions]                                                                                           |
+| VC-302  | Implement full `verify-premium-distribution-integrity` (for a policy, checks sum of provider shares against total premium, and individual shares proportional to allocation/risk)   | VC-201, PR-101, LP-305, LP-206         | High       | 3.5            | [@bithedge-european-architecture-spec.md#5.1-Core-Verification-Functions#Verify-Premium-Distribution-Integrity], [@bithedge-liquidity-premium-management.md#3.7-Verification-of-Premium-Distribution], [@bithedge-contract-architecture.md#2.5-BitHedgeVerificationContract.clar#Key-Functions] |
+| VC-303  | Implement full `verify-settlement-integrity` (for a policy, checks sum of provider contributions against total settlement, and individual contributions proportional to allocation) | VC-201, PR-101, LP-204                 | High       | 3.5            | [@bithedge-european-architecture-spec.md#5.1-Core-Verification-Functions#Verify-Settlement-Integrity], [@bithedge-european-style-implementation.md#4.5-Verification-of-Settlement], [@bithedge-contract-architecture.md#2.5-BitHedgeVerificationContract.clar#Key-Functions]                    |
+| VC-304  | Implement `verify-system-invariants` (callable public function to check a list of critical invariants across contracts)                                                             | VC-301, VC-302, VC-303, VC-203, VC-204 | High       | 3              | [@bithedge-european-architecture-spec.md#5.2-System-Level-Verification], [@modular-interactions.md#Using-a-Dedicated-Verification-Contract], [@bithedge-contract-architecture.md#3.2-BitHedgeVerificationContract.clar]                                                                         |
+| VC-305  | Implement `verify-risk-tier-compatibility` (checks policy's risk tier against assigned providers' tiers and allocation rules)                                                       | VC-201, PR-301, LP-302, PA-201         | Medium     | 2.5            | [@bithedge-european-architecture-spec.md#5.1-Core-Verification-Functions#Custom-Verification-Logic-for-Risk-Tiers], [@bithedge-contract-architecture.md#4.2-Risk-Tier-Verification]                                                                                                             |
+
+#### Shared Components (SH)
+
+| Task ID | Description                                                                                                                                                     | Dependencies                   | Complexity | Estimated Days | References                                                                                                                                                                                                                                |
+| ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ | ---------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| SH-301  | Implement full risk tier system test suite (policy creation with different tiers, provider allocation with tier matching, settlement/premium with tier effects) | PR-301, LP-302, PA-201, SH-202 | High       | 3.5            | [@clarity-best-practices.md#Testing-Strategies#End-to-End-Testing], [@bithedge-european-architecture-spec.md#7.2-Testing-Strategy#Integration-Testing]                                                                                    |
+| SH-302  | Develop gas optimization measurement tools and benchmark all critical flows (policy creation, batch expiration, settlement, premium distribution)               | PR-304, LP-306, LP-307         | Medium     | 2.5            | [@clarity-best-practices.md#Gas-Optimization], [@BitHedge-Advanced-Clarity-Patterns.md#Gas-Considerations-and-Optimization-Techniques], [@bithedge-european-architecture-spec.md#6.-Gas-Optimization-Techniques]                          |
+| SH-303  | Create large-scale batch processing tests (e.g., 50+ policies expiring, 50+ premiums to distribute)                                                             | PR-303, PR-305, SH-202         | High       | 3.5            | [@BitHedge-Advanced-Clarity-Patterns.md#5.-Optimized-Batch-Operations#Key-Recommendations], [@clarity-best-practices.md#Testing-Strategies#Stress-Testing], [@bithedge-european-architecture-spec.md#7.2-Testing-Strategy#Stress-Testing] |
+| SH-304  | Implement comprehensive VerificationContract integration tests (triggering all `verify-*` functions under various valid and invalid states)                     | VC-304, SH-204                 | High       | 3.5            | [@clarity-best-practices.md#Testing-Strategies#Integration-Testing], [@bithedge-european-architecture-spec.md#7.2-Testing-Strategy#Integration-Testing]                                                                                   |
+| SH-305  | Develop complex multi-provider, multi-policy, multi-expiration, multi-risk-tier interaction scenarios for end-to-end testing                                    | SH-301, SH-303                 | High       | 3              | [@clarity-best-practices.md#Testing-Strategies#Scenario-Based-Testing]                                                                                                                                                                    |
 
 #### Phase 3 Milestones
 
-- **M3.1**: Risk tier system fully implemented (PR-301, LP-301, LP-302)
-- **M3.2**: Advanced batch processing optimized (PR-303, PR-305, LP-306, LP-307)
-- **M3.3**: Expiration-focused liquidity management working (LP-303, LP-304)
-- **M3.4**: Complete verification system integrated (PR-306, LP-309, SH-304)
+- **M3.1**: Full risk tier system integrated into Policy Registry (PR) and Liquidity Pool (LP), governed by ParametersContract (PA), influencing premium (ML) and collateral.
+- **M3.2**: Advanced batch processing for expiration (PR) and premium distribution (PR, LP) is optimized, configurable via PA, and handles continuations.
+- **M3.3**: Expiration-focused liquidity management in LP (`prepare-liquidity-for-expirations`, enhanced `expiration-liquidity-needs` tracking) is operational. Advanced provider selection in LP is implemented.
+- **M3.4**: PriceOracle (PO) uses multi-source aggregation, deviation checks, and provides reliable TWAP for settlement. Redundancy strategy documented.
+- **M3.5**: VerificationContract (VC) provides comprehensive checks for all major system components, invariants, and risk tier compatibility. These checks are integrated into PR & LP flows.
+- **M3.6**: Key "missing steps" like fair premium distribution algorithms (LP), Oracle redundancy design (PO), provider dropout handling (LP basic), unclaimed premium management (LP basic), and provider incentives (LP) are addressed.
 
 ### Phase 4: Testing, Edge Cases, and Refinement
 
-#### Policy Registry Contract
+#### Policy Registry Contract (BitHedgePolicyRegistryContract)
 
-| Task ID | Description | Dependencies | Complexity | Estimated Days |
-|---------|-------------|--------------|------------|----------------|
-| PR-401 | Implement comprehensive unit tests | All PR-3xx | High | 3 |
-| PR-402 | Add edge case handling for expiration | PR-201, PR-303 | Medium | 2 |
-| PR-403 | Develop stress tests for batch processing | PR-303, PR-305 | Medium | 2 |
-| PR-404 | Create security review and mitigations | All PR-3xx | High | 3 |
-| PR-405 | Optimize gas usage based on test results | PR-304, PR-401, PR-403 | Medium | 2 |
+| Task ID | Description                                                                                                         | Dependencies                   | Complexity | Estimated Days | References                                                                                                                                                                                                         |
+| ------- | ------------------------------------------------------------------------------------------------------------------- | ------------------------------ | ---------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| PR-401  | Implement comprehensive unit tests covering all functions and branches                                              | All PR-3xx                     | High       | 4              | [@clarity-best-practices.md#Testing-Strategies#Unit-Testing]                                                                                                                                                       |
+| PR-402  | Add specific edge case handling for expiration processing (e.g., zero policies at height, Oracle price unavailable) | PR-303, PR-307, PO-304         | Medium     | 2.5            | [@bithedge-european-style-implementation.md#6.1-Edge-Case-Policy-Expiration], [@bithedge-contract-architecture.md#5.1-Edge-Case-Handling#Policy-Expiration-and-Settlement]                                         |
+| PR-403  | Develop stress tests for batch expiration and premium distribution (max batch sizes, rapid succession)              | PR-303, PR-305                 | Medium     | 2.5            | [@clarity-best-practices.md#Testing-Strategies#Stress-Testing]                                                                                                                                                     |
+| PR-404  | Conduct security review of contract logic, access controls, and external calls; implement mitigations               | All PR-3xx                     | High       | 3.5            | [@BitHedge-Senior-Clarity-Technical-Analysis.md#Security-Considerations-and-Best-Practices], [@clarity-best-practices.md#Security-Best-Practices], [@bithedge-contract-architecture.md#6.-Security-Considerations] |
+| PR-405  | Final gas optimization based on SH-302 benchmarks and stress test results                                           | PR-304, PR-401, PR-403, SH-302 | Medium     | 2.5            | [@clarity-best-practices.md#Gas-Optimization], [@bithedge-european-architecture-spec.md#6.-Gas-Optimization-Techniques]                                                                                            |
 
-#### Liquidity Pool Vault Contract
+#### Liquidity Pool Vault Contract (BitHedgeLiquidityPoolVaultContract)
 
-| Task ID | Description | Dependencies | Complexity | Estimated Days |
-|---------|-------------|--------------|------------|----------------|
-| LP-401 | Implement comprehensive unit tests | All LP-3xx | High | 3 |
-| LP-402 | Add edge case handling for settlement | LP-203, LP-306 | Medium | 2 |
-| LP-403 | Develop stress tests for provider allocations | LP-305 | Medium | 2 |
-| LP-404 | Create security review and mitigations | All LP-3xx | High | 3 |
-| LP-405 | Optimize gas usage based on test results | LP-306, LP-307, LP-401, LP-403 | Medium | 2 |
+| Task ID | Description                                                                                                                                         | Dependencies                           | Complexity | Estimated Days | References                                                                                                                                                                                                                                                                       |
+| ------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- | ---------- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| LP-401  | Implement comprehensive unit tests covering all functions and branches                                                                              | All LP-3xx                             | High       | 4              | [@clarity-best-practices.md#Testing-Strategies#Unit-Testing]                                                                                                                                                                                                                     |
+| LP-402  | Add specific edge case handling for settlement (e.g., insufficient pool funds for all settlements, zero value settlements) and premium distribution | LP-306, LP-305, LP-311                 | Medium     | 3              | [@bithedge-liquidity-premium-management.md#4.3-Handling-Edge-Cases-e.g.-Provider-Dropout], [@bithedge-european-style-implementation.md#6.2-Edge-Case-Settlement-and-Premium-Distribution], [@bithedge-contract-architecture.md#5.1-Edge-Case-Handling#Liquidity-Pool-Operations] |
+| LP-403  | Develop stress tests for provider allocations, capital deposit/withdraw under high load                                                             | LP-302, LP-103, LP-104                 | Medium     | 2.5            | [@clarity-best-practices.md#Testing-Strategies#Stress-Testing]                                                                                                                                                                                                                   |
+| LP-404  | Conduct security review of contract logic, fund handling, and provider interactions; implement mitigations                                          | All LP-3xx                             | High       | 3.5            | [@BitHedge-Senior-Clarity-Technical-Analysis.md#Security-Considerations-and-Best-Practices], [@clarity-best-practices.md#Security-Best-Practices], [@bithedge-contract-architecture.md#6.-Security-Considerations]                                                               |
+| LP-405  | Final gas optimization based on SH-302 benchmarks and stress test results                                                                           | LP-306, LP-307, LP-401, LP-403, SH-302 | Medium     | 2.5            | [@clarity-best-practices.md#Gas-Optimization], [@bithedge-european-architecture-spec.md#6.-Gas-Optimization-Techniques]                                                                                                                                                          |
 
-#### Shared Components
+#### BitHedgeParametersContract
 
-| Task ID | Description | Dependencies | Complexity | Estimated Days |
-|---------|-------------|--------------|------------|----------------|
-| SH-401 | Implement end-to-end integration tests | PR-401, LP-401 | High | 3 |
-| SH-402 | Create multi-policy, multi-provider scenarios | PR-403, LP-403 | High | 3 |
-| SH-403 | Develop boundary condition test suite | PR-402, LP-402 | Medium | 2 |
-| SH-404 | Create documentation and deployment guides | All tasks | Medium | 2 |
-| SH-405 | Implement final verification system tests | PR-404, LP-404 | Medium | 2 |
+| Task ID | Description                                                                      | Dependencies | Complexity | Estimated Days | References                                                                                                                                                                                                         |
+| ------- | -------------------------------------------------------------------------------- | ------------ | ---------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| PA-401  | Comprehensive unit tests for all parameter get/set and role management functions | All PA-3xx   | Medium     | 2              | [@clarity-best-practices.md#Testing-Strategies#Unit-Testing]                                                                                                                                                       |
+| PA-402  | Edge case handling (e.g., setting invalid parameter values, role conflicts)      | All PA-3xx   | Low        | 1              | [@clarity-best-practices.md#Essential-Best-Practices#4.-Safety-Mechanisms#Validation-thresholds], [@bithedge-contract-architecture.md#5.1-Edge-Case-Handling#Parameter-Management]                                 |
+| PA-403  | Security review of admin functions and parameter validation                      | All PA-3xx   | Medium     | 1.5            | [@BitHedge-Senior-Clarity-Technical-Analysis.md#Security-Considerations-and-Best-Practices], [@clarity-best-practices.md#Security-Best-Practices], [@bithedge-contract-architecture.md#6.-Security-Considerations] |
+| PA-404  | Final gas optimization for parameter access                                      | All PA-3xx   | Low        | 1              | [@clarity-best-practices.md#Gas-Optimization]                                                                                                                                                                      |
+
+#### BitHedgeMathLibraryContract
+
+| Task ID | Description                                                                                               | Dependencies | Complexity | Estimated Days | References                                                                                                                                                                                                                           |
+| ------- | --------------------------------------------------------------------------------------------------------- | ------------ | ---------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| ML-401  | Comprehensive unit tests for all math functions, including boundary conditions for fixed-point arithmetic | All ML-3xx   | High       | 2.5            | [@clarity-best-practices.md#Testing-Strategies#Unit-Testing], [@BitHedge-Advanced-Clarity-Patterns.md#Fixed-Point-Arithmetic], [@BitHedge-Senior-Clarity-Technical-Analysis.md#2-Fixed-Point-Math-for-Option-Pricing#Recommendation] |
+| ML-402  | Edge case handling (e.g., division by zero, overflow/underflow with fixed-point)                          | All ML-3xx   | Medium     | 1.5            | [@BitHedge-Advanced-Clarity-Patterns.md#Fixed-Point-Arithmetic#Key-Recommendations], [@bithedge-contract-architecture.md#5.1-Edge-Case-Handling#Mathematical-Calculations]                                                           |
+| ML-403  | Security review of calculation logic for potential manipulation or precision issues                       | All ML-3xx   | Medium     | 2              | [@BitHedge-Senior-Clarity-Technical-Analysis.md#Security-Considerations-and-Best-Practices], [@clarity-best-practices.md#Mathematical-Precision-and-Decimals#Recommendation]                                                         |
+| ML-404  | Final gas optimization for all calculations                                                               | All ML-3xx   | Medium     | 1.5            | [@clarity-best-practices.md#Gas-Optimization]                                                                                                                                                                                        |
+
+#### BitHedgePriceOracleContract
+
+| Task ID | Description                                                                                                       | Dependencies           | Complexity | Estimated Days | References                                                                                                                                                                                                                                                                                                            |
+| ------- | ----------------------------------------------------------------------------------------------------------------- | ---------------------- | ---------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PO-401  | Comprehensive unit tests for all Oracle functions, including aggregation and TWAP                                 | All PO-3xx             | High       | 3              | [@clarity-best-practices.md#Testing-Strategies#Unit-Testing]                                                                                                                                                                                                                                                          |
+| PO-402  | Edge case handling (e.g., no price sources available, extreme deviation in prices, stale data across all sources) | PO-301, PO-302, PO-304 | Medium     | 2.5            | [@BitHedge-Advanced-Clarity-Patterns.md#6.-Oracle-Security-and-Decentralization#Oracle-Redundancy-and-Fallback], [@bithedge-contract-architecture.md#5.1-Edge-Case-Handling#Price-Oracle-Operations]                                                                                                                  |
+| PO-403  | Stress tests for rapid price updates and TWAP calculations under varying conditions                               | PO-301, PO-303         | Medium     | 2              | [@clarity-best-practices.md#Testing-Strategies#Stress-Testing]                                                                                                                                                                                                                                                        |
+| PO-404  | Security review (e.g., price manipulation vectors, updater collusion, TWAP vulnerabilities) and mitigations       | All PO-3xx             | High       | 3              | [@BitHedge-Senior-Clarity-Technical-Analysis.md#1-Oracle-Implementation--Price-Feed-Security#Recommendation], [@BitHedge-Advanced-Clarity-Patterns.md#6.-Oracle-Security-and-Decentralization], [@clarity-best-practices.md#Security-Best-Practices], [@bithedge-contract-architecture.md#6.-Security-Considerations] |
+| PO-405  | Final gas optimization for price aggregation, storage, and TWAP calculations                                      | PO-301, PO-303         | Medium     | 2              | [@clarity-best-practices.md#Gas-Optimization]                                                                                                                                                                                                                                                                         |
+
+#### BitHedgeVerificationContract
+
+| Task ID | Description                                                                                                                                     | Dependencies | Complexity | Estimated Days | References                                                                                                                                                                                                         |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------ | ---------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| VC-401  | Comprehensive unit tests for all verification functions, testing both success and failure paths                                                 | All VC-3xx   | High       | 3.5            | [@clarity-best-practices.md#Testing-Strategies#Unit-Testing]                                                                                                                                                       |
+| VC-402  | Edge case handling (e.g., verifying empty data sets, zero value sums, inconsistent states)                                                      | All VC-3xx   | Medium     | 2.5            | [@bithedge-european-architecture-spec.md#5.1-Core-Verification-Functions], [@bithedge-contract-architecture.md#5.1-Edge-Case-Handling#Verification-Checks]                                                         |
+| VC-403  | Stress tests for `verify-system-invariants` with a large and complex contract state                                                             | VC-304       | Medium     | 2              | [@clarity-best-practices.md#Testing-Strategies#Stress-Testing]                                                                                                                                                     |
+| VC-404  | Security review (e.g., potential bypass of verification checks, incorrect invariant logic leading to false positives/negatives) and mitigations | All VC-3xx   | High       | 3              | [@BitHedge-Senior-Clarity-Technical-Analysis.md#Security-Considerations-and-Best-Practices], [@clarity-best-practices.md#Security-Best-Practices], [@bithedge-contract-architecture.md#6.-Security-Considerations] |
+| VC-405  | Final gas optimization for complex verification queries and invariant checks                                                                    | All VC-3xx   | Medium     | 2              | [@clarity-best-practices.md#Gas-Optimization]                                                                                                                                                                      |
+
+#### Shared Components (SH)
+
+| Task ID | Description                                                                                                                                      | Dependencies                           | Complexity | Estimated Days | References                                                                                                                                                                                                                              |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------- | ---------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| SH-401  | Implement end-to-end integration tests covering all contracts and major user flows                                                               | All contract Phase 3 tasks, SH-305     | High       | 4              | [@clarity-best-practices.md#Testing-Strategies#Integration-Testing], [@modular-interactions.md#5.-Implementation-Example-Complete-Interaction-Flow], [@bithedge-european-architecture-spec.md#7.2-Testing-Strategy#Integration-Testing] |
+| SH-402  | Create multi-policy, multi-provider, multi-token (if applicable) complex scenarios targeting edge cases and interactions                         | PR-402, LP-402, PO-402, VC-402, SH-401 | High       | 3.5            | [@clarity-best-practices.md#Testing-Strategies#Scenario-Based-Testing]                                                                                                                                                                  |
+| SH-403  | Develop a comprehensive boundary condition test suite for all numerical inputs and state variables                                               | All contract unit tests                | Medium     | 3              | [@clarity-best-practices.md#Testing-Strategies#Boundary-Value-Analysis]                                                                                                                                                                 |
+| SH-404  | Create final technical documentation for all contracts and deployment guides                                                                     | All tasks                              | Medium     | 3              | [@bithedge-contract-architecture.md#7.-Documentation-and-Deployment]                                                                                                                                                                    |
+| SH-405  | Implement final tests for the complete verification system (VC) ensuring it correctly identifies valid/invalid states created by other contracts | All VC tasks, SH-401                   | Medium     | 2.5            | [@clarity-best-practices.md#Testing-Strategies#System-Testing]                                                                                                                                                                          |
 
 #### Phase 4 Milestones
 
-- **M4.1**: Comprehensive test suite implemented (PR-401, LP-401, SH-401)
-- **M4.2**: All edge cases and stress tests passed (PR-402, PR-403, LP-402, LP-403, SH-402, SH-403)
-- **M4.3**: Security review completed with mitigations (PR-404, LP-404)
-- **M4.4**: Final gas optimization completed (PR-405, LP-405)
+- **M4.1**: Comprehensive unit and integration test suites implemented and passing for ALL contracts (PR, LP, PA, ML, PO, VC).
+- **M4.2**: All identified edge cases and stress tests passed across the entire system, ensuring stability and correct behavior under adverse conditions.
+- **M4.3**: Security reviews completed for ALL contracts, with identified vulnerabilities mitigated and re-tested.
+- **M4.4**: Final gas optimization completed across ALL contracts, with performance benchmarks meeting targets. Technical documentation finalized.
 
 ### Phase 5: Deployment and Launch
 
-#### Policy Registry Contract
+#### Policy Registry Contract (BitHedgePolicyRegistryContract)
 
-| Task ID | Description | Dependencies | Complexity | Estimated Days |
-|---------|-------------|--------------|------------|----------------|
-| PR-501 | Prepare mainnet deployment | All PR-4xx | Medium | 2 |
-| PR-502 | Create monitoring system | PR-501 | Medium | 2 |
-| PR-503 | Implement post-deployment verification | PR-501 | Medium | 2 |
+| Task ID | Description                                                                             | Dependencies       | Complexity | Estimated Days | References                                                                                                                                                                                              |
+| ------- | --------------------------------------------------------------------------------------- | ------------------ | ---------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PR-501  | Prepare mainnet deployment scripts and checklists (includes setting initial PA address) | All PR-4xx, PA-501 | Medium     | 1.5            | [@clarity-best-practices.md#Deployment-Considerations], [@bithedge-contract-architecture.md#7.-Documentation-and-Deployment#Deployment-Steps]                                                           |
+| PR-502  | Integrate with mainnet monitoring systems for events and critical functions             | PR-501, SH-502     | Medium     | 1              | N/A                                                                                                                                                                                                     |
+| PR-503  | Implement post-deployment verification scripts and procedures                           | PR-501, VC-501     | Medium     | 1              | [@bithedge-european-architecture-spec.md#5.2-System-Level-Verification#Post-Deployment-Verification], [@bithedge-contract-architecture.md#7.-Documentation-and-Deployment#Post-Deployment-Verification] |
 
-#### Liquidity Pool Vault Contract
+#### Liquidity Pool Vault Contract (BitHedgeLiquidityPoolVaultContract)
 
-| Task ID | Description | Dependencies | Complexity | Estimated Days |
-|---------|-------------|--------------|------------|----------------|
-| LP-501 | Prepare mainnet deployment | All LP-4xx | Medium | 2 |
-| LP-502 | Create monitoring system | LP-501 | Medium | 2 |
-| LP-503 | Implement post-deployment verification | LP-501 | Medium | 2 |
+| Task ID | Description                                                                                   | Dependencies       | Complexity | Estimated Days | References                                                                                                                                                                                              |
+| ------- | --------------------------------------------------------------------------------------------- | ------------------ | ---------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| LP-501  | Prepare mainnet deployment scripts and checklists (includes setting initial PR, PA addresses) | All LP-4xx, PA-501 | Medium     | 1.5            | [@clarity-best-practices.md#Deployment-Considerations], [@bithedge-contract-architecture.md#7.-Documentation-and-Deployment#Deployment-Steps]                                                           |
+| LP-502  | Integrate with mainnet monitoring systems for events and critical functions                   | LP-501, SH-502     | Medium     | 1              | N/A                                                                                                                                                                                                     |
+| LP-503  | Implement post-deployment verification scripts and procedures                                 | LP-501, VC-501     | Medium     | 1              | [@bithedge-european-architecture-spec.md#5.2-System-Level-Verification#Post-Deployment-Verification], [@bithedge-contract-architecture.md#7.-Documentation-and-Deployment#Post-Deployment-Verification] |
 
-#### Shared Components
+#### BitHedgeParametersContract
 
-| Task ID | Description | Dependencies | Complexity | Estimated Days |
-|---------|-------------|--------------|------------|----------------|
-| SH-501 | Create deployment scripts | PR-501, LP-501 | Medium | 2 |
-| SH-502 | Develop system health monitoring | PR-502, LP-502 | Medium | 2 |
-| SH-503 | Create user documentation | All tasks | Medium | 2 |
-| SH-504 | Implement contract verification tools | PR-503, LP-503 | Medium | 2 |
-| SH-505 | Prepare launch plan and rollout strategy | All tasks | Medium | 2 |
+| Task ID | Description                                                                                      | Dependencies   | Complexity | Estimated Days | References                                                                                                                                                                                                                  |
+| ------- | ------------------------------------------------------------------------------------------------ | -------------- | ---------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PA-501  | Prepare mainnet deployment: set final initial parameter values (owner, fees, risk tiers, limits) | All PA-4xx     | Medium     | 1.5            | [@clarity-best-practices.md#Deployment-Considerations], [@BitHedge-Advanced-Clarity-Patterns.md#System-Parameters-and-Upgradability], [@bithedge-contract-architecture.md#7.-Documentation-and-Deployment#Deployment-Steps] |
+| PA-502  | Integrate with mainnet monitoring for parameter change events                                    | PA-501, SH-502 | Low        | 0.5            | N/A                                                                                                                                                                                                                         |
+| PA-503  | Implement post-deployment verification scripts for all parameters                                | PA-501         | Low        | 0.5            | [@bithedge-european-architecture-spec.md#5.2-System-Level-Verification#Post-Deployment-Verification], [@bithedge-contract-architecture.md#7.-Documentation-and-Deployment#Post-Deployment-Verification]                     |
+
+#### BitHedgeMathLibraryContract
+
+| Task ID | Description                                                         | Dependencies | Complexity | Estimated Days | References                                                                                                                                    |
+| ------- | ------------------------------------------------------------------- | ------------ | ---------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| ML-501  | Prepare mainnet deployment (final checks on logic, no state to set) | All ML-4xx   | Low        | 0.5            | [@clarity-best-practices.md#Deployment-Considerations], [@bithedge-contract-architecture.md#7.-Documentation-and-Deployment#Deployment-Steps] |
+| ML-502  | (No specific monitoring, verification via usage by other contracts) | ML-501       | N/A        | 0              | N/A                                                                                                                                           |
+
+#### BitHedgePriceOracleContract
+
+| Task ID | Description                                                                                 | Dependencies       | Complexity | Estimated Days | References                                                                                                                                                                                                                                          |
+| ------- | ------------------------------------------------------------------------------------------- | ------------------ | ---------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PO-501  | Prepare mainnet deployment (set initial authorized updaters, source configurations from PA) | All PO-4xx, PA-501 | Medium     | 1.5            | [@clarity-best-practices.md#Deployment-Considerations], [@BitHedge-Advanced-Clarity-Patterns.md#6.-Oracle-Security-and-Decentralization#Key-Recommendations], [@bithedge-contract-architecture.md#7.-Documentation-and-Deployment#Deployment-Steps] |
+| PO-502  | Integrate with mainnet monitoring for price updates, source issues, staleness alerts        | PO-501, SH-502     | Medium     | 1.5            | N/A                                                                                                                                                                                                                                                 |
+| PO-503  | Implement post-deployment verification scripts for price feed accuracy and updater setup    | PO-501             | Medium     | 1              | [@bithedge-european-architecture-spec.md#5.2-System-Level-Verification#Post-Deployment-Verification], [@bithedge-contract-architecture.md#7.-Documentation-and-Deployment#Post-Deployment-Verification]                                             |
+
+#### BitHedgeVerificationContract
+
+| Task ID | Description                                                                      | Dependencies       | Complexity | Estimated Days | References                                                                                                                                                                                              |
+| ------- | -------------------------------------------------------------------------------- | ------------------ | ---------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| VC-501  | Prepare mainnet deployment (set parameters for verification jobs if any from PA) | All VC-4xx, PA-501 | Low        | 1              | [@clarity-best-practices.md#Deployment-Considerations], [@bithedge-contract-architecture.md#7.-Documentation-and-Deployment#Deployment-Steps]                                                           |
+| VC-502  | Integrate with mainnet monitoring for verification failure events                | VC-501, SH-502     | Medium     | 1              | N/A                                                                                                                                                                                                     |
+| VC-503  | Scripts for running periodic off-chain verification checks using VC functions    | VC-501             | Medium     | 1              | [@bithedge-european-architecture-spec.md#5.2-System-Level-Verification#Post-Deployment-Verification], [@bithedge-contract-architecture.md#7.-Documentation-and-Deployment#Post-Deployment-Verification] |
+
+#### Shared Components (SH)
+
+| Task ID | Description                                                                                  | Dependencies                                   | Complexity | Estimated Days | References                                                                                                                                                                                         |
+| ------- | -------------------------------------------------------------------------------------------- | ---------------------------------------------- | ---------- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| SH-501  | Create consolidated mainnet deployment scripts for all contracts in correct order            | PR-501, LP-501, PA-501, ML-501, PO-501, VC-501 | High       | 2.5            | [@clarity-best-practices.md#Deployment-Considerations], [@modular-interactions.md#Deployment-Orchestration], [@bithedge-contract-architecture.md#7.-Documentation-and-Deployment#Deployment-Steps] |
+| SH-502  | Develop system health dashboard specifications for monitoring key metrics from all contracts | PR-502, LP-502, PA-502, PO-502, VC-502         | Medium     | 2              | N/A                                                                                                                                                                                                |
+| SH-503  | Finalize user documentation, tutorials, and API references for all contracts                 | SH-404                                         | Medium     | 2.5            | [@bithedge-contract-architecture.md#7.-Documentation-and-Deployment#User-Documentation]                                                                                                            |
+| SH-504  | Implement contract verification tools on block explorers for all deployed contracts          | All contract deployment tasks                  | Medium     | 1.5            | N/A                                                                                                                                                                                                |
+| SH-505  | Prepare comprehensive launch plan and rollout strategy, including communication and support  | All tasks                                      | Medium     | 2              | N/A                                                                                                                                                                                                |
 
 #### Phase 5 Milestones
 
-- **M5.1**: Contracts successfully deployed to mainnet (PR-501, LP-501, SH-501)
-- **M5.2**: Monitoring systems operational (PR-502, LP-502, SH-502)
-- **M5.3**: Post-deployment verification completed (PR-503, LP-503, SH-504)
-- **M5.4**: Launch documentation and tools ready (SH-503, SH-505)
+- **M5.1**: All contracts (PR, LP, PA, ML, PO, VC) successfully deployed to mainnet with correct initial parameters and inter-dependencies set.
+- **M5.2**: Comprehensive monitoring systems are operational for all contracts, tracking key events, functions, and system health metrics.
+- **M5.3**: Post-deployment verification scripts run successfully, confirming the integrity and correct setup of all contracts on mainnet.
+- **M5.4**: Launch documentation, user guides, API references, and block explorer verification are complete and publicly available. Launch plan executed.
 
 ## Critical Implementation Details
 
 ### Risk Tier System Implementation
 
-The risk tier system is a critical component that maps between buyer protection preferences and provider risk tolerance:
+The risk tier system, configured in `BitHedgeParametersContract` and utilized by `BitHedgePolicyRegistryContract`, `BitHedgeLiquidityPoolVaultContract`, and `BitHedgeMathLibraryContract`, is crucial:
 
 #### Buyer Tiers (Protective Peter):
+
 - **Conservative**: 100% of current value - Maximum protection
-- **Standard**: 90% of current value - Standard protection 
+- **Standard**: 90% of current value - Standard protection
 - **Flexible**: 80% of current value - Balanced protection
 - **Crash Insurance**: 70% of current value - Minimal protection
 
 #### Provider Tiers (Income Irene):
-- **Conservative**: Low risk, lower yield, higher collateral ratio (110%)
-- **Balanced**: Medium risk, medium yield, standard collateral ratio (100%)
-- **Aggressive**: Higher risk, higher yield, lower collateral ratio (90%)
 
-#### Tier Matching Rules:
+- **Conservative**: Low risk, lower yield, higher collateral ratio (e.g., 110% set in PA)
+- **Balanced**: Medium risk, medium yield, standard collateral ratio (e.g., 100% set in PA)
+- **Aggressive**: Higher risk, higher yield, lower collateral ratio (e.g., 90% set in PA)
+
+#### Tier Matching Rules (Enforced by LP and verified by VC):
+
 - ConservativeBuyer → ConservativeProvider
 - StandardBuyer → BalancedProvider, ConservativeProvider
 - FlexibleBuyer → AggressiveProvider, BalancedProvider
 - CrashInsuranceBuyer → Any provider tier
 
-Implementation must ensure these relationships are enforced during policy creation and provider allocation.
+Implementation must ensure these relationships are enforced during policy creation (PR checks with LP) and provider allocation (LP logic). `BitHedgeVerificationContract` will have functions to audit these matches.
 
 ### European-Style Settlement Process
 
-The European-style options architecture settles policies only at expiration, not before. This requires:
+Managed primarily by `BitHedgePolicyRegistryContract` with price data from `BitHedgePriceOracleContract`, calculations from `BitHedgeMathLibraryContract`, and execution by `BitHedgeLiquidityPoolVaultContract`.
 
-1. **Expiration Batch Processing**:
-   - Policies are processed in batches at their expiration height
-   - Oracle price at expiration determines if policies are in-the-money
-   - In-the-money policies trigger settlement to policy owners
-   - Out-of-the-money policies trigger premium distribution to providers
-
-2. **Settlement Impact Tracking**:
-   - Each provider's contribution to settlement is calculated proportionally
-   - Settlement impacts must be tracked for verification and accounting
-   - Remaining collateral must be released back to providers
-
-3. **Premium Distribution Process**:
-   - For expired out-of-the-money policies, premiums are distributed to providers
-   - Distribution is proportional to each provider's allocation percentage
-   - Premium distribution must be verified for correctness
+1.  **Expiration Batch Processing**:
+    - PR processes policies in batches at their expiration height using `process-expiration-batch`.
+    - PO provides expiration price (ideally TWAP).
+    - ML calculates settlement amount. ITM policies trigger settlement via LP. OTM policies trigger premium distribution via LP.
+2.  **Settlement Impact Tracking**:
+    - LP's `settlement-impacts` map tracks each provider's contribution proportionally. Verified by VC.
+    - Remaining collateral released by LP.
+3.  **Premium Distribution Process**:
+    - PR's `distribute-premium-batch` initiates distribution for OTM policies.
+    - LP distributes premiums proportionally using `distribute-premium-to-providers`, considering risk and allocation. Verified by VC.
 
 ## Resource Allocation and Timeline
 
 ### Team Structure
 
-- **Smart Contract Developers**: 2-3 developers focused on Clarity implementation
-- **QA Engineers**: 1-2 engineers focused on testing and verification
-- **Project Manager**: 1 person coordinating development and tracking progress
-- **Technical Lead**: 1 person providing architectural guidance and code review
+- **Smart Contract Developers**: 3-4 developers (Clarity expertise)
+- **QA Engineers / Testers**: 2 engineers (focused on blockchain specifics)
+- **Project Manager**: 1 person
+- **Technical Lead / Architect**: 1 person
 
-### Timeline Summary
+### Timeline Summary (Adjusted for increased scope)
 
-| Phase | Duration | Cumulative |
-|-------|----------|------------|
-| Phase 1: Foundation and Core Functionality | 4 weeks | 4 weeks |
-| Phase 2: Settlement, Expiration, and Verification | 5 weeks | 9 weeks |
-| Phase 3: Risk Tier System and Advanced Features | 5 weeks | 14 weeks |
-| Phase 4: Testing, Edge Cases, and Refinement | 3 weeks | 17 weeks |
-| Phase 5: Deployment and Launch | 2 weeks | 19 weeks |
+| Phase                                                               | Estimated Duration | Cumulative  |
+| ------------------------------------------------------------------- | ------------------ | ----------- |
+| Phase 1: Foundation and Core Functionality                          | 5-6 weeks          | 5-6 weeks   |
+| Phase 2: Settlement, Expiration, and Core Oracle/Verification Logic | 6-7 weeks          | 11-13 weeks |
+| Phase 3: Advanced Risk Tier System, Liquidity Mgt, and Verification | 6-7 weeks          | 17-20 weeks |
+| Phase 4: Testing, Edge Cases, and Refinement                        | 4-5 weeks          | 21-25 weeks |
+| Phase 5: Deployment and Launch                                      | 2-3 weeks          | 23-28 weeks |
+
+_Note: This is a high-level estimate. Detailed task breakdown and parallelization opportunities can refine this._
 
 ### Critical Path
 
-The following tasks form the critical path for the project:
+The critical path will involve the sequential build-up of functionality across contracts:
 
-1. Core data structures (PR-101, LP-101)
-2. Policy creation and collateral locking (PR-103, LP-105)
-3. Expiration processing (PR-201, PR-206)
-4. Settlement system (PR-208, LP-203, LP-204)
-5. Risk tier system (PR-301, LP-301, LP-302)
-6. Comprehensive testing (PR-401, LP-401, SH-401)
-7. Deployment (PR-501, LP-501)
+1.  PA, ML core setup.
+2.  PR policy creation basics & LP capital management basics.
+3.  PO price feed integration.
+4.  PR expiration & settlement logic relying on PO, ML, LP.
+5.  LP advanced allocation & premium distribution.
+6.  VC verification logic for all key flows.
+7.  Comprehensive testing and security reviews of all contracts.
+8.  Deployment.
 
 ## Risk Management
 
 ### Technical Risks
 
-| Risk | Probability | Impact | Mitigation |
-|------|------------|--------|------------|
-| Gas optimization challenges | Medium | High | Early profiling, incremental optimization, batch processing |
-| Complex verification logic bugs | Medium | High | Comprehensive test suite, formal verification where possible |
-| Oracle dependency failures | Medium | Medium | Fallback mechanisms, time-bounded oracle values |
-| Settlement calculation errors | Low | High | Multiple verification checks, explicit calculation tests |
-| Risk tier mismatches | Medium | Medium | Explicit tier compatibility verification, conservative tier rules |
+| Risk                                                  | Probability | Impact | Mitigation                                                                                                             |
+| ----------------------------------------------------- | ----------- | ------ | ---------------------------------------------------------------------------------------------------------------------- |
+| Gas optimization challenges across multiple contracts | Medium      | High   | Early profiling, incremental optimization, batch processing, Clarity best practices, ML gas efficiency focus.          |
+| Complex verification logic bugs in VC or its usage    | Medium      | High   | Comprehensive test suite for VC, formal verification for critical invariants if feasible, phased rollout of checks.    |
+| Oracle dependency failures or manipulation            | Medium      | High   | Robust PO design (multi-source, TWAP, deviation checks), fallback mechanisms, diligent monitoring.                     |
+| Settlement/Premium calculation errors in ML           | Low         | High   | Rigorous testing of ML, independent audits, cross-checks with VC.                                                      |
+| Risk tier mismatches or misconfigurations (PA)        | Medium      | Medium | Explicit tier compatibility verification (VC), clear PA management, thorough testing of tier effects.                  |
+| Integration complexity between 6 contracts            | High        | High   | Clear interface definitions (traits if applicable), extensive integration testing (SH tasks), incremental integration. |
 
 ### Project Risks
 
-| Risk | Probability | Impact | Mitigation |
-|------|------------|--------|------------|
-| Timeline overruns | Medium | Medium | Buffer in estimates, prioritized feature implementation |
-| Integration complexity | Medium | High | Early integration testing, clear interface definitions |
-| Resource constraints | Low | Medium | Cross-training team members, modular implementation |
-| Changing requirements | Medium | Medium | Flexible architecture, regular stakeholder reviews |
-| Security vulnerabilities | Low | High | Multiple security reviews, progressive security testing |
+| Risk                                              | Probability | Impact | Mitigation                                                                                                                 |
+| ------------------------------------------------- | ----------- | ------ | -------------------------------------------------------------------------------------------------------------------------- |
+| Timeline overruns due to increased scope          | High        | Medium | Realistic estimation, buffer in estimates, prioritized feature implementation, parallel development tracks where possible. |
+| Resource constraints (Clarity dev expertise)      | Medium      | Medium | Invest in training, clear documentation for onboarding, modular contract design to allow focused work.                     |
+| Changing requirements during extended development | Medium      | Medium | Phased approach allows for some flexibility, regular stakeholder reviews, strong architectural foundation.                 |
+| Security vulnerabilities in any contract          | Medium      | High   | Multiple security reviews per contract and for system, progressive security testing, bug bounties post-launch.             |
 
 ## Success Criteria
 
 The project will be considered successful when:
 
-1. All contracts deployed to mainnet with full functionality
-2. Comprehensive test suite passing with 100% coverage
-3. All verification mechanisms validated on real-world scenarios
-4. Gas usage optimized to target levels for all operations
-5. Complete user documentation available
-6. Monitoring and maintenance systems operational
+1.  All specified smart contracts are deployed to mainnet with full, verified functionality as per this plan.
+2.  A comprehensive test suite (unit, integration, system, stress) passes with high coverage for all contracts.
+3.  All verification mechanisms in `BitHedgeVerificationContract` are validated and confirm system integrity under diverse scenarios.
+4.  Gas usage for all critical operations across all contracts is optimized to meet predefined target levels.
+5.  Complete and accurate technical and user documentation for the entire multi-contract system is available.
+6.  Monitoring, maintenance, and emergency procedures are established and tested for the live system.
 
 ## Conclusion
 
-This development plan provides a comprehensive roadmap for implementing BitHedge's European-style options architecture. By following this plan, the team will be able to build a robust, gas-efficient platform that aligns with Bitcoin-native mental models while ensuring correctness through comprehensive verification mechanisms.
+This revised development plan provides a more robust and granular roadmap for implementing BitHedge's European-style options architecture. By breaking down the system into dedicated, specialized contracts (`BitHedgePolicyRegistryContract`, `BitHedgeLiquidityPoolVaultContract`, `BitHedgeParametersContract`, `BitHedgeMathLibraryContract`, `BitHedgePriceOracleContract`, `BitHedgeVerificationContract`), we achieve better separation of concerns, enhanced maintainability, and targeted development focus.
 
-The phased approach allows for incremental development and testing, with clear milestones to track progress. The focus on core functionality first, followed by settlement and verification, and then advanced features, ensures that the most critical components are built and tested thoroughly before adding complexity.
+The phased approach, with clear tasks and milestones for each contract, allows for incremental development, testing, and integration. The increased emphasis on verification, security, and edge case handling throughout the plan aims to deliver a highly reliable and secure financial platform. While the scope has expanded, this detailed plan sets a stronger foundation for successful execution and delivery of the sophisticated BitHedge smart contract system.

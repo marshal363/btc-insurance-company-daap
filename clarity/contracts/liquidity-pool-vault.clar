@@ -1,88 +1,238 @@
-;; BitHedge Liquidity Pool Vault Contract
-;; Version: 1.0
-;; Implementation based on: @docs/backend-new/provisional-2/bithedge-hybrid-architecture-overview.md
+;; BitHedge European-Style Liquidity Pool Vault Contract
+;; Version: 0.1 (Phase 1 Development)
 
 ;; --- Traits ---
 ;; SIP-010 Fungible Token standard trait
-(define-trait sip-010-trait
-  (
-    ;; Transfer tokens to a recipient
-    (transfer (uint principal principal (optional (buff 34))) (response bool uint))
-    ;; Get token balance
-    (get-balance (principal) (response uint uint))
-    ;; Get token supply
-    (get-total-supply () (response uint uint))
-    ;; Get token name
-    (get-name () (response (string-ascii 32) uint))
-    ;; Get token symbol
-    (get-symbol () (response (string-ascii 32) uint))
-    ;; Get token decimals
-    (get-decimals () (response uint uint))
-    ;; Get token URI
-    (get-token-uri () (response (optional (string-utf8 256)) uint))
+(define-trait sip-010-trait (
+  (transfer
+    (uint principal principal (optional (buff 34)))
+    (response bool uint)
   )
-)
+  (get-balance
+    (principal)
+    (response uint uint)
+  )
+  (get-total-supply
+    ()
+    (response uint uint)
+  )
+  (get-name
+    ()
+    (response (string-ascii 32) uint)
+  )
+  (get-symbol
+    ()
+    (response (string-ascii 32) uint)
+  )
+  (get-decimals
+    ()
+    (response uint uint)
+  )
+  (get-token-uri
+    ()
+    (response (optional (string-utf8 256)) uint)
+  )
+))
 
-;; --- Constants and Error Codes ---
+;; --- Constants and Error Codes (SH-101) ---
+(define-constant CONTRACT-OWNER tx-sender)
 (define-constant ERR-UNAUTHORIZED (err u401))
 (define-constant ERR-NOT-ENOUGH-BALANCE (err u402))
 (define-constant ERR-INVALID-TOKEN (err u403))
 (define-constant ERR-TOKEN-NOT-INITIALIZED (err u404))
 (define-constant ERR-AMOUNT-MUST-BE-POSITIVE (err u405))
 (define-constant ERR-INSUFFICIENT-LIQUIDITY (err u406))
-(define-constant ERR-COLLATERAL-LOCKED (err u407))
 (define-constant ERR-TRANSFER-FAILED (err u500))
-(define-constant CONTRACT-OWNER tx-sender)
+(define-constant ERR-POLICY-REGISTRY-ONLY (err u407)) ;; For functions callable only by policy registry
+(define-constant ERR-INVALID-RISK-TIER (err u408))
+(define-constant ERR-INSUFFICIENT-TIER-LIQUIDITY (err u409))
+(define-constant ERR-EXCESSIVE-EXPIRATION-CONCENTRATION (err u410))
+(define-constant ERR-ALREADY-INITIALIZED (err u411))
+(define-constant ERR-CALLER_NOT_PROVIDER (err u412))
+(define-constant ERR-NO_PROVIDER_FOR_TIER (err u413))
+(define-constant ERR-ALLOCATION_LOGIC_ERROR (err u414))
 
-;; New Error Codes for Premium Logic
-(define-constant ERR-POLICY-NOT-FOUND (err u408)) ;; Assuming u408 is available
-(define-constant ERR-PREMIUM-ALREADY-DISTRIBUTED (err u409)) ;; Assuming u409 is available
-(define-constant ERR-PREMIUM-NOT-RECORDED (err u410)) ;; If attempting to distribute non-existent premium
-(define-constant ERR-INVALID-PREMIUM-SHARE (err u411)) ;; If premium share calculation is problematic
+;; Risk Tier Constants (SH-102) - More may be added as parameters later
+(define-constant RISK-TIER-CONSERVATIVE "Conservative")
+(define-constant RISK-TIER-BALANCED "Balanced")
+(define-constant RISK-TIER-AGGRESSIVE "Aggressive")
 
-;; Token Identifiers (Placeholders - replace with actual mainnet/testnet addresses)
-;; We use a constant for sBTC example, but for STX we handle it differently
-(define-constant SBTC-TOKEN 'SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token) ;; Example sBTC token principal
+;; Token Identifiers
+(define-constant STX-TOKEN-ID "STX")
+;; Replace with your actual sBTC contract principal if it's fixed and known at deployment
+;; (define-constant SBTC-TOKEN-CONTRACT <sbtc-token-principal-here>)
 
-;; --- Data Structures ---
+;; --- Data Structures (LP-101) ---
 
-;; Map storing the total balance of each supported token held by the vault
-;; Key: Token Principal (or "STX" for native STX)
-;; Value: Total balance
-(define-map token-balances { token: (string-ascii 32) } { balance: uint })
+;; Tracks total, available, and locked balances for each supported token (STX, sBTC)
+(define-map token-balances
+  { token-id: (string-ascii 32) } ;; "STX" or sBTC contract principal as string
+  {
+    total-balance: uint,
+    available-balance: uint,
+    locked-balance: uint,
+  }
+)
 
-;; Map storing the amount of collateral locked per token, aggregated across all policies
-;; Key: Token Principal (or "STX" for native STX)
-;; Value: Amount locked
-(define-map locked-collateral { token: (string-ascii 32) } { amount: uint })
+;; Tracks individual provider deposits, allocations, and earnings
+(define-map provider-balances
+  {
+    provider: principal,
+    token-id: (string-ascii 32),
+  }
+  {
+    deposited-amount: uint,
+    allocated-amount: uint, ;; Amount allocated to active policies
+    available-amount: uint, ;; Deposited minus allocated
+    earned-premiums: uint, ;; Premiums earned from expired OTM policies, ready to claim
+    pending-premiums: uint, ;; Premiums from active policies (not yet claimable)
+    expiration-exposure: (map uint uint), ;; map {expiration-height: uint} to {exposure-amount: uint}
+  }
+)
 
-;; Map storing total premiums collected and distributed for each token
-;; Key: Token Identifier (e.g., "STX", "SBTC")
-;; Value: { total-premiums: uint, distributed-premiums: uint }
-(define-map premium-balances { token: (string-ascii 32) } { total-premiums: uint, distributed-premiums: uint })
+;; Stores parameters for each risk tier, like collateral ratios.
+;; For Phase 1, this structure is defined. Population and full logic in later phases.
+(define-map risk-tier-parameters
+  { tier-name: (string-ascii 32) } ;; e.g., "Conservative"
+  {
+    collateral-ratio: uint, ;; e.g., u110 for 110%
+    premium-multiplier: uint, ;; e.g., u90 for 90% of base premium
+    max-exposure-percentage: uint, ;; e.g., u25 for 25% max of provider's capital to one expiration
+  }
+)
 
-;; Map storing provider contributions to specific policies for premium distribution
-;; Key: { provider: principal, policy-id: uint }
-;; Value: { token: (string-ascii 32), allocated-amount: uint, premium-share: uint, premium-distributed: bool }
-(define-map provider-policy-allocations { provider: principal, policy-id: uint } { token: (string-ascii 32), allocated-amount: uint, premium-share: uint, premium-distributed: bool })
+;; Tracks total premiums collected and distributed for each token type.
+(define-map premium-balances
+  { token-id: (string-ascii 32) }
+  {
+    total-premiums-collected: uint,
+    total-premiums-distributed-to-providers: uint,
+  }
+)
+
+;; Stores details of how a provider's capital is allocated to a specific policy.
+(define-map provider-allocations
+  {
+    provider: principal,
+    policy-id: uint,
+  }
+  {
+    token-id: (string-ascii 32),
+    allocated-to-policy-amount: uint, ;; How much of this provider's capital is for this policy
+    risk-tier-at-allocation: (string-ascii 32),
+    expiration-height: uint,
+  }
+)
 
 ;; --- Data Variables ---
-
-;; Principal authorized to perform backend operations (e.g., lock/release collateral, initiate settlement)
-;; Defaults to the contract deployer initially
 (define-data-var backend-authorized-principal principal tx-sender)
+(define-data-var policy-registry-principal principal tx-sender) ;; To be set by admin
 
-;; Principal of the Policy Registry contract (needed for validating calls like release-collateral)
-;; Must be set after deployment
-(define-data-var policy-registry-principal principal tx-sender)
+;; Map to track initialized tokens (LP-110)
+(define-map supported-tokens
+  { token-id: (string-ascii 32) }
+  {
+    initialized: bool,
+    sbtc-contract-principal: (optional principal),
+  }
+)
 
-;; Set of initialized/supported tokens
-(define-map supported-tokens { token: (string-ascii 32) } { initialized: bool })
+;; --- Token Management Functions (LP-110) ---
 
-;; --- Administrative Functions ---
+;; Initialize a supported token (STX or an sBTC contract)
+(define-public (initialize-token
+    (token-id (string-ascii 32))
+    (sbtc-principal-if-sip010 (optional principal))
+  )
+  (begin
+    (asserts! (is-eq tx-sender CONTRACT-OWNER) ERR-UNAUTHORIZED)
+    (asserts!
+      (not (default-to false
+        (get initialized (map-get? supported-tokens { token-id: token-id }))
+      ))
+      ERR-ALREADY-INITIALIZED
+    )
+    (if (is-eq token-id STX-TOKEN-ID)
+      (asserts! (is-none sbtc-principal-if-sip010) ERR-INVALID-TOKEN) ;; STX should not have sbtc principal
+      (asserts! (is-some sbtc-principal-if-sip010) ERR-INVALID-TOKEN) ;; SIP010 token must have principal
+    )
+    (map-set supported-tokens { token-id: token-id } {
+      initialized: true,
+      sbtc-contract-principal: sbtc-principal-if-sip010,
+    })
+    (map-set token-balances { token-id: token-id } {
+      total-balance: u0,
+      available-balance: u0,
+      locked-balance: u0,
+    })
+    (map-set premium-balances { token-id: token-id } {
+      total-premiums-collected: u0,
+      total-premiums-distributed-to-providers: u0,
+    })
+    (print {
+      event: "token-initialized",
+      token: token-id,
+      sbtc_principal: sbtc-principal-if-sip010,
+    })
+    (ok true)
+  )
+)
 
-;; Set the backend authorized principal
-;; Can only be called by the contract deployer
+;; Private helper to check if a token is supported
+(define-private (is-token-supported (token-id (string-ascii 32)))
+  (default-to false
+    (get initialized (map-get? supported-tokens { token-id: token-id }))
+  )
+)
+
+;; --- Read-Only Functions (LP-106, LP-108 part 1) ---
+
+(define-read-only (get-total-token-balance (token-id (string-ascii 32)))
+  (match (map-get? token-balances { token-id: token-id })
+    balance-info (ok (get total-balance balance-info))
+    ERR-TOKEN-NOT-INITIALIZED
+  )
+)
+
+(define-read-only (get-locked-collateral (token-id (string-ascii 32)))
+  (match (map-get? token-balances { token-id: token-id })
+    balance-info (ok (get locked-balance balance-info))
+    ERR-TOKEN-NOT-INITIALIZED
+  )
+)
+
+(define-read-only (get-available-balance (token-id (string-ascii 32)))
+  (match (map-get? token-balances { token-id: token-id })
+    balance-info (ok (get available-balance balance-info))
+    ERR-TOKEN-NOT-INITIALIZED
+  )
+)
+
+(define-read-only (is-token-initialized-public (token-id (string-ascii 32)))
+  (is-token-supported token-id)
+)
+
+(define-read-only (get-provider-balance
+    (provider principal)
+    (token-id (string-ascii 32))
+  )
+  (map-get? provider-balances {
+    provider: provider,
+    token-id: token-id,
+  })
+)
+
+(define-read-only (get-provider-allocation-for-policy
+    (provider principal)
+    (policy-id uint)
+  )
+  (map-get? provider-allocations {
+    provider: provider,
+    policy-id: policy-id,
+  })
+)
+
+;; --- Administrative Functions (LP-102) ---
 (define-public (set-backend-authorized-principal (new-principal principal))
   (begin
     (asserts! (is-eq tx-sender CONTRACT-OWNER) ERR-UNAUTHORIZED)
@@ -91,8 +241,6 @@
   )
 )
 
-;; Set the Policy Registry contract principal
-;; Can only be called by the contract deployer
 (define-public (set-policy-registry-principal (registry-principal principal))
   (begin
     (asserts! (is-eq tx-sender CONTRACT-OWNER) ERR-UNAUTHORIZED)
@@ -101,476 +249,282 @@
   )
 )
 
-;; Initialize a supported SIP-010 token or enable STX support
-;; Can only be called by the contract deployer
-(define-public (initialize-token (token-id (string-ascii 32)))
-  (begin
-    (asserts! (is-eq tx-sender CONTRACT-OWNER) ERR-UNAUTHORIZED)
-    ;; Initialize balances and locked collateral maps for the token if not already done
-    (map-insert token-balances { token: token-id } { balance: u0 })
-    (map-insert locked-collateral { token: token-id } { amount: u0 })
-    ;; Initialize premium balances map for the token
-    (map-insert premium-balances { token: token-id } { total-premiums: u0, distributed-premiums: u0 })
-    (map-set supported-tokens { token: token-id } { initialized: true })
-    ;; Emit event (optional)
-    (print { event: "token-initialized", token: token-id })
-    (ok true)
+;; --- Capital Management Functions (LP-103) ---
+(define-public (deposit-capital
+    (amount uint)
+    (token-id (string-ascii 32))
+    (risk-tier (string-ascii 32))
   )
-)
-
-;; --- Helper Functions ---
-
-;; Check if a token is initialized and supported
-(define-private (is-token-supported (token-id (string-ascii 32)))
-  (default-to false (get initialized (map-get? supported-tokens { token: token-id })))
-)
-
-;; Check if a policy exists and is active via Policy Registry (LP-110)
-;; Currently implemented as a placeholder to avoid circular dependency
-(define-private (verify-policy-active (policy-id uint))
-  ;; This is a placeholder implementation to avoid circular dependency.
-  ;; In production, this would call the policy-registry contract.
-  ;; During deployment, the actual contract call will be configured after both contracts are deployed.
-  (ok true) ;; Always return active during development/testing
-)
-
-;; Get settlement details for a policy from Policy Registry (LP-110)
-;; Currently implemented as a placeholder to avoid circular dependency
-(define-private (get-policy-settlement-details (policy-id uint) (settlement-price uint))
-  ;; This is a placeholder implementation to avoid circular dependency.
-  ;; In production, this would call the policy-registry contract.
-  ;; During deployment, the actual contract call will be configured after both contracts are deployed.
-  (ok u1000) ;; Return a fixed test amount during development
-)
-
-;; Calculate required collateral amount based on policy parameters (copied from policy-registry)
-(define-private (calculate-required-collateral 
-  (policy-type (string-ascii 4)) 
-  (protected-value uint) 
-  (protection-amount uint))
-  ;; Simplified: Assume PUT requires full protection amount in collateral token
-  ;; Assume CALL requires a fraction (e.g., 50%) - adjust based on risk model
-  (if (is-eq policy-type "PUT")
-    protection-amount
-    (/ protection-amount u2) ;; Example: 50% for CALL
-  )
-)
-
-;; Determine the required token ID based on policy type (placeholder, copied from policy-registry)
-(define-private (get-token-id-for-policy (policy-type (string-ascii 4)))
-  ;; Placeholder: Assume STX is used for PUT, sBTC for CALL - adjust as needed
-  (if (is-eq policy-type "PUT")
-    "STX"
-    "SBTC"
-  )
-)
-
-;; --- Public Functions (Deposit, Withdraw) ---
-
-;; Deposit STX into the vault
-;; Can be called by any user
-(define-public (deposit-stx (amount uint))
   (begin
     (asserts! (> amount u0) ERR-AMOUNT-MUST-BE-POSITIVE)
-    ;; Check STX support by attempting to access its map entry or assuming supported
-    (asserts! (is-token-supported "STX") ERR-TOKEN-NOT-INITIALIZED)
-
-    ;; Perform the STX transfer from the user to this contract
-    (try! (stx-transfer? amount tx-sender (as-contract tx-sender)))
-
-    ;; Update the total STX balance in the vault
-    (let ((current-balance (default-to u0 (get balance (map-get? token-balances { token: "STX" }))))) 
-      (map-set token-balances { token: "STX" } { balance: (+ current-balance amount) })
-    )
-
-    ;; Emit event
-    (print { event: "funds-deposited", depositor: tx-sender, amount: amount, token: "STX" })
-    (ok true)
-  )
-)
-
-;; Deposit a supported SIP-010 token (e.g., sBTC) into the vault
-;; Can be called by any user
-(define-public (deposit-sip010 (token <sip-010-trait>) (amount uint))
-  (let (
-      (token-principal (contract-of token))
-      (token-id (unwrap-panic (contract-call? token get-symbol)))
-      (depositor tx-sender)
-    )
-    (begin
-      (asserts! (> amount u0) ERR-AMOUNT-MUST-BE-POSITIVE)
-      (asserts! (is-token-supported token-id) ERR-TOKEN-NOT-INITIALIZED)
-
-      ;; Perform the SIP-010 transfer from the user to this contract
-      (try! (contract-call? token transfer amount depositor (as-contract tx-sender) none))
-
-      ;; Update the total token balance in the vault
-      (let ((current-balance (default-to u0 (get balance (map-get? token-balances { token: token-id }))))) 
-        (map-set token-balances { token: token-id } { balance: (+ current-balance amount) })
+    (asserts! (is-token-supported token-id) ERR-TOKEN-NOT-INITIALIZED)
+    (asserts! (is-valid-risk-tier risk-tier) ERR-INVALID-RISK-TIER)
+    ;; Perform token transfer from tx-sender to this contract
+    (if (is-eq token-id STX-TOKEN-ID)
+      (try! (stx-transfer? amount tx-sender (as-contract tx-sender)))
+      (let ((token-info (unwrap! (map-get? supported-tokens { token-id: token-id })
+          ERR-TOKEN-NOT-INITIALIZED
+        )))
+        (try! (contract-call? (unwrap-panic (get sbtc-contract-principal token-info))
+          transfer amount tx-sender (as-contract tx-sender) none
+        ))
       )
-
-      ;; Emit event
-      (print { event: "funds-deposited", depositor: depositor, amount: amount, token: token-id })
-      (ok true)
     )
-  )
-)
-
-;; --- Withdraw Functions ---
-;; In the "On-Chain Light" model, withdrawals are typically initiated by the backend
-;; based on off-chain provider requests and available (unlocked) liquidity checks.
-;; The recipient is specified in the call.
-
-;; Withdraw STX from the vault
-;; Restricted to the backend authorized principal
-(define-public (withdraw-stx (amount uint) (recipient principal))
-  (let (
-      (caller tx-sender)
-      (current-balance (default-to u0 (get balance (map-get? token-balances { token: "STX" }))))
-      (current-locked (default-to u0 (get amount (map-get? locked-collateral { token: "STX" }))))
-      (available-balance (- current-balance current-locked))
-    )
-    (begin
-      (asserts! (is-eq caller (var-get backend-authorized-principal)) ERR-UNAUTHORIZED)
-      (asserts! (> amount u0) ERR-AMOUNT-MUST-BE-POSITIVE)
-      (asserts! (is-token-supported "STX") ERR-TOKEN-NOT-INITIALIZED)
-      (asserts! (>= available-balance amount) ERR-INSUFFICIENT-LIQUIDITY) ;; Check against available, not total balance
-
-      ;; Perform the STX transfer from this contract to the recipient
-      (try! (as-contract (stx-transfer? amount tx-sender recipient)))
-
-      ;; Update the total STX balance in the vault
-      (map-set token-balances { token: "STX" } { balance: (- current-balance amount) })
-
-      ;; Emit event
-      (print { event: "funds-withdrawn", withdrawer: recipient, amount: amount, token: "STX" })
-      (ok true)
-    )
-  )
-)
-
-;; Withdraw a supported SIP-010 token (e.g., sBTC) from the vault
-;; Restricted to the backend authorized principal
-(define-public (withdraw-sip010 (token <sip-010-trait>) (amount uint) (recipient principal))
-  (let (
-      (caller tx-sender)
-      (token-id (unwrap-panic (contract-call? token get-symbol)))
-      (current-balance (default-to u0 (get balance (map-get? token-balances { token: token-id }))))
-      (current-locked (default-to u0 (get amount (map-get? locked-collateral { token: token-id }))))
-      (available-balance (- current-balance current-locked))
-    )
-    (begin
-      (asserts! (is-eq caller (var-get backend-authorized-principal)) ERR-UNAUTHORIZED)
-      (asserts! (> amount u0) ERR-AMOUNT-MUST-BE-POSITIVE)
-      (asserts! (is-token-supported token-id) ERR-TOKEN-NOT-INITIALIZED)
-      (asserts! (>= available-balance amount) ERR-INSUFFICIENT-LIQUIDITY) ;; Check against available balance
-
-      ;; Perform the SIP-010 transfer from this contract to the recipient
-      ;; Note: The SIP-010 transfer must be called *as* the contract itself.
-      (try! (as-contract (contract-call? token transfer amount tx-sender recipient none)))
-
-      ;; Update the total token balance in the vault
-      (map-set token-balances { token: token-id } { balance: (- current-balance amount) })
-
-      ;; Emit event
-      (print { event: "funds-withdrawn", withdrawer: recipient, amount: amount, token: token-id })
-      (ok true)
-    )
-  )
-)
-
-;; --- Internal/Backend Functions (Collateral Management, Settlement) ---
-
-;; Lock collateral for a new or existing policy
-;; Restricted to the backend authorized principal
-(define-public (lock-collateral (token-id (string-ascii 32)) (amount uint) (policy-id uint))
-  (let (
-      (caller tx-sender)
-      (current-balance (default-to u0 (get balance (map-get? token-balances { token: token-id }))))
-      (current-locked (default-to u0 (get amount (map-get? locked-collateral { token: token-id }))))
-      (available-balance (- current-balance current-locked))
-    )
-    (begin
-      (asserts! (is-eq caller (var-get backend-authorized-principal)) ERR-UNAUTHORIZED)
-      (asserts! (> amount u0) ERR-AMOUNT-MUST-BE-POSITIVE)
-      (asserts! (is-token-supported token-id) ERR-TOKEN-NOT-INITIALIZED)
-      ;; Ensure there is enough *available* liquidity to lock this amount
-      (asserts! (>= available-balance amount) ERR-INSUFFICIENT-LIQUIDITY)
-
-      ;; Increase the locked amount for the token
-      (map-set locked-collateral { token: token-id } { amount: (+ current-locked amount) })
-
-      ;; Emit event
-      (print { event: "collateral-locked", policy-id: policy-id, amount-locked: amount, token: token-id })
-      (ok true)
-    )
-  )
-)
-
-;; Release collateral associated with a policy (e.g., upon expiration or settlement)
-;; Restricted to the backend authorized principal
-;; Note: This function *only* adjusts the internal locked amount. Actual fund transfer happens via withdraw or settle.
-(define-public (release-collateral (token-id (string-ascii 32)) (amount uint) (policy-id uint))
-  (let (
-      (caller tx-sender)
-      (current-locked (default-to u0 (get amount (map-get? locked-collateral { token: token-id }))))
-    )
-    (begin
-      (asserts! (is-eq caller (var-get backend-authorized-principal)) ERR-UNAUTHORIZED)
-      (asserts! (> amount u0) ERR-AMOUNT-MUST-BE-POSITIVE)
-      (asserts! (is-token-supported token-id) ERR-TOKEN-NOT-INITIALIZED)
-      ;; Ensure we are not releasing more than is currently locked
-      (asserts! (>= current-locked amount) ERR-COLLATERAL-LOCKED) ;; Using this error, might need a more specific one
-
-      ;; Decrease the locked amount for the token
-      (map-set locked-collateral { token: token-id } { amount: (- current-locked amount) })
-
-      ;; Emit event
-      (print { event: "collateral-released", policy-id: policy-id, amount-released: amount, token: token-id })
-      (ok true)
-    )
-  )
-)
-
-;; Pay settlement for an exercised policy
-;; Restricted to the backend authorized principal
-;; NOTE: This function ONLY handles the transfer of settlement funds.
-;; The corresponding collateral release MUST be handled by a separate call
-;; to `release-collateral` by the backend after confirming this payment.
-(define-public (pay-settlement (token-id (string-ascii 32)) (settlement-amount uint) (recipient principal) (policy-id uint))
-  (let (
-      (caller tx-sender)
-      (current-balance (default-to u0 (get balance (map-get? token-balances { token: token-id }))))
-      (current-locked (default-to u0 (get amount (map-get? locked-collateral { token: token-id }))))
-    )
-    (begin
-      (asserts! (is-eq caller (var-get backend-authorized-principal)) ERR-UNAUTHORIZED)
-      (asserts! (> settlement-amount u0) ERR-AMOUNT-MUST-BE-POSITIVE)
-      (asserts! (is-token-supported token-id) ERR-TOKEN-NOT-INITIALIZED)
-      (asserts! (>= current-balance settlement-amount) ERR-NOT-ENOUGH-BALANCE) ;; Ensure total balance covers settlement
-
-      ;; Verify the policy status with the registry (LP-110) - Placeholder check
-      ;; TODO: Uncomment and refine this check based on Policy Registry capabilities
-      ;; (asserts! (unwrap! (verify-policy-active policy-id) (err u404)) (err u403))
-
-      ;; Perform the transfer based on token type
-      (if (is-eq token-id "STX")
-          ;; STX Settlement
-          (try! (as-contract (stx-transfer? settlement-amount tx-sender recipient)))
-          ;; For now, we only support STX and SBTC, so we directly use SBTC-TOKEN
-          ;; In a production version, this would need to be more flexible
-          (try! (as-contract (contract-call? 'SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token transfer 
-                                             settlement-amount tx-sender recipient none)))
-      )
-
-      ;; Update total token balance
-      (map-set token-balances { token: token-id } { balance: (- current-balance settlement-amount) })
-
-      ;; Collateral Release is handled separately by the backend calling `release-collateral`.
-      ;; This ensures separation of concerns and keeps this function focused on payment.
-
-      ;; Emit event
-      (print { event: "settlement-paid", policy-id: policy-id, buyer: recipient, settlement-amount: settlement-amount, token: token-id })
-      (ok true)
-    )
-  )
-)
-
-;; --- Read-Only Functions ---
-
-;; Get the total balance of a specific token held by the vault
-(define-read-only (get-total-token-balance (token-id (string-ascii 32)))
-  (default-to u0 (get balance (map-get? token-balances { token: token-id })))
-)
-
-;; Get the amount of locked collateral for a specific token
-(define-read-only (get-locked-collateral (token-id (string-ascii 32)))
-  (default-to u0 (get amount (map-get? locked-collateral { token: token-id })))
-)
-
-;; Get the available (unlocked) balance for a specific token
-(define-read-only (get-available-balance (token-id (string-ascii 32)))
-  (let (
-      (total-balance (get-total-token-balance token-id))
-      (locked-amount (get-locked-collateral token-id))
-    )
-    ;; Prevent underflow if locked somehow exceeds total (should not happen)
-    (if (> total-balance locked-amount)
-        (- total-balance locked-amount)
-        u0
-    )
-  )
-)
-
-;; Check if a token is supported/initialized
-(define-read-only (is-token-supported-public (token-id (string-ascii 32)))
-  (is-token-supported token-id) ;; Calls the private helper
-)
-
-;; Get the backend authorized principal address
-(define-read-only (get-backend-authorized-principal)
-  (var-get backend-authorized-principal)
-)
-
-;; Get the policy registry principal address
-(define-read-only (get-policy-registry-principal)
-  (var-get policy-registry-principal)
-)
-
-;; --- Read-Only Functions for Premium Data ---
-
-;; Get premium balance information for a token
-(define-read-only (get-premium-balances-for-token (token-id (string-ascii 32)))
-  (default-to { total-premiums: u0, distributed-premiums: u0 }
-              (map-get? premium-balances { token: token-id })))
-
-;; Get undistributed premium amount for a token
-(define-read-only (get-undistributed-premiums-for-token (token-id (string-ascii 32)))
-  (let ((premiums (get-premium-balances-for-token token-id)))
-    (- (get total-premiums premiums) (get distributed-premiums premiums))
-  )
-)
-
-;; Get provider allocation for a policy
-(define-read-only (get-provider-allocation (provider principal) (policy-id uint))
-  (map-get? provider-policy-allocations { provider: provider, policy-id: policy-id }))
-
-;; Check if the vault has sufficient available balance to cover the required collateral for a potential policy
-;; Called by policy-registry contract during policy creation check (PR-111)
-(define-read-only (has-sufficient-collateral
-  (protected-value uint)
-  (protection-amount uint)
-  (policy-type (string-ascii 4)))
-  (let (
-      (token-id (get-token-id-for-policy policy-type))
-      (required-collateral (calculate-required-collateral policy-type protected-value protection-amount))
-      (available (get-available-balance token-id))
-    )
-    (ok (>= available required-collateral))
-  )
-)
-
-;; --- Premium Management Functions ---
-
-;; Record a premium payment received for a policy
-;; Called by the Policy Registry contract when a premium is paid by a policy buyer
-(define-public (record-premium-payment (token-id (string-ascii 32)) (amount uint) (policy-id uint) (counterparty principal))
-  (begin
-    (asserts! (is-eq tx-sender (var-get policy-registry-principal)) ERR-UNAUTHORIZED)
-    (asserts! (is-token-supported token-id) ERR-TOKEN-NOT-INITIALIZED) 
-    (asserts! (> amount u0) ERR-AMOUNT-MUST-BE-POSITIVE)
-
-    (let ((current-premiums (default-to {total-premiums: u0, distributed-premiums: u0} (map-get? premium-balances {token: token-id}))))
-      (map-set premium-balances {token: token-id} {
-        total-premiums: (+ (get total-premiums current-premiums) amount),
-        distributed-premiums: (get distributed-premiums current-premiums)
+    ;; Update global token balance
+    (let ((current-global-balance (unwrap! (map-get? token-balances { token-id: token-id })
+        ERR-TOKEN-NOT-INITIALIZED
+      )))
+      (map-set token-balances { token-id: token-id } {
+        total-balance: (+ (get total-balance current-global-balance) amount),
+        available-balance: (+ (get available-balance current-global-balance) amount),
+        locked-balance: (get locked-balance current-global-balance),
       })
     )
-    (print { event: "premium-recorded", policy-id: policy-id, counterparty: counterparty, premium-amount: amount, token: token-id })
-    (ok true)
-  )
-)
-
-;; Distribute premium to the policy counterparty (e.g., seller) when a policy expires unexercised
-;; Called by the Policy Registry contract or the backend authorized principal
-(define-public (distribute-premium (token-id (string-ascii 32)) (amount uint) (counterparty principal) (policy-id uint))
-  (begin
-    (asserts! (or (is-eq tx-sender (var-get policy-registry-principal))
-                  (is-eq tx-sender (var-get backend-authorized-principal)))
-              ERR-UNAUTHORIZED)
-    (asserts! (is-token-supported token-id) ERR-TOKEN-NOT-INITIALIZED)
-    (asserts! (> amount u0) ERR-AMOUNT-MUST-BE-POSITIVE)
-
-    (let ((current-premiums (unwrap! (map-get? premium-balances {token: token-id}) ERR-PREMIUM-NOT-RECORDED)))
-      (asserts! (>= (- (get total-premiums current-premiums) (get distributed-premiums current-premiums)) amount) ERR-INSUFFICIENT-LIQUIDITY) ;; Not enough undistributed premium
-
-      (map-set premium-balances {token: token-id} {
-        total-premiums: (get total-premiums current-premiums),
-        distributed-premiums: (+ (get distributed-premiums current-premiums) amount)
-      })
-
-      ;; Transfer funds to counterparty
-      (if (is-eq token-id "STX")
-        (try! (as-contract (stx-transfer? amount tx-sender counterparty)))
-        ;; Assuming only STX and a single SIP-010 (SBTC) for now as per contract structure
-        (try! (as-contract (contract-call? SBTC-TOKEN transfer amount tx-sender counterparty none)))
-      )
-      
-      (print { event: "premium-distributed", policy-id: policy-id, counterparty: counterparty, premium-amount: amount, token: token-id })
-      (ok true)
-    )
-  )
-)
-
-;; Record a provider's allocation to a specific policy for premium sharing purposes
-;; Called by the backend authorized principal
-(define-public (record-provider-allocation (provider principal) (policy-id uint) (token-id (string-ascii 32)) (allocated-amount uint) (premium-share uint))
-  (begin
-    (asserts! (is-eq tx-sender (var-get backend-authorized-principal)) ERR-UNAUTHORIZED)
-    (asserts! (is-token-supported token-id) ERR-TOKEN-NOT-INITIALIZED)
-    ;; premium-share is a percentage, e.g., u50 for 50%. Max u100.
-    (asserts! (and (> premium-share u0) (<= premium-share u100)) ERR-INVALID-PREMIUM-SHARE)
-
-    (map-set provider-policy-allocations {provider: provider, policy-id: policy-id} {
-      token: token-id,
-      allocated-amount: allocated-amount,
-      premium-share: premium-share, ;; This should be the provider's share of the *total policy premium*
-      premium-distributed: false
-    })
-
-    (print { event: "provider-allocation-recorded", provider: provider, policy-id: policy-id, allocated-amount: allocated-amount, premium-share: premium-share, token: token-id })
-    (ok true)
-  )
-)
-
-;; Distribute a specific provider's share of a policy's premium to that provider
-;; Called by the backend authorized principal
-(define-public (distribute-provider-premium (provider principal) (policy-id uint) (actual-premium-to-distribute uint))
-  (begin
-    (asserts! (is-eq tx-sender (var-get backend-authorized-principal)) ERR-UNAUTHORIZED)
-
-    (let ((allocation (unwrap! (map-get? provider-policy-allocations {provider: provider, policy-id: policy-id}) ERR-POLICY-NOT-FOUND)))
-      (let ( ;; Nested let to handle sequential binding
-        (token-id (get token allocation))
-        (current-premiums (unwrap! (map-get? premium-balances {token: (get token allocation)}) ERR-PREMIUM-NOT-RECORDED)) ;; Access token-id directly from allocation for this binding
-      )
-        (asserts! (is-token-supported token-id) ERR-TOKEN-NOT-INITIALIZED) ;; Now use the bound token-id
-        (asserts! (not (get premium-distributed allocation)) ERR-PREMIUM-ALREADY-DISTRIBUTED)
-        (asserts! (> actual-premium-to-distribute u0) ERR-AMOUNT-MUST-BE-POSITIVE)
-        
-        ;; Ensure the amount to distribute to provider does not exceed their recorded share (which might be pre-calculated by backend)
-        ;; AND ensure the overall pool of undistributed premiums for this token can cover this specific payout.
-        ;; This is critical: the `premium-share` in allocation is a percentage. The `actual-premium-to-distribute` 
-        ;; would be calculated by the backend (e.g. total_policy_premium * (premium-share / 100)).
-        ;; We need to ensure this amount is available in the global undistributed premiums for that token.
-        (asserts! (>= (- (get total-premiums current-premiums) (get distributed-premiums current-premiums)) actual-premium-to-distribute) ERR-INSUFFICIENT-LIQUIDITY)
-
-        ;; Update provider's allocation to mark premium as distributed
-        (map-set provider-policy-allocations {provider: provider, policy-id: policy-id} (merge allocation {premium-distributed: true}))
-
-        ;; Update the global premium balance for the token
-        (map-set premium-balances {token: token-id} { ;; Use bound token-id
-          total-premiums: (get total-premiums current-premiums),
-          distributed-premiums: (+ (get distributed-premiums current-premiums) actual-premium-to-distribute)
+    ;; Update provider's balance
+    (let (
+        (provider-key {
+          provider: tx-sender,
+          token-id: token-id,
         })
+        (current-provider-balance (default-to {
+          deposited-amount: u0,
+          allocated-amount: u0,
+          available-amount: u0,
+          earned-premiums: u0,
+          pending-premiums: u0,
+          expiration-exposure: (map),
+        }
+          (map-get? provider-balances provider-key)
+        ))
+      )
+      (map-set provider-balances provider-key {
+        deposited-amount: (+ (get deposited-amount current-provider-balance) amount),
+        allocated-amount: (get allocated-amount current-provider-balance),
+        available-amount: (+ (get available-amount current-provider-balance) amount),
+        earned-premiums: (get earned-premiums current-provider-balance),
+        pending-premiums: (get pending-premiums current-provider-balance),
+        expiration-exposure: (get expiration-exposure current-provider-balance),
+      })
+    )
+    (print {
+      event: "capital-deposited",
+      depositor: tx-sender,
+      amount: amount,
+      token: token-id,
+      risk_tier: risk-tier,
+    })
+    (ok true)
+  )
+)
 
-        ;; Transfer funds to provider
-        (if (is-eq token-id "STX") ;; Use bound token-id
-          (try! (as-contract (stx-transfer? actual-premium-to-distribute tx-sender provider)))
-          (try! (as-contract (contract-call? SBTC-TOKEN transfer actual-premium-to-distribute tx-sender provider none)))
-        )
+(define-public (withdraw-capital
+    (amount uint)
+    (token-id (string-ascii 32))
+  )
+  (let*
+    (
+      (provider tx-sender)
+      (provider-key {
+      provider: provider,
+      token-id: token-id,
+    })
+      (provider-bal (unwrap! (map-get? provider-balances provider-key) ERR-NOT_ENOUGH_BALANCE)) ;; Ensure provider exists
+      (available-to-withdraw (get available-amount provider-bal))
+      (global-bal (unwrap! (map-get? token-balances { token-id: token-id })
+      ERR-TOKEN-NOT-INITIALIZED
+    ))
+    )
+    (asserts! (is-token-supported token-id) ERR-TOKEN-NOT-INITIALIZED)
+    (asserts! (> amount u0) ERR-AMOUNT-MUST-BE-POSITIVE)
+    (asserts! (>= available-to-withdraw amount) ERR-NOT_ENOUGH_BALANCE)
+    (if (is-eq token-id STX-TOKEN-ID)
+      (try! (as-contract (stx-transfer? amount tx-sender provider)))
+      (let ((token-info (unwrap! (map-get? supported-tokens { token-id: token-id })
+          ERR-TOKEN-NOT_INITIALIZED
+        )))
+        (try! (as-contract (contract-call? (unwrap-panic (get sbtc-contract-principal token-info))
+          transfer amount tx-sender provider none
+        )))
+      )
+    )
+    (map-set provider-balances provider-key
+      (merge provider-bal {
+        deposited-amount: (- (get deposited-amount provider-bal) amount), ;; Assuming withdrawal reduces total deposit first
+        available-amount: (- available-to-withdraw amount),
+      })
+    )
+    (map-set token-balances { token-id: token-id }
+      (merge global-bal {
+        total-balance: (- (get total-balance global-bal) amount),
+        available-balance: (- (get available-balance global-bal) amount),
+      })
+    )
+    (print {
+      event: "capital-withdrawn",
+      provider: provider,
+      amount: amount,
+      token: token-id,
+    })
+    (ok true)
+  )
+)
 
-        (print { event: "provider-premium-distributed", provider: provider, policy-id: policy-id, premium-amount: actual-premium-to-distribute, token: token-id }) ;; Use bound token-id
+;; --- Liquidity and Collateral Functions (LP-109, LP-105) ---
+(define-read-only (check-liquidity
+    (required-collateral uint)
+    (token-id (string-ascii 32))
+    (risk-tier (string-ascii 32))
+    (expiration-height uint)
+  )
+  (begin
+    (asserts! (is-token-supported token-id) ERR-TOKEN-NOT_INITIALIZED)
+    (let ((global-balance (unwrap! (map-get? token-balances { token-id: token-id })
+        ERR-TOKEN-NOT_INITIALIZED
+      )))
+      ;; Phase 1: Basic check of overall available balance for the token.
+      ;; More sophisticated checks (tier-specific liquidity, concentration) will be in later phases.
+      (if (>= (get available-balance global-balance) required-collateral)
         (ok true)
+        (err ERR-INSUFFICIENT-LIQUIDITY)
       )
     )
   )
 )
 
-;; --- Integration Points ---
+;; policy-owner-principal is passed by policy-registry, it's the buyer of the policy
+(define-public (lock-collateral
+    (policy-id uint)
+    (collateral-amount uint)
+    (token-id (string-ascii 32))
+    (risk-tier (string-ascii 32))
+    (expiration-height uint)
+    (policy-owner-principal principal)
+  )
+  (begin
+    (asserts! (is-eq tx-sender (var-get policy-registry-principal))
+      ERR-POLICY-REGISTRY-ONLY
+    )
+    (asserts! (is-token-supported token-id) ERR-TOKEN-NOT_INITIALIZED)
+    (asserts! (> collateral-amount u0) ERR-AMOUNT-MUST-BE-POSITIVE)
+    (asserts! (is-valid-risk-tier risk-tier) ERR-INVALID-RISK-TIER)
+    (let ((global-bal (unwrap! (map-get? token-balances { token-id: token-id })
+        ERR-TOKEN-NOT_INITIALIZED
+      )))
+      (asserts! (>= (get available-balance global-bal) collateral-amount)
+        ERR-INSUFFICIENT-LIQUIDITY
+      )
+      ;; Phase 1 Simplification: Assume a single provider (this contract itself or a designated capital pool)
+      ;; or the first provider found with enough capacity in the given risk tier.
+      ;; For now, we will just use the contract's overall available balance for this logic.
+      ;; This will be significantly enhanced in LP-305 (Provider selection algorithm).
+      ;; We need at least one provider to associate the allocation with.
+      ;; For now, let's assume the CONTRACT-OWNER is the default provider if no specific provider logic.
+      ;; This is a major simplification for Phase 1.
+      (let ((provider-principal CONTRACT-OWNER))
+        ;; Simplified: Using contract owner as default provider for allocation tracking
+        (let (
+            (provider-key {
+              provider: provider-principal,
+              token-id: token-id,
+            })
+            (prov-bal (unwrap! (map-get? provider-balances provider-key)
+              ERR-NO_PROVIDER_FOR_TIER
+            ))
+          )
+          (asserts! (>= (get available-amount prov-bal) collateral-amount)
+            ERR-INSUFFICIENT-TIER-LIQUIDITY
+          )
+          ;; Check specific provider
+          (map-set token-balances { token-id: token-id }
+            (merge global-bal {
+              available-balance: (- (get available-balance global-bal) collateral-amount),
+              locked-balance: (+ (get locked-balance global-bal) collateral-amount),
+            })
+          )
+          (map-set provider-balances provider-key
+            (merge prov-bal {
+              allocated-amount: (+ (get allocated-amount prov-bal) collateral-amount),
+              available-amount: (- (get available-amount prov-bal) collateral-amount),
+              expiration-exposure: (map-set (get expiration-exposure prov-bal) expiration-height
+                (+
+                  (default-to u0
+                    (map-get? (get expiration-exposure prov-bal)
+                      expiration-height
+                    ))
+                  collateral-amount
+                )),
+            })
+          )
+          (map-set provider-allocations {
+            provider: provider-principal,
+            policy-id: policy-id,
+          } {
+            token-id: token-id,
+            allocated-to-policy-amount: collateral-amount,
+            risk-tier-at-allocation: risk-tier,
+            expiration-height: expiration-height,
+          })
+          (print {
+            event: "collateral-locked",
+            policy_id: policy-id,
+            provider: provider-principal,
+            amount: collateral-amount,
+            token: token-id,
+            risk_tier: risk-tier,
+            expiration_height: expiration-height,
+          })
+          (ok true)
+        )
+      )
+    )
+  )
+)
 
-;; Placeholder comment: Integration with Policy Registry
-;; - lock-collateral is typically called by the backend after a policy is successfully created in the registry.
-;; - release-collateral is called by the backend when a policy expires or is exercised (status updated in registry).
-;; - pay-settlement is called by the backend after a policy is marked as Exercised in the registry.
-;; - The policy-registry-principal variable is used for potential future cross-contract calls or checks if needed. 
+;; policy-owner-principal is passed by policy-registry
+(define-public (record-premium-payment
+    (policy-id uint)
+    (premium-amount uint)
+    (token-id (string-ascii 32))
+    (expiration-height uint)
+    (policy-owner-principal principal)
+  )
+  (begin
+    (asserts! (is-eq tx-sender (var-get policy-registry-principal))
+      ERR-POLICY-REGISTRY-ONLY
+    )
+    (asserts! (is-token-supported token-id) ERR-TOKEN-NOT_INITIALIZED)
+    (asserts! (> premium-amount u0) ERR-AMOUNT-MUST-BE-POSITIVE)
+    ;; The premium is technically paid by the policy-owner-principal to the Policy Registry, which then informs LP.
+    ;; The LP needs to account for this premium as collected. For European options, premiums typically pool and are distributed later.
+    (let ((prem-bal (unwrap! (map-get? premium-balances { token-id: token-id })
+        ERR-TOKEN-NOT_INITIALIZED
+      )))
+      (map-set premium-balances { token-id: token-id }
+        (merge prem-bal { total-premiums-collected: (+ (get total-premiums-collected prem-bal) premium-amount) })
+      )
+    )
+    ;; Note: The actual STX/sBTC for the premium should have been transferred to the Policy Registry or a holding address.
+    ;; This function in LP just records that a premium was paid for a policy it backs.
+    ;; In Phase 1, we assume the premium amount is just recorded. Actual fund flow to providers is Phase 2.
+    (print {
+      event: "premium-recorded-for-policy",
+      policy_id: policy-id,
+      policy_owner: policy-owner-principal,
+      amount: premium-amount,
+      token: token-id,
+      expiration_height: expiration-height,
+    })
+    (ok true)
+  )
+)
+
+;; --- Utility Functions (SH-103) ---
+(define-private (is-valid-risk-tier (tier (string-ascii 32)))
+  (or
+    (is-eq tier RISK-TIER-CONSERVATIVE)
+    (is-eq tier RISK-TIER-BALANCED)
+    (is-eq tier RISK-TIER-AGGRESSIVE)
+  )
+)
+
+(print { message: "European-Liquidity-Pool-Vault.clar updated for Phase 1, Step 1.5" })

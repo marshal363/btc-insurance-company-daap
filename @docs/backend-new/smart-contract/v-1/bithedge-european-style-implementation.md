@@ -15,20 +15,20 @@ The current Policy Registry contract implements American-style options with the 
 (define-map policies
   { id: uint }
   {
-    owner: principal,                       
-    counterparty: principal,               
-    protected-value: uint,                  
-    protection-amount: uint,                
-    expiration-height: uint,                
-    premium: uint,                          
-    policy-type: (string-ascii 4),          
-    position-type: (string-ascii 9),        
-    collateral-token: (string-ascii 4),     
-    protected-asset: (string-ascii 4),      
-    settlement-token: (string-ascii 4),     
+    owner: principal,
+    counterparty: principal,
+    protected-value: uint,
+    protection-amount: uint,
+    expiration-height: uint,
+    premium: uint,
+    policy-type: (string-ascii 4),
+    position-type: (string-ascii 9),
+    collateral-token: (string-ascii 4),
+    protected-asset: (string-ascii 4),
+    settlement-token: (string-ascii 4),
     status: (string-ascii 10),              ;; "Active", "Exercised", "Expired"
     creation-height: uint,
-    premium-distributed: bool               
+    premium-distributed: bool
   }
 )
 
@@ -80,6 +80,7 @@ The current Policy Registry contract implements American-style options with the 
 ```
 
 Key limitations for European-style implementation:
+
 1. Policy activation allows early exercise (American-style)
 2. No expiration-specific processing logic
 3. Limited settlement and premium distribution tracking
@@ -92,24 +93,24 @@ The current Liquidity Pool Vault implements:
 
 ```clarity
 ;; Provider allocation tracking
-(define-map provider-allocations 
-  { provider: principal, policy-id: uint } 
-  { 
-    token: (string-ascii 32), 
-    allocated-amount: uint, 
-    allocation-percentage: uint, 
-    premium-share: uint, 
-    premium-distributed: bool 
+(define-map provider-allocations
+  { provider: principal, policy-id: uint }
+  {
+    token: (string-ascii 32),
+    allocated-amount: uint,
+    allocation-percentage: uint,
+    premium-share: uint,
+    premium-distributed: bool
   }
 )
 
 ;; Settlement processing (on-demand)
-(define-public (pay-settlement 
-  (token-id (string-ascii 32)) 
-  (settlement-amount uint) 
-  (recipient principal) 
+(define-public (pay-settlement
+  (token-id (string-ascii 32))
+  (settlement-amount uint)
+  (recipient principal)
   (policy-id uint))
-  
+
   (let (
       (caller tx-sender)
       (current-balance (default-to u0 (get balance (map-get? token-balances { token: token-id }))))
@@ -124,19 +125,19 @@ The current Liquidity Pool Vault implements:
       ;; Transfer the settlement amount
       (if (is-eq token-id "STX")
           (try! (as-contract (stx-transfer? settlement-amount tx-sender recipient)))
-          (try! (as-contract (contract-call? 'SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token transfer 
+          (try! (as-contract (contract-call? 'SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token transfer
                                            settlement-amount tx-sender recipient none)))
       )
 
       ;; Update token balance
-      (map-set token-balances { token: token-id } 
+      (map-set token-balances { token: token-id }
                { balance: (- current-balance settlement-amount) })
 
       ;; Emit event
-      (print { event: "settlement-paid", 
-               policy-id: policy-id, 
-               buyer: recipient, 
-               settlement-amount: settlement-amount, 
+      (print { event: "settlement-paid",
+               policy-id: policy-id,
+               buyer: recipient,
+               settlement-amount: settlement-amount,
                token: token-id })
       (ok true)
     )
@@ -145,6 +146,7 @@ The current Liquidity Pool Vault implements:
 ```
 
 Key limitations for European-style implementation:
+
 1. No expiration-focused liquidity management
 2. Limited provider allocation tracking
 3. No settlement impact tracking
@@ -160,13 +162,13 @@ A fresh implementation approach is recommended for the following reasons:
 
 European-style options differ fundamentally from American-style options:
 
-| Aspect | American-Style (Current) | European-Style (Target) |
-|--------|--------------------------|-------------------------|
-| Exercise Timing | Any time before expiration | Only at expiration |
-| Settlement Processing | On-demand by buyer | Batch processing at expiration |
-| Liquidity Management | Continuous readiness | Expiration-focused planning |
-| Premium Distribution | After exercise or expiration | Only after expiration |
-| Verification Focus | Individual transactions | Batch correctness verification |
+| Aspect                | American-Style (Current)     | European-Style (Target)        |
+| --------------------- | ---------------------------- | ------------------------------ |
+| Exercise Timing       | Any time before expiration   | Only at expiration             |
+| Settlement Processing | On-demand by buyer           | Batch processing at expiration |
+| Liquidity Management  | Continuous readiness         | Expiration-focused planning    |
+| Premium Distribution  | After exercise or expiration | Only after expiration          |
+| Verification Focus    | Individual transactions      | Batch correctness verification |
 
 These differences affect the core architecture of both contracts, making modification more complex than fresh implementation.
 
@@ -175,6 +177,7 @@ These differences affect the core architecture of both contracts, making modific
 European-style options require numerous new data structures:
 
 1. **Expiration-focused indexing**:
+
    ```clarity
    (define-map policies-by-expiration-height
      { height: uint }
@@ -183,6 +186,7 @@ European-style options require numerous new data structures:
    ```
 
 2. **Settlement tracking**:
+
    ```clarity
    (define-map policy-settlements
      { policy-id: uint }
@@ -196,6 +200,7 @@ European-style options require numerous new data structures:
    ```
 
 3. **Provider expiration exposure**:
+
    ```clarity
    (define-map provider-expiration-exposure
      { provider: principal, expiration-height: uint }
@@ -231,7 +236,7 @@ European-style options rely heavily on batch processing at expiration:
 (define-public (process-expiration-batch
   (block-height: uint)
   (expiration-price: uint))
-  
+
   (let
     ((policies (get-policies-by-expiration-height block-height)))
     ;; Process each policy expiring at this height
@@ -287,7 +292,7 @@ These verification mechanisms represent substantial additions to the current con
     protected-value: uint,                  ;; Strike price in base units
     protection-amount: uint,                ;; Amount being protected
     expiration-height: uint,                ;; Block height when policy expires
-    premium: uint,                          ;; Premium amount paid
+    premium: uint,                          ;; Premium amount paid (submitted, verified on-chain)
     policy-type: (string-ascii 4),          ;; "PUT" or "CALL"
     position-type: (string-ascii 9),        ;; "LONG_PUT" or "LONG_CALL"
     counterparty-position-type: (string-ascii 9), ;; "SHORT_PUT" or "SHORT_CALL"
@@ -357,23 +362,23 @@ These verification mechanisms represent substantial additions to the current con
   (protection-amount uint)
   (expiration-height uint)
   (policy-type (string-ascii 4))
-  (risk-tier (string-ascii 32)))
+  (risk-tier (string-ascii 32))
+  (submitted-premium uint)) ;; Premium calculated off-chain
 
   (let
     (
       (policy-id (var-get policy-id-counter))
       (next-id (+ policy-id u1))
-      (owner-position-type (if (is-eq policy-type POLICY-TYPE-PUT) 
-                              POSITION-LONG-PUT 
+      (owner-position-type (if (is-eq policy-type POLICY-TYPE-PUT)
+                              POSITION-LONG-PUT
                               POSITION-LONG-CALL))
-      (counterparty-position-type (if (is-eq policy-type POLICY-TYPE-PUT) 
-                                    POSITION-SHORT-PUT 
+      (counterparty-position-type (if (is-eq policy-type POLICY-TYPE-PUT)
+                                    POSITION-SHORT-PUT
                                     POSITION-SHORT-CALL))
       (collateral-token (if (is-eq policy-type POLICY-TYPE-PUT) TOKEN-STX TOKEN-SBTC))
       (settlement-token (if (is-eq policy-type POLICY-TYPE-PUT) TOKEN-STX TOKEN-SBTC))
       (protected-asset ASSET-BTC)
       (required-collateral (calculate-required-collateral protected-value protection-amount policy-type))
-      (premium (calculate-premium protected-value protection-amount expiration-height policy-type risk-tier))
     )
     (begin
       ;; Basic validation
@@ -382,23 +387,33 @@ These verification mechanisms represent substantial additions to the current con
       (asserts! (> protected-value u0) ERR-ZERO-PROTECTED-VALUE)
       (asserts! (> protection-amount u0) ERR-ZERO-PROTECTION-AMOUNT)
       (asserts! (> expiration-height burn-block-height) ERR-EXPIRATION-IN-PAST)
-      
-      ;; NEW: Check Liquidity Pool for available collateral BEFORE accepting premium
-      (asserts! 
-        (contract-call? .european-liquidity-pool-vault check-liquidity 
-                       required-collateral collateral-token risk-tier expiration-height)
+      (asserts! (> submitted-premium u0) ERR-ZERO-PREMIUM) ;; Ensure submitted premium is positive
+
+      ;; NEW: Verify the submitted premium (call to Math Library or specific verification function)
+      (try! (contract-call? .math-library verify-premium
+                             submitted-premium
+                             protected-value
+                             protection-amount
+                             expiration-height
+                             policy-type
+                             risk-tier))
+
+      ;; Check Liquidity Pool for available collateral BEFORE accepting premium
+      (asserts!
+        (unwrap! (contract-call? .european-liquidity-pool-vault check-liquidity
+                       required-collateral collateral-token risk-tier expiration-height) ERR-LIQUIDITY-CHECK-FAILED)
         ERR-INSUFFICIENT-LIQUIDITY)
-      
-      ;; Collect premium from buyer
-      (try! (stx-transfer? premium tx-sender (as-contract tx-sender)))
-      
+
+      ;; Collect premium from buyer (tx-sender is assumed to be the buyer or an agent)
+      (try! (stx-transfer? submitted-premium tx-sender (as-contract tx-sender)))
+
       ;; Lock collateral in Liquidity Pool
       (try! (contract-call? .european-liquidity-pool-vault lock-collateral
                           policy-id required-collateral collateral-token risk-tier expiration-height))
-      
+
       ;; Record premium payment in Liquidity Pool
       (try! (contract-call? .european-liquidity-pool-vault record-premium-payment
-                          policy-id premium collateral-token expiration-height))
+                          policy-id submitted-premium collateral-token expiration-height))
 
       ;; Insert the policy entry
       (map-set policies
@@ -409,7 +424,7 @@ These verification mechanisms represent substantial additions to the current con
           protected-value: protected-value,
           protection-amount: protection-amount,
           expiration-height: expiration-height,
-          premium: premium,
+          premium: submitted-premium, ;; Use the verified submitted premium
           policy-type: policy-type,
           position-type: owner-position-type,
           counterparty-position-type: counterparty-position-type,
@@ -448,7 +463,7 @@ These verification mechanisms represent substantial additions to the current con
       )
 
       ;; Update counterparty index
-      (match (map-get? policies-by-counterparty 
+      (match (map-get? policies-by-counterparty
                      { counterparty: (contract-of .european-liquidity-pool-vault) })
         existing-entry
         (let
@@ -468,7 +483,7 @@ These verification mechanisms represent substantial additions to the current con
           { policy-ids: (list policy-id) }
         )
       )
-      
+
       ;; NEW: Update expiration index
       (match (map-get? policies-by-expiration-height { height: expiration-height })
         existing-entry
@@ -508,7 +523,7 @@ These verification mechanisms represent substantial additions to the current con
         collateral-token: collateral-token,
         settlement-token: settlement-token,
         protected-asset: protected-asset,
-        premium: premium,
+        premium: submitted-premium, ;; Use submitted premium in event
         risk-tier: risk-tier
       })
 
@@ -525,7 +540,7 @@ These verification mechanisms represent substantial additions to the current con
 (define-public (process-expiration-and-settlement
   (policy-id uint)
   (expiration-price uint))
-  
+
   (let
     (
       (policy (unwrap! (map-get? policies { id: policy-id }) ERR-NOT-FOUND))
@@ -534,11 +549,11 @@ These verification mechanisms represent substantial additions to the current con
     (begin
       ;; Verify caller is authorized
       (asserts! (is-eq tx-sender (var-get backend-authorized-principal)) ERR-UNAUTHORIZED)
-      
+
       ;; Verify policy is active and has reached expiration
       (asserts! (is-eq previous-status STATUS-ACTIVE) ERR-NOT-ACTIVE)
       (asserts! (>= burn-block-height (get expiration-height policy)) ERR-NOT-YET-EXPIRED)
-      
+
       ;; Determine if in-the-money (settlement needed) or out-of-the-money (premium distribution)
       (if (is-policy-in-the-money policy-id expiration-price)
           ;; In-the-money: Process settlement
@@ -553,7 +568,7 @@ These verification mechanisms represent substantial additions to the current con
 (define-private (is-policy-in-the-money
   (policy-id uint)
   (expiration-price uint))
-  
+
   (let
     ((policy (unwrap! (map-get? policies { id: policy-id }) ERR-NOT-FOUND)))
     (if (is-eq (get policy-type policy) POLICY-TYPE-PUT)
@@ -568,11 +583,11 @@ These verification mechanisms represent substantial additions to the current con
 (define-private (process-settlement-at-expiration
   (policy-id uint)
   (expiration-price uint))
-  
+
   (let
     (
       (policy (unwrap! (map-get? policies { id: policy-id }) ERR-NOT-FOUND))
-      (settlement-amount (calculate-settlement-amount 
+      (settlement-amount (calculate-settlement-amount
                            (get policy-type policy)
                            (get protected-value policy)
                            expiration-price
@@ -582,19 +597,19 @@ These verification mechanisms represent substantial additions to the current con
       ;; Update policy status to Settled
       (map-set policies
         { id: policy-id }
-        (merge policy 
+        (merge policy
               { status: STATUS-SETTLED,
                 settlement-price: expiration-price,
                 settlement-amount: settlement-amount,
                 is-settled: true }))
-      
+
       ;; Process settlement through Liquidity Pool
       (try! (contract-call? .european-liquidity-pool-vault process-settlement-at-expiration
                           policy-id
                           (get owner policy)
                           settlement-amount
                           (get settlement-token policy)))
-      
+
       ;; Record settlement details
       (map-set policy-settlements
                { policy-id: policy-id }
@@ -602,7 +617,7 @@ These verification mechanisms represent substantial additions to the current con
                  settlement-amount: settlement-amount,
                  settlement-height: burn-block-height,
                  settlement-timestamp: burn-block-height })
-      
+
       ;; Emit settlement event
       (print {
         event: "policy-settled-at-expiration",
@@ -613,7 +628,7 @@ These verification mechanisms represent substantial additions to the current con
         counterparty: (get counterparty policy),
         block-height: burn-block-height
       })
-      
+
       (ok { status: "settled", settlement-amount: settlement-amount })
     )
   )
@@ -622,21 +637,21 @@ These verification mechanisms represent substantial additions to the current con
 ;; Prepare premium distribution for out-of-the-money policy
 (define-private (prepare-premium-distribution
   (policy-id uint))
-  
+
   (let
     ((policy (unwrap! (map-get? policies { id: policy-id }) ERR-NOT-FOUND)))
     (begin
       ;; Update policy status to Expired
       (map-set policies
         { id: policy-id }
-        (merge policy 
+        (merge policy
               { status: STATUS-EXPIRED }))
-      
+
       ;; Add to premium distribution queue
       (map-set pending-premium-distributions
                { policy-id: policy-id }
                { ready-for-distribution: true })
-      
+
       ;; Emit expiration event
       (print {
         event: "policy-expired-at-expiration",
@@ -646,7 +661,7 @@ These verification mechanisms represent substantial additions to the current con
         counterparty: (get counterparty policy),
         block-height: burn-block-height
       })
-      
+
       (ok { status: "expired" })
     )
   )
@@ -656,15 +671,15 @@ These verification mechanisms represent substantial additions to the current con
 (define-public (process-expiration-batch
   (block-height uint)
   (expiration-price uint))
-  
+
   (let
-    ((expiring-policies (unwrap! (map-get? policies-by-expiration-height 
+    ((expiring-policies (unwrap! (map-get? policies-by-expiration-height
                                          { height: block-height })
                                (ok { policy-ids: (list) }))))
     (fold process-policy-at-expiration
           (get policy-ids expiring-policies)
-          { processed-count: u0, 
-            settled-count: u0, 
+          { processed-count: u0,
+            settled-count: u0,
             expired-count: u0 })
   )
 )
@@ -673,20 +688,20 @@ These verification mechanisms represent substantial additions to the current con
 (define-private (process-policy-at-expiration
   (policy-id uint)
   (result { processed-count: uint, settled-count: uint, expired-count: uint }))
-  
+
   (match (process-expiration-and-settlement policy-id expiration-price)
     settlement-result
       (if (is-policy-in-the-money policy-id expiration-price)
           ;; Policy was settled
-          (merge result 
+          (merge result
                 { processed-count: (+ (get processed-count result) u1),
                   settled-count: (+ (get settled-count result) u1) })
           ;; Policy was expired
-          (merge result 
+          (merge result
                 { processed-count: (+ (get processed-count result) u1),
                   expired-count: (+ (get expired-count result) u1) }))
     ;; Error case - just increment processed count
-    (merge result 
+    (merge result
           { processed-count: (+ (get processed-count result) u1) })
   )
 )
@@ -698,37 +713,37 @@ These verification mechanisms represent substantial additions to the current con
 ;; Distribute premium for expired policy
 (define-public (distribute-premium
   (policy-id uint))
-  
+
   (let
     (
       (policy (unwrap! (map-get? policies { id: policy-id }) ERR-NOT-FOUND))
-      (is-ready (unwrap! (map-get? pending-premium-distributions 
+      (is-ready (unwrap! (map-get? pending-premium-distributions
                                   { policy-id: policy-id })
                         ERR-NOT-FOUND))
     )
     (begin
       ;; Verify caller is authorized
       (asserts! (is-eq tx-sender (var-get backend-authorized-principal)) ERR-UNAUTHORIZED)
-      
+
       ;; Verify policy is expired and premium not yet distributed
       (asserts! (is-eq (get status policy) STATUS-EXPIRED) ERR-NOT-EXPIRED)
       (asserts! (not (get premium-distributed policy)) ERR-PREMIUM-ALREADY-DISTRIBUTED)
       (asserts! (get ready-for-distribution is-ready) ERR-NOT-READY)
-      
+
       ;; Distribute premium to counterparty (Liquidity Pool)
       (try! (contract-call? .european-liquidity-pool-vault distribute-premium-to-providers
                           policy-id
                           (get premium policy)
                           (get collateral-token policy)))
-      
+
       ;; Mark premium as distributed
       (map-set policies
         { id: policy-id }
         (merge policy { premium-distributed: true }))
-      
+
       ;; Remove from distribution queue
       (map-delete pending-premium-distributions { policy-id: policy-id })
-      
+
       ;; Emit premium distribution event
       (print {
         event: "premium-distributed",
@@ -737,7 +752,7 @@ These verification mechanisms represent substantial additions to the current con
         counterparty: (get counterparty policy),
         block-height: burn-block-height
       })
-      
+
       (ok { premium-distributed: true })
     )
   )
@@ -746,7 +761,7 @@ These verification mechanisms represent substantial additions to the current con
 ;; Batch distribute premiums
 (define-public (distribute-premium-batch
   (policy-ids (list 50 uint)))
-  
+
   (fold distribute-premium-fold
         policy-ids
         { distributed-count: u0, failed-count: u0 })
@@ -756,13 +771,13 @@ These verification mechanisms represent substantial additions to the current con
 (define-private (distribute-premium-fold
   (policy-id uint)
   (result { distributed-count: uint, failed-count: uint }))
-  
+
   (match (distribute-premium policy-id)
     success
-      (merge result 
+      (merge result
             { distributed-count: (+ (get distributed-count result) u1) })
     error
-      (merge result 
+      (merge result
             { failed-count: (+ (get failed-count result) u1) })
   )
 )
@@ -774,14 +789,14 @@ These verification mechanisms represent substantial additions to the current con
 ;; Get policies expiring at a specific block height
 (define-read-only (get-policies-by-expiration-height
   (height uint))
-  
+
   (map-get? policies-by-expiration-height { height: height })
 )
 
 ;; Check if policy is ready for premium distribution
 (define-read-only (is-ready-for-premium-distribution
   (policy-id uint))
-  
+
   (match (map-get? pending-premium-distributions { policy-id: policy-id })
     distribution-status (get ready-for-distribution distribution-status)
     false)
@@ -790,7 +805,7 @@ These verification mechanisms represent substantial additions to the current con
 ;; Get settlement details for a policy
 (define-read-only (get-settlement-details
   (policy-id uint))
-  
+
   (map-get? policy-settlements { policy-id: policy-id })
 )
 
@@ -800,7 +815,7 @@ These verification mechanisms represent substantial additions to the current con
   (protected-value uint)
   (expiration-price uint)
   (protection-amount uint))
-  
+
   (if (is-eq policy-type POLICY-TYPE-PUT)
       ;; For PUT: (strike - price) * amount / strike
       (if (>= expiration-price protected-value)
@@ -813,15 +828,48 @@ These verification mechanisms represent substantial additions to the current con
   )
 )
 
+;; NEW: Example structure for a premium verification function (likely in Math Library)
+;; This is a placeholder and needs to be defined based on actual verification logic.
+(define-read-only (verify-premium
+  (submitted-premium uint)
+  (protected-value uint)
+  (protection-amount uint)
+  (expiration-height uint)
+  (policy-type (string-ascii 4))
+  (risk-tier (string-ascii 32)))
+  (begin
+    ;; Example: Basic sanity check - premium should not be excessively large or small.
+    ;; More sophisticated checks would involve parameters from BitHedgeParametersContract
+    ;; and potentially simplified calculations or range checks based on inputs.
+    (asserts! (is-ok (check-premium-bounds submitted-premium protected-value expiration-height risk-tier)) ERR-PREMIUM-OUT-OF-BOUNDS)
+    ;; If all checks pass:
+    (ok true)
+  )
+)
+
+(define-private (check-premium-bounds
+  (premium uint)
+  (value uint)
+  (expiry uint)
+  (tier (string-ascii 32)))
+  ;; Placeholder for actual bounds checking logic.
+  ;; This would likely involve parameters for min/max acceptable premium ratios or ranges.
+  ;; For example, premium should be > 0.01% of value and < 50% of value (highly simplified).
+  (if (and (> premium (/ value u10000)) (< premium (/ value u2)))
+      (ok true)
+      (err ERR-PREMIUM-OUT-OF-BOUNDS)
+  )
+)
+
 ;; Get theoretical value of a policy at current price
 ;; Note: This is for UI display only, not for settlement
 (define-read-only (get-theoretical-value
   (policy-id uint)
   (current-price uint))
-  
+
   (let
     ((policy (unwrap! (map-get? policies { id: policy-id }) (ok u0))))
-    
+
     ;; Only calculate theoretical value for active policies
     (if (not (is-eq (get status policy) STATUS-ACTIVE))
         (ok u0)
@@ -842,7 +890,7 @@ These verification mechanisms represent substantial additions to the current con
 ;; Token balance tracking
 (define-map token-balances
   { token: (string-ascii 32) }
-  { 
+  {
     balance: uint,              ;; Total balance of token in vault
     availableBalance: uint,     ;; Available balance (not locked)
     lockedBalance: uint         ;; Locked balance (allocated to policies)
@@ -891,7 +939,7 @@ These verification mechanisms represent substantial additions to the current con
 (define-map settlement-impacts
   { policy-id: uint, provider: principal }
   {
-    originalAllocation: uint,     ;; Provider's original allocation 
+    originalAllocation: uint,     ;; Provider's original allocation
     settlementContribution: uint, ;; Provider's contribution to settlement
     remainingAllocation: uint,    ;; Remaining allocation after settlement
     settlementPercentage: uint,   ;; Percentage of provider's allocation used
@@ -951,38 +999,38 @@ These verification mechanisms represent substantial additions to the current con
   (amount uint)
   (token-id (string-ascii 32))
   (risk-tier (string-ascii 32)))
-  
+
   (begin
     (asserts! (> amount u0) ERR-AMOUNT-MUST-BE-POSITIVE)
     (asserts! (is-token-supported token-id) ERR-TOKEN-NOT-INITIALIZED)
     (asserts! (is-valid-risk-tier risk-tier) ERR-INVALID-RISK-TIER)
-    
+
     ;; Transfer tokens from user to contract
     (if (is-eq token-id "STX")
         (try! (stx-transfer? amount tx-sender (as-contract tx-sender)))
-        (try! (contract-call? 'SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token transfer 
+        (try! (contract-call? 'SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token transfer
                             amount tx-sender (as-contract tx-sender) none))
     )
-    
+
     ;; Update global token balance
     (let ((current-balance (default-to { balance: u0, availableBalance: u0, lockedBalance: u0 }
                                     (map-get? token-balances { token: token-id }))))
-      (map-set token-balances 
+      (map-set token-balances
               { token: token-id }
               { balance: (+ (get balance current-balance) amount),
                 availableBalance: (+ (get availableBalance current-balance) amount),
                 lockedBalance: (get lockedBalance current-balance) })
     )
-    
+
     ;; Update provider's balance
-    (let ((provider-balance (default-to 
-                            { depositedAmount: u0, 
-                              allocatedAmount: u0, 
-                              availableAmount: u0, 
-                              earnedPremiums: u0, 
+    (let ((provider-balance (default-to
+                            { depositedAmount: u0,
+                              allocatedAmount: u0,
+                              availableAmount: u0,
+                              earnedPremiums: u0,
                               pendingPremiums: u0,
                               expirationExposure: (map-new) }
-                            (map-get? provider-balances 
+                            (map-get? provider-balances
                                     { provider: tx-sender, token: token-id }))))
       (map-set provider-balances
                { provider: tx-sender, token: token-id }
@@ -993,7 +1041,7 @@ These verification mechanisms represent substantial additions to the current con
                  pendingPremiums: (get pendingPremiums provider-balance),
                  expirationExposure: (get expirationExposure provider-balance) })
     )
-    
+
     ;; Emit deposit event
     (print {
       event: "funds-deposited",
@@ -1003,7 +1051,7 @@ These verification mechanisms represent substantial additions to the current con
       risk-tier: risk-tier,
       timestamp: burn-block-height
     })
-    
+
     (ok { success: true })
   )
 )
@@ -1012,9 +1060,9 @@ These verification mechanisms represent substantial additions to the current con
 (define-public (withdraw-capital
   (amount uint)
   (token-id (string-ascii 32)))
-  
+
   (let (
-      (provider-balance (unwrap! (map-get? provider-balances 
+      (provider-balance (unwrap! (map-get? provider-balances
                                          { provider: tx-sender, token: token-id })
                                ERR-NOT-FOUND))
       (available-amount (get availableAmount provider-balance))
@@ -1023,24 +1071,24 @@ These verification mechanisms represent substantial additions to the current con
       (asserts! (> amount u0) ERR-AMOUNT-MUST-BE-POSITIVE)
       (asserts! (is-token-supported token-id) ERR-TOKEN-NOT-INITIALIZED)
       (asserts! (>= available-amount amount) ERR-NOT-ENOUGH-BALANCE)
-      
+
       ;; Transfer tokens from contract to user
       (if (is-eq token-id "STX")
           (try! (as-contract (stx-transfer? amount tx-sender tx-sender)))
-          (try! (as-contract (contract-call? 'SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token transfer 
+          (try! (as-contract (contract-call? 'SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token transfer
                                            amount tx-sender tx-sender none)))
       )
-      
+
       ;; Update global token balance
       (let ((current-balance (unwrap! (map-get? token-balances { token: token-id })
                                     ERR-NOT-FOUND)))
-        (map-set token-balances 
+        (map-set token-balances
                 { token: token-id }
                 { balance: (- (get balance current-balance) amount),
                   availableBalance: (- (get availableBalance current-balance) amount),
                   lockedBalance: (get lockedBalance current-balance) })
       )
-      
+
       ;; Update provider's balance
       (map-set provider-balances
                { provider: tx-sender, token: token-id }
@@ -1050,7 +1098,7 @@ These verification mechanisms represent substantial additions to the current con
                  earnedPremiums: (get earnedPremiums provider-balance),
                  pendingPremiums: (get pendingPremiums provider-balance),
                  expirationExposure: (get expirationExposure provider-balance) })
-      
+
       ;; Emit withdrawal event
       (print {
         event: "funds-withdrawn",
@@ -1059,7 +1107,7 @@ These verification mechanisms represent substantial additions to the current con
         token: token-id,
         timestamp: burn-block-height
       })
-      
+
       (ok { success: true })
     )
   )
@@ -1075,18 +1123,18 @@ These verification mechanisms represent substantial additions to the current con
   (token-id (string-ascii 32))
   (risk-tier (string-ascii 32))
   (expiration-height uint))
-  
+
   (let (
-      (current-balance (default-to 
+      (current-balance (default-to
                        { balance: u0, availableBalance: u0, lockedBalance: u0 }
                        (map-get? token-balances { token: token-id })))
       (available-balance (get availableBalance current-balance))
-      (expiration-needs (default-to 
-                        { totalCollateralRequired: u0, 
-                          maxPotentialSettlement: u0, 
-                          policiesExpiring: u0, 
+      (expiration-needs (default-to
+                        { totalCollateralRequired: u0,
+                          maxPotentialSettlement: u0,
+                          policiesExpiring: u0,
                           isLiquidityPrepared: false }
-                        (map-get? expiration-liquidity-needs 
+                        (map-get? expiration-liquidity-needs
                                  { height: expiration-height })))
       (tier-params (unwrap! (map-get? risk-tier-parameters { tier: risk-tier })
                           ERR-INVALID-RISK-TIER))
@@ -1094,19 +1142,19 @@ These verification mechanisms represent substantial additions to the current con
     (begin
       ;; Check token support
       (asserts! (is-token-supported token-id) ERR-TOKEN-NOT-INITIALIZED)
-      
+
       ;; Check if sufficient total liquidity exists
       (asserts! (>= available-balance amount) ERR-INSUFFICIENT-LIQUIDITY)
-      
+
       ;; Check if sufficient liquidity exists in the requested risk tier
-      (asserts! (has-sufficient-tier-liquidity amount token-id risk-tier) 
+      (asserts! (has-sufficient-tier-liquidity amount token-id risk-tier)
               ERR-INSUFFICIENT-TIER-LIQUIDITY)
-      
+
       ;; Check if there's no excessive concentration at the expiration height
       (asserts! (< (+ (get totalCollateralRequired expiration-needs) amount)
                  (* available-balance (get maxExposurePercentage tier-params) u100))
               ERR-EXCESSIVE-EXPIRATION-CONCENTRATION)
-      
+
       (ok true)
     )
   )
@@ -1119,16 +1167,16 @@ These verification mechanisms represent substantial additions to the current con
   (token-id (string-ascii 32))
   (risk-tier (string-ascii 32))
   (expiration-height uint))
-  
+
   (let (
       (current-balance (unwrap! (map-get? token-balances { token: token-id })
                                ERR-NOT-FOUND))
-      (expiration-needs (default-to 
-                        { totalCollateralRequired: u0, 
-                          maxPotentialSettlement: u0, 
-                          policiesExpiring: u0, 
+      (expiration-needs (default-to
+                        { totalCollateralRequired: u0,
+                          maxPotentialSettlement: u0,
+                          policiesExpiring: u0,
                           isLiquidityPrepared: false }
-                        (map-get? expiration-liquidity-needs 
+                        (map-get? expiration-liquidity-needs
                                  { height: expiration-height })))
     )
     (begin
@@ -1136,29 +1184,29 @@ These verification mechanisms represent substantial additions to the current con
       (asserts! (is-eq tx-sender (var-get policy-registry-principal)) ERR-UNAUTHORIZED)
       (asserts! (> amount u0) ERR-AMOUNT-MUST-BE-POSITIVE)
       (asserts! (is-token-supported token-id) ERR-TOKEN-NOT-INITIALIZED)
-      
+
       ;; Verify sufficient liquidity is available
-      (asserts! (>= (get availableBalance current-balance) amount) 
+      (asserts! (>= (get availableBalance current-balance) amount)
                ERR-INSUFFICIENT-LIQUIDITY)
-      
+
       ;; Update global token balance locking
-      (map-set token-balances 
+      (map-set token-balances
               { token: token-id }
               { balance: (get balance current-balance),
                 availableBalance: (- (get availableBalance current-balance) amount),
                 lockedBalance: (+ (get lockedBalance current-balance) amount) })
-      
+
       ;; Update expiration-specific tracking
-      (map-set expiration-liquidity-needs 
+      (map-set expiration-liquidity-needs
               { height: expiration-height }
               { totalCollateralRequired: (+ (get totalCollateralRequired expiration-needs) amount),
                 maxPotentialSettlement: (+ (get maxPotentialSettlement expiration-needs) amount),
                 policiesExpiring: (+ (get policiesExpiring expiration-needs) u1),
                 isLiquidityPrepared: (get isLiquidityPrepared expiration-needs) })
-      
+
       ;; Allocate provider capital to this policy
       (allocate-provider-capital policy-id amount token-id risk-tier expiration-height)
-      
+
       ;; Emit collateral locked event
       (print {
         event: "collateral-locked",
@@ -1168,7 +1216,7 @@ These verification mechanisms represent substantial additions to the current con
         expiration-height: expiration-height,
         timestamp: burn-block-height
       })
-      
+
       (ok { success: true })
     )
   )
@@ -1181,7 +1229,7 @@ These verification mechanisms represent substantial additions to the current con
   (token-id (string-ascii 32))
   (risk-tier (string-ascii 32))
   (expiration-height uint))
-  
+
   (let (
       (providers (select-providers-for-allocation amount token-id risk-tier))
       (selected-providers (get providers providers))
@@ -1190,10 +1238,10 @@ These verification mechanisms represent substantial additions to the current con
     (begin
       ;; Allocate to each selected provider
       (map allocate-to-provider (zip selected-providers allocated-amounts))
-      
+
       ;; Verify total allocation equals requested amount
       (verify-allocation-sum policy-id amount)
-      
+
       { success: true }
     )
   )
@@ -1202,12 +1250,12 @@ These verification mechanisms represent substantial additions to the current con
 ;; Helper function to allocate to a specific provider
 (define-private (allocate-to-provider
   (provider-allocation (tuple (provider principal) (amount uint))))
-  
+
   (let (
       (provider (get provider provider-allocation))
       (amount (get amount provider-allocation))
       (percentage (calculate-percentage amount total-allocation))
-      (provider-balance (unwrap! (map-get? provider-balances 
+      (provider-balance (unwrap! (map-get? provider-balances
                                           { provider: provider, token: token-id })
                                 ERR-NOT-FOUND))
     )
@@ -1221,7 +1269,7 @@ These verification mechanisms represent substantial additions to the current con
                  earnedPremiums: (get earnedPremiums provider-balance),
                  pendingPremiums: (get pendingPremiums provider-balance),
                  expirationExposure: (get expirationExposure provider-balance) })
-      
+
       ;; Record allocation
       (map-set provider-allocations
                { provider: provider, policy-id: policy-id }
@@ -1233,11 +1281,11 @@ These verification mechanisms represent substantial additions to the current con
                  riskTier: risk-tier,
                  allocationTimestamp: burn-block-height,
                  premiumDistributed: false })
-      
+
       ;; Update provider's expiration exposure
-      (update-provider-expiration-exposure 
+      (update-provider-expiration-exposure
         provider expiration-height amount true)
-      
+
       ;; Emit allocation event
       (print {
         event: "provider-allocated",
@@ -1264,40 +1312,40 @@ These verification mechanisms represent substantial additions to the current con
   (recipient principal)
   (settlement-amount uint)
   (token-id (string-ascii 32)))
-  
+
   (begin
     ;; Verify caller is the policy registry
     (asserts! (is-eq tx-sender (var-get policy-registry-principal)) ERR-UNAUTHORIZED)
     (asserts! (> settlement-amount u0) ERR-AMOUNT-MUST-BE-POSITIVE)
     (asserts! (is-token-supported token-id) ERR-TOKEN-NOT-INITIALIZED)
-    
+
     ;; Get total pool balance
     (let ((current-balance (unwrap! (map-get? token-balances { token: token-id })
                                   ERR-NOT-FOUND)))
       ;; Ensure sufficient balance for settlement
-      (asserts! (>= (get balance current-balance) settlement-amount) 
+      (asserts! (>= (get balance current-balance) settlement-amount)
                ERR-NOT-ENOUGH-BALANCE)
-      
+
       ;; Transfer settlement amount to recipient
       (if (is-eq token-id "STX")
           (try! (as-contract (stx-transfer? settlement-amount tx-sender recipient)))
-          (try! (as-contract (contract-call? 'SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token transfer 
+          (try! (as-contract (contract-call? 'SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token transfer
                                           settlement-amount tx-sender recipient none)))
       )
-      
+
       ;; Update global token balance
-      (map-set token-balances 
+      (map-set token-balances
               { token: token-id }
               { balance: (- (get balance current-balance) settlement-amount),
                 availableBalance: (get availableBalance current-balance),
                 lockedBalance: (- (get lockedBalance current-balance) settlement-amount) })
-      
+
       ;; Calculate and record each provider's settlement contribution
       (distribute-settlement-impact policy-id settlement-amount token-id)
-      
+
       ;; Release remaining collateral
       (release-remaining-collateral policy-id token-id)
-      
+
       ;; Emit settlement event
       (print {
         event: "settlement-at-expiration",
@@ -1307,7 +1355,7 @@ These verification mechanisms represent substantial additions to the current con
         token: token-id,
         timestamp: burn-block-height
       })
-      
+
       (ok { success: true })
     )
   )
@@ -1318,35 +1366,35 @@ These verification mechanisms represent substantial additions to the current con
   (policy-id uint)
   (total-settlement uint)
   (token-id (string-ascii 32)))
-  
+
   (let ((allocations (get-policy-allocations policy-id)))
     (begin
-      (map 
+      (map
         (lambda (allocation)
           (let ((provider (get provider allocation))
                 (allocation-percentage (get allocationPercentage allocation))
                 (provider-settlement (/ (* total-settlement allocation-percentage) u100)))
-            
+
             ;; Record provider's settlement contribution
             (map-set settlement-impacts
                     { policy-id: policy-id, provider: provider }
                     { originalAllocation: (get allocatedAmount allocation),
                       settlementContribution: provider-settlement,
                       remainingAllocation: (- (get allocatedAmount allocation) provider-settlement),
-                      settlementPercentage: (/ (* provider-settlement u100) 
+                      settlementPercentage: (/ (* provider-settlement u100)
                                               (get allocatedAmount allocation)),
                       settlementTimestamp: burn-block-height })
-            
+
             ;; Update provider's balance
-            (update-provider-balance 
+            (update-provider-balance
               provider provider-settlement token-id "settle")
           ))
         allocations
       )
-      
+
       ;; Verify settlement distribution
       (verify-settlement-sum policy-id total-settlement)
-      
+
       { success: true }
     )
   )
@@ -1356,7 +1404,7 @@ These verification mechanisms represent substantial additions to the current con
 (define-private (release-remaining-collateral
   (policy-id uint)
   (token-id (string-ascii 32)))
-  
+
   (let ((allocations (get-policy-allocations policy-id))
         (settlement-impacts (get-settlement-impacts policy-id)))
     (begin
@@ -1364,7 +1412,7 @@ These verification mechanisms represent substantial additions to the current con
       (let ((total-allocated (fold sum-allocations allocations u0))
             (total-settled (fold sum-settlements settlement-impacts u0))
             (remaining-collateral (- total-allocated total-settled)))
-        
+
         ;; Update global token balances
         (let ((current-balance (unwrap! (map-get? token-balances { token: token-id })
                                       ERR-NOT-FOUND)))
@@ -1374,24 +1422,24 @@ These verification mechanisms represent substantial additions to the current con
                     availableBalance: (+ (get availableBalance current-balance) remaining-collateral),
                     lockedBalance: (- (get lockedBalance current-balance) remaining-collateral) })
         )
-        
+
         ;; Update each provider's available balance
-        (map 
+        (map
           (lambda (allocation)
             (let ((provider (get provider allocation))
-                  (impact (unwrap! (map-get? settlement-impacts 
+                  (impact (unwrap! (map-get? settlement-impacts
                                           { policy-id: policy-id, provider: provider })
                                  (default-settlement-impact))))
               ;; Update provider's available balance with remaining allocation
-              (update-provider-balance 
-                provider 
-                (get remainingAllocation impact) 
-                token-id 
+              (update-provider-balance
+                provider
+                (get remainingAllocation impact)
+                token-id
                 "release")
             ))
           allocations
         )
-        
+
         ;; Emit event
         (print {
           event: "remaining-collateral-released",
@@ -1400,7 +1448,7 @@ These verification mechanisms represent substantial additions to the current con
           token: token-id,
           timestamp: burn-block-height
         })
-        
+
         { released-amount: remaining-collateral }
       )
     )
@@ -1417,23 +1465,23 @@ These verification mechanisms represent substantial additions to the current con
   (premium uint)
   (token-id (string-ascii 32))
   (expiration-height uint))
-  
+
   (begin
     ;; Verify caller is the policy registry
     (asserts! (is-eq tx-sender (var-get policy-registry-principal)) ERR-UNAUTHORIZED)
     (asserts! (> premium u0) ERR-AMOUNT-MUST-BE-POSITIVE)
     (asserts! (is-token-supported token-id) ERR-TOKEN-NOT-INITIALIZED)
-    
+
     ;; Update premium accounting
     (let ((current-premiums (default-to
                             { totalPremiums: u0, distributedPremiums: u0 }
                             (map-get? premium-balances { token: token-id }))))
-      (map-set premium-balances 
+      (map-set premium-balances
               { token: token-id }
               { totalPremiums: (+ (get totalPremiums current-premiums) premium),
                 distributedPremiums: (get distributedPremiums current-premiums) })
     )
-    
+
     ;; Emit premium recording event
     (print {
       event: "premium-recorded",
@@ -1443,7 +1491,7 @@ These verification mechanisms represent substantial additions to the current con
       expiration-height: expiration-height,
       timestamp: burn-block-height
     })
-    
+
     (ok { success: true })
   )
 )
@@ -1453,21 +1501,21 @@ These verification mechanisms represent substantial additions to the current con
   (policy-id uint)
   (premium-amount uint)
   (token-id (string-ascii 32)))
-  
+
   (begin
     ;; Verify caller is the policy registry
     (asserts! (is-eq tx-sender (var-get policy-registry-principal)) ERR-UNAUTHORIZED)
     (asserts! (> premium-amount u0) ERR-AMOUNT-MUST-BE-POSITIVE)
-    
+
     ;; Get policy allocations
     (let ((allocations (get-policy-allocations policy-id)))
       ;; Distribute premium to each provider
-      (map 
+      (map
         (lambda (allocation)
           (let ((provider (get provider allocation))
                 (percentage (get premiumShare allocation))
                 (provider-premium (/ (* premium-amount percentage) u100)))
-            
+
             ;; Record premium distribution
             (map-set premium-distributions
                     { policy-id: policy-id, provider: provider }
@@ -1476,16 +1524,16 @@ These verification mechanisms represent substantial additions to the current con
                       allocationPercentage: percentage,
                       distributionTimestamp: burn-block-height,
                       status: "Completed" })
-            
+
             ;; Update provider's premium balance
-            (update-provider-premium-balance 
+            (update-provider-premium-balance
               provider provider-premium token-id)
-            
+
             ;; Update allocation record
             (map-set provider-allocations
                     { provider: provider, policy-id: policy-id }
                     (merge allocation { premiumDistributed: true }))
-            
+
             ;; Emit premium distribution event
             (print {
               event: "premium-distributed-to-provider",
@@ -1499,23 +1547,23 @@ These verification mechanisms represent substantial additions to the current con
           ))
         allocations
       )
-      
+
       ;; Update global distributed premium accounting
       (let ((current-premiums (unwrap! (map-get? premium-balances { token: token-id })
                                      ERR-NOT-FOUND)))
-        (map-set premium-balances 
+        (map-set premium-balances
                 { token: token-id }
                 { totalPremiums: (get totalPremiums current-premiums),
-                  distributedPremiums: (+ (get distributedPremiums current-premiums) 
+                  distributedPremiums: (+ (get distributedPremiums current-premiums)
                                          premium-amount) })
       )
-      
+
       ;; Verify premium distribution
       (verify-premium-distribution-sum policy-id premium-amount)
-      
+
       ;; Release collateral
       (release-policy-collateral policy-id token-id)
-      
+
       (ok { success: true })
     )
   )
@@ -1525,12 +1573,12 @@ These verification mechanisms represent substantial additions to the current con
 (define-private (release-policy-collateral
   (policy-id uint)
   (token-id (string-ascii 32)))
-  
+
   (let ((allocations (get-policy-allocations policy-id)))
     (begin
       ;; Calculate total allocated collateral
       (let ((total-allocated (fold sum-allocations allocations u0)))
-        
+
         ;; Update global token balances
         (let ((current-balance (unwrap! (map-get? token-balances { token: token-id })
                                        ERR-NOT-FOUND)))
@@ -1540,25 +1588,25 @@ These verification mechanisms represent substantial additions to the current con
                     availableBalance: (+ (get availableBalance current-balance) total-allocated),
                     lockedBalance: (- (get lockedBalance current-balance) total-allocated) })
         )
-        
+
         ;; Update each provider's available balance
-        (map 
+        (map
           (lambda (allocation)
             (let ((provider (get provider allocation))
                   (amount (get allocatedAmount allocation))
                   (expiration-height (get expirationHeight allocation)))
-              
+
               ;; Update provider's available balance
-              (update-provider-balance 
+              (update-provider-balance
                 provider amount token-id "release")
-              
+
               ;; Update provider's expiration exposure
-              (update-provider-expiration-exposure 
+              (update-provider-expiration-exposure
                 provider expiration-height amount false)
             ))
           allocations
         )
-        
+
         ;; Emit event
         (print {
           event: "policy-collateral-released",
@@ -1567,7 +1615,7 @@ These verification mechanisms represent substantial additions to the current con
           token: token-id,
           timestamp: burn-block-height
         })
-        
+
         { released-amount: total-allocated }
       )
     )
@@ -1578,35 +1626,35 @@ These verification mechanisms represent substantial additions to the current con
 (define-public (claim-pending-premiums
   (provider principal)
   (token-id (string-ascii 32)))
-  
-  (let ((provider-balance (unwrap! (map-get? provider-balances 
+
+  (let ((provider-balance (unwrap! (map-get? provider-balances
                                           { provider: provider, token: token-id })
                                  ERR-NOT-FOUND)))
     (begin
       ;; Verify caller is the provider
       (asserts! (is-eq tx-sender provider) ERR-UNAUTHORIZED)
-      
+
       ;; Verify there are premiums to claim
       (asserts! (> (get earnedPremiums provider-balance) u0) ERR-NO-PREMIUMS)
-      
+
       ;; Transfer premiums to provider
       (if (is-eq token-id "STX")
-          (try! (as-contract (stx-transfer? 
+          (try! (as-contract (stx-transfer?
                             (get earnedPremiums provider-balance)
                             tx-sender
                             provider)))
-          (try! (as-contract (contract-call? 'SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token transfer 
+          (try! (as-contract (contract-call? 'SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token transfer
                                            (get earnedPremiums provider-balance)
                                            tx-sender
                                            provider
                                            none)))
       )
-      
+
       ;; Update provider's premium balance
-      (map-set provider-balances 
+      (map-set provider-balances
               { provider: provider, token: token-id }
               (merge provider-balance { earnedPremiums: u0 }))
-      
+
       ;; Emit event
       (print {
         event: "premiums-claimed",
@@ -1615,7 +1663,7 @@ These verification mechanisms represent substantial additions to the current con
         token: token-id,
         timestamp: burn-block-height
       })
-      
+
       (ok { claimed-amount: (get earnedPremiums provider-balance) })
     )
   )
@@ -1629,7 +1677,7 @@ These verification mechanisms represent substantial additions to the current con
 (define-private (verify-allocation-sum
   (policy-id uint)
   (required-amount uint))
-  
+
   (let ((allocations (get-policy-allocations policy-id))
         (total-allocated (fold sum-allocations allocations u0)))
     (asserts! (is-eq total-allocated required-amount) ERR-ALLOCATION-SUM-MISMATCH)
@@ -1640,7 +1688,7 @@ These verification mechanisms represent substantial additions to the current con
 (define-private (verify-premium-distribution-sum
   (policy-id uint)
   (premium-amount uint))
-  
+
   (let ((distributions (get-premium-distributions-by-policy policy-id))
         (total-distributed (fold sum-premium-distributions distributions u0)))
     (asserts! (is-eq total-distributed premium-amount) ERR-DISTRIBUTION-SUM-MISMATCH)
@@ -1651,7 +1699,7 @@ These verification mechanisms represent substantial additions to the current con
 (define-private (verify-settlement-sum
   (policy-id uint)
   (settlement-amount uint))
-  
+
   (let ((impacts (get-settlement-impacts policy-id))
         (total-impact (fold sum-settlement-impacts impacts u0)))
     (asserts! (is-eq total-impact settlement-amount) ERR-SETTLEMENT-SUM-MISMATCH)
@@ -1661,21 +1709,21 @@ These verification mechanisms represent substantial additions to the current con
 ;; Get all allocations for a policy
 (define-read-only (get-policy-allocations
   (policy-id uint))
-  
+
   ;; Implementation details omitted for brevity
 )
 
 ;; Get all premium distributions for a policy
 (define-read-only (get-premium-distributions-by-policy
   (policy-id uint))
-  
+
   ;; Implementation details omitted for brevity
 )
 
 ;; Get all settlement impacts for a policy
 (define-read-only (get-settlement-impacts
   (policy-id uint))
-  
+
   ;; Implementation details omitted for brevity
 )
 ```
@@ -1685,18 +1733,21 @@ These verification mechanisms represent substantial additions to the current con
 ### 5.1 Phased Approach
 
 1. **Phase 1: Core Functionality**
+
    - Implement basic data structures and core functions
    - Focus on policy creation and management
    - Implement expiration processing logic
    - Develop settlement and premium distribution basics
 
 2. **Phase 2: Enhanced Verification**
+
    - Add comprehensive verification mechanisms
    - Implement allocation tracking
    - Develop settlement impact tracking
    - Create premium distribution records
 
 3. **Phase 3: Risk Tier System**
+
    - Implement risk tier parameters
    - Develop tier-aware allocation algorithms
    - Create tier-based premium calculations
@@ -1713,17 +1764,19 @@ These verification mechanisms represent substantial additions to the current con
 If migration from existing contracts is necessary:
 
 1. **Data Migration Functions**
+
    ```clarity
    ;; Migrate an existing policy to the European model
    (define-public (migrate-policy
      (old-policy-id uint)
      (old-registry-principal principal))
-     
+
      ;; Implementation details would depend on old contract structure
    )
    ```
 
 2. **Phase-Out Period**
+
    - Allow existing American-style policies to reach natural expiration
    - Prevent new policies on the old contract
    - Redirect new creation to European-style contracts
@@ -1735,15 +1788,18 @@ If migration from existing contracts is necessary:
 ## 6. Contract Deployment Strategy
 
 1. **Initial Contracts**
+
    - Deploy `european-policy-registry.clar` and `european-liquidity-pool-vault.clar`
    - Configure contract addresses and principals
 
 2. **Contract Integration**
+
    - Set up contract references between Policy Registry and Liquidity Pool
    - Connect to Oracle for price data
    - Establish administrative privileges
 
 3. **Testing Phase**
+
    - Deploy to testnet with limited parameters
    - Test expiration and settlement processes
    - Verify verification mechanism accuracy

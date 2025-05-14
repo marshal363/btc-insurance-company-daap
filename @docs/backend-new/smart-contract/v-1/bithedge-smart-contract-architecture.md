@@ -5,6 +5,7 @@
 This document outlines a comprehensive smart contract architecture for BitHedge's Bitcoin insurance platform, shifting from the previously proposed "On-Chain Light" approach to a more robust on-chain implementation. The architecture aims to minimize off-chain dependencies while supporting the complete policy lifecycle for both buyer (Protective Peter) and seller (Income Irene) personas.
 
 The architecture centers around two primary contracts with enhanced capabilities:
+
 1. **Policy Registry Contract**: Manages the entire policy lifecycle
 2. **Liquidity Pool Vault Contract**: Handles capital management and settlement
 
@@ -12,7 +13,7 @@ The architecture centers around two primary contracts with enhanced capabilities
 
 1. **Maximized On-Chain Logic**: Move as much business logic as possible to smart contracts
 2. **End-to-End Policy Lifecycle**: Support all phases from creation through expiration for both personas
-3. **Bitcoin-Native Mental Models**: Align contract functions with user mental models 
+3. **Bitcoin-Native Mental Models**: Align contract functions with user mental models
 4. **Self-Sustaining Ecosystem**: Create mechanisms for sustainable liquidity and incentives
 5. **Gas Optimization**: Implement batching and efficient data structures despite increased on-chain logic
 
@@ -46,7 +47,7 @@ policies: Map<PolicyId, {
   protectedValue: uint,                 // Strike price in base units
   protectionAmount: uint,               // Amount being protected
   expirationHeight: uint,               // Block height when policy expires
-  premium: uint,                        // Premium amount paid
+  premium: uint,                        // Premium amount (submitted by user, verified on-chain)
   policyType: string,                   // "PUT" or "CALL"
   positionType: string,                 // "LONG_PUT" or "LONG_CALL"
   counterpartyPositionType: string,     // "SHORT_PUT" or "SHORT_CALL"
@@ -79,14 +80,23 @@ pendingPremiumDistributions: Map<PolicyId, bool>
 createProtectionPolicy(
   owner: Principal,
   protectedValue: uint,          // Strike price
-  protectionAmount: uint,        // Amount protected 
+  protectionAmount: uint,        // Amount protected
   expirationHeight: uint,        // When policy expires
   policyType: string,            // "PUT" or "CALL"
-  riskTier: string               // Risk tier selection
+  riskTier: string,              // Risk tier selection
+  submittedPremium: uint          // Premium calculated off-chain, submitted by user
 ) -> PolicyId
 
 // Helper functions for policy creation
-verifyPremiumPayment(policyId: uint, premium: uint) -> bool
+verifySubmittedPremium(
+  policyId: uint,
+  submittedPremium: uint,
+  protectedValue: uint,
+  protectionAmount: uint,
+  expirationHeight: uint,
+  policyType: string,
+  riskTier: string
+) -> bool
 calculateRequiredCollateral(protectedValue: uint, protectionAmount: uint, policyType: string) -> uint
 requestCollateralLock(policyId: uint, collateralAmount: uint, collateralToken: string) -> bool
 ```
@@ -483,7 +493,7 @@ checkPriceValidity(price: uint) -> bool
 
 // Policy Registry integrates Oracle for:
 1. Price verification during policy activation
-2. Market-aware premium calculations 
+2. Market-aware premium calculations
 3. Protection threshold determinations
 ```
 
@@ -492,16 +502,19 @@ checkPriceValidity(price: uint) -> bool
 ### Complete Buyer Flow (Protective Peter)
 
 1. **Policy Creation**:
-   - Buyer selects protection parameters (protected value, amount, expiration date, risk tier)
-   - System calculates premium based on parameters
-   - **Policy Registry calls Liquidity Pool to check available liquidity BEFORE proceeding** (Critical Step)
-   - Buyer is prompted to pay premium only if sufficient collateral is available
-   - `createProtectionPolicy()` is called with required parameters
-   - Policy Registry verifies premium payment
-   - Policy Registry calls Liquidity Pool to lock collateral
-   - Buyer receives policy ID and confirmation
+
+   - Buyer selects protection parameters (protected value, amount, expiration date, riskTier).
+   - **Off-Chain System (e.g., Convex) calculates the premium** based on these parameters and current market conditions.
+   - Buyer (or frontend) receives the `calculatedPremium` and potentially some key inputs used for its calculation (if simple and useful for on-chain verification).
+   - **Policy Registry (`createProtectionPolicy`) is called by the user/frontend**, passing all policy parameters _including the `submittedPremium`_ (which is the `calculatedPremium` from off-chain).
+   - **Policy Registry calls `BitHedgeMathLibraryContract.verifyPremium()`** to check if the `submittedPremium` is reasonable (e.g., within certain bounds, not gamed). This function does _not_ recalculate the full premium on-chain.
+   - If premium verification passes, Policy Registry then calls Liquidity Pool's `checkLiquidity()` **BEFORE** accepting the premium payment and proceeding.
+   - If liquidity is available, the user is prompted to pay the `submittedPremium`.
+   - Upon successful payment, Policy Registry completes policy creation, stores it with the `submittedPremium`, and calls Liquidity Pool to lock collateral.
+   - Buyer receives policy ID and confirmation.
 
 2. **Policy Monitoring**:
+
    - Buyer monitors theoretical policy value in dashboard as Bitcoin price fluctuates
    - System shows theoretical settlement value if the policy were to expire immediately
    - UI clearly indicates that actual settlement occurs only at expiration
@@ -520,12 +533,14 @@ checkPriceValidity(price: uint) -> bool
 ### Complete Seller Flow (Income Irene)
 
 1. **Capital Commitment**:
+
    - Seller selects capital amount, token, and risk tier
    - Seller calls `depositCapital()` with parameters
    - Liquidity Pool records deposit and updates provider balance
    - Seller's capital becomes available for allocation
 
 2. **Allocation to Policies**:
+
    - System automatically allocates seller's capital to new policies
    - Allocation based on risk tier preference and capital available
    - `allocateProviderCapital()` creates provider allocations
@@ -533,6 +548,7 @@ checkPriceValidity(price: uint) -> bool
    - UI clearly shows expected settlement dates and potential liability at each date
 
 3. **Settlement and Premium Processing**:
+
    - At expiration, system automatically processes all policies in batch
    - For in-the-money policies, settlements are processed from allocated capital
    - For out-of-the-money policies, premiums are distributed to providers
@@ -551,16 +567,19 @@ checkPriceValidity(price: uint) -> bool
 Despite moving more logic on-chain, the architecture implements several gas optimization strategies:
 
 1. **Batch Processing**:
+
    - Policies are expired in batches by block height
    - Premium distributions processed in batches
    - Provider allocations managed in groups
 
 2. **Efficient Data Structures**:
+
    - Limited index mappings with fixed-size arrays
    - Strategic use of minimal storage for common operations
    - Optimized lookups with indexed mappings
 
 3. **Event-Based Processing**:
+
    - Heavy use of events to signal state changes
    - Off-chain systems can monitor events for user notification
    - Reduces need for polling-based approaches
@@ -575,11 +594,13 @@ Despite moving more logic on-chain, the architecture implements several gas opti
 While this architecture moves much more logic on-chain than the "On-Chain Light" approach, some functions remain better suited for off-chain implementation:
 
 1. **Complex UI Calculations**:
+
    - Advanced policy simulations and scenario analysis
    - Detailed yield projections and historical analytics
    - Visual price chart generation and technical analysis
 
 2. **User Profile Management**:
+
    - Personalized recommendations and risk profiling
    - Notification preferences and communication management
    - User interaction history and behavioral analytics
@@ -594,18 +615,21 @@ While this architecture moves much more logic on-chain than the "On-Chain Light"
 The architecture can be implemented in distinct phases:
 
 ### Phase 1: Core On-Chain Functionality
+
 - Policy Registry with complete lifecycle support
 - Liquidity Pool with basic capital management
 - Integration between contracts for critical operations
 - Support for fundamental buyer and seller flows
 
 ### Phase 2: Enhanced On-Chain Automation
+
 - Batch processing systems for expiration and premium distribution
 - Risk tier implementation with parameter mapping
 - Collateral optimization mechanisms
 - Advanced Oracle integration
 
 ### Phase 3: Full Ecosystem On-Chain
+
 - Complete premium distribution mechanisms
 - Multiple token support with cross-conversion
 - Governance mechanisms for parameter adjustments
@@ -618,27 +642,32 @@ The architecture can be implemented in distinct phases:
 The initial architecture overlooked several critical steps in the policy creation process:
 
 1. **Pre-Policy Liquidity Verification (HIGHEST PRIORITY)**
+
    - The system MUST check available liquidity BEFORE accepting premium payment
    - Implementation: `checkLiquidity()` must be called before the buyer is even prompted to pay premium
    - Prevents scenarios where premium is paid but policy cannot be created due to insufficient funds
    - Creates dependable user experience by filtering out impossible policy creation attempts upfront
 
 2. **Premium Payment Atomic Transaction**
+
    - Premium payment and policy creation should be atomic operations
    - If premium payment succeeds but policy creation fails, funds must be refunded
    - Implementation: Use a compound transaction pattern or escrow mechanism
 
 3. **Oracle Price Freshness Verification**
+
    - Ensure Oracle price is fresh before policy creation
    - Prevent policies created with stale prices that could immediately be exercisable at expiration
    - Implementation: Check timestamp of Oracle price data, reject if older than threshold
 
 4. **Risk Parameter Validation**
+
    - Validate all risk parameters are within acceptable bounds
    - Prevent creation of policies with extreme or manipulated parameters
    - Implementation: On-chain parameter validation with min/max constraints
 
 5. **Policy Limit Enforcement**
+
    - Check if user has reached policy creation limits (if applicable)
    - Prevent system abuse through policy spam
    - Implementation: Track policy count per user with appropriate limits
@@ -651,31 +680,37 @@ The initial architecture overlooked several critical steps in the policy creatio
 ### 11.2 Policy Expiration and Settlement Process - Missing Steps (European-Style)
 
 1. **Reliable Expiration Price Determination**
+
    - Implement robust price determination mechanism at expiration
    - Consider using Time-Weighted Average Price (TWAP) to prevent manipulation
    - Implementation: Oracle integration with enhanced price aggregation for expiration events
 
 2. **Batch Processing Optimization**
+
    - Optimize for processing multiple policies expiring at the same block height
    - Prevent gas limitations from disrupting batch settlements
    - Implementation: Size-limited batching with continuation mechanism
 
 3. **Settlement Priority Rules**
+
    - Define clear priority rules when available liquidity cannot cover all settlements
    - Ensure fair distribution of available funds in edge cases
    - Implementation: Proportional distribution algorithm with fairness guarantees
 
 4. **Expiration Block Congestion Management**
+
    - Address potential blockchain congestion around popular expiration dates
    - Implement mechanisms to ensure timely settlement despite network congestion
    - Implementation: Dynamic gas pricing strategy and settlement window approach
 
 5. **Oracle Redundancy at Expiration**
+
    - Implement redundant price sources for critical expiration events
    - Prevent settlement failure due to single oracle failure
    - Implementation: Multi-oracle consensus mechanism for expiration prices
 
 6. **Settlement Verification**
+
    - Implement verification that settlement calculations are correct
    - Prevent manipulation of settlement calculations
    - Implementation: On-chain verification of settlement amounts
@@ -688,21 +723,25 @@ The initial architecture overlooked several critical steps in the policy creatio
 ### 11.3 Premium Distribution Process - Missing Steps
 
 1. **Fair Premium Distribution Algorithm**
+
    - Implement fair distribution of premiums across providers
    - Account for different risk tiers and capital allocation periods
    - Implementation: Weighted distribution algorithm based on contribution
 
 2. **Provider Dropout Handling**
+
    - Address scenarios where providers withdraw before premium distribution
    - Define premium reallocation rules in case of provider unavailability
    - Implementation: Robust distribution calculation with dropout resilience
 
 3. **Unclaimed Premium Management**
+
    - Implement handling for unclaimed premiums
    - Define time-based rules for unclaimed premium reallocation
    - Implementation: Unclaimed premium pool with timeout mechanism
 
 4. **Premium Distribution Verification**
+
    - Implement verification that premium distributions are correct
    - Prevent manipulation of distribution calculations
    - Implementation: On-chain verification of distribution fairness
@@ -715,21 +754,25 @@ The initial architecture overlooked several critical steps in the policy creatio
 ### 11.4 Liquidity Pool Management - Missing Steps
 
 1. **Expiration-Focused Liquidity Planning**
+
    - Implement mechanisms to prepare liquidity for known expiration dates
    - Ensure sufficient available capital at expiration heights with many policies
    - Implementation: Expiration-based liquidity forecasting and preparation
 
 2. **Provider Incentives for Expiration Coverage**
+
    - Implement enhanced incentives for providers covering high-volume expiration dates
    - Reduce risk of liquidity shortages at critical times
    - Implementation: Expiration-specific yield multipliers
 
 3. **Dynamic Risk Tier Adjustment**
+
    - Implement dynamic adjustment of risk tiers based on approaching expirations
    - Prevent systemic risk from concentrated expiration dates
    - Implementation: Market-responsive parameter adjustment with expiration awareness
 
 4. **Capital Efficiency for European-Style Options**
+
    - Optimize capital utilization given predictable settlement timing
    - Potential for higher capital efficiency compared to American-style options
    - Implementation: Time-bucketed allocation algorithms with expiration forecasting
@@ -746,16 +789,19 @@ The adoption of European-style options (settlement only at expiration) provides 
 ### 12.1 Technical Benefits
 
 1. **Reduced Contract Complexity**
+
    - **State Reduction**: Eliminating the early activation feature significantly reduces the number of contract states and possible transitions. This simplification results in code that is easier to audit, test, and maintain.
    - **Elimination of Race Conditions**: The architecture no longer needs to handle complex race conditions between activation and expiration, simplifying edge case handling.
    - **Predictable State Transitions**: With only one settlement point (expiration), state transitions become highly predictable and easier to model.
 
 2. **Gas Optimization**
+
    - **Batched Processing**: Settlement can be processed in batches at predefined expiration heights, significantly reducing gas costs compared to on-demand activations.
    - **Scheduled Execution**: Backend systems can prepare for high-volume settlement periods at known times, optimizing transaction timing and gas pricing.
    - **Reduced Transaction Volume**: Fewer on-chain transactions are needed across the policy lifecycle, reducing overall blockchain congestion.
 
 3. **Enhanced Oracle Integration**
+
    - **Reduced Oracle Dependence**: The system only needs high-reliability Oracle data at specific expiration times rather than continuously.
    - **Price Manipulation Resistance**: Time-Weighted Average Prices (TWAP) can be implemented at expiration points for better manipulation resistance.
    - **Multi-Oracle Consensus**: For critical expiration events, multiple oracle sources can be aggregated to ensure price accuracy.
@@ -768,11 +814,13 @@ The adoption of European-style options (settlement only at expiration) provides 
 ### 12.2 Economic Benefits
 
 1. **Capital Efficiency**
+
    - **Predictable Collateral Needs**: Capital providers know exactly when their collateral might be needed (at expiration), allowing for tighter capital planning.
    - **Optimized Collateral Allocation**: Collateral can be allocated more efficiently based on expiration schedules rather than unpredictable early activations.
    - **Higher Utilization Ratios**: The predictability allows for higher capital utilization ratios while maintaining system safety.
 
 2. **Reduced Protocol Costs**
+
    - **Lower Gas Costs**: Fewer on-chain transactions and batch processing lead to reduced gas costs across the system.
    - **Streamlined Operations**: Simplified contract logic requires less complex off-chain monitoring and management.
    - **Reduced Development Overhead**: Less complex system architecture means faster development cycles and lower maintenance costs.
@@ -785,11 +833,13 @@ The adoption of European-style options (settlement only at expiration) provides 
 ### 12.3 User Experience Considerations
 
 1. **Clarity and Simplicity**
+
    - **Clear Value Proposition**: Users understand exactly what they're buying - protection that settles at a specific future date.
    - **Reduced Decision Fatigue**: Eliminates monitoring and decision-making about when to activate protection.
    - **Transparent Outcomes**: Settlement outcomes depend solely on the expiration price, creating transparency.
 
 2. **Educational Aspects**
+
    - **Easier to Explain**: The European model is easier to explain to new users as it removes the complexity of optimal exercise strategy.
    - **Familiar Financial Instrument**: Aligns with standardized financial products familiar to more sophisticated users.
    - **Theoretical Value Calculation**: Enables clearer representation of theoretical policy value during the protection period.
@@ -802,6 +852,7 @@ The adoption of European-style options (settlement only at expiration) provides 
 ### 12.4 Protocol Resilience
 
 1. **Systemic Risk Reduction**
+
    - **Predictable Settlement Events**: Known settlement windows allow for better preparation of system resources and liquidity.
    - **Reduced Flash Crash Vulnerability**: System is less vulnerable to momentary price disruptions as settlement only occurs at specified times.
    - **Better Capacity Planning**: Protocol can plan for and manage peak loads at known expiration times.
@@ -814,11 +865,13 @@ The adoption of European-style options (settlement only at expiration) provides 
 ### 12.5 Business Strategy Alignment
 
 1. **Market Differentiation**
+
    - **Clear Differentiator**: European-style settlement provides a clear differentiator in the crypto options space.
    - **Focus on Simplicity**: Aligns with BitHedge's goal of making options accessible to average Bitcoin holders.
    - **Emphasizes Planning**: Encourages users to think strategically about protection periods and expiration dates.
 
 2. **Revenue Model Enhancement**
+
    - **More Efficient Resource Utilization**: Lower operational costs translate to better margins or more competitive pricing.
    - **Predictable Fee Generation**: More predictable settlement patterns enable better forecasting of fee generation.
    - **Scaling Advantages**: Simplified architecture can scale more efficiently with user growth.

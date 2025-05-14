@@ -34,24 +34,27 @@ The European-style settlement model offers significant advantages for liquidity 
 The liquidity management cycle begins when providers commit capital to the pool:
 
 1. **Capital Commitment**: Providers invoke the `depositCapital()` function to commit funds:
+
    ```
    depositCapital(amount: uint, tokenId: TokenId, riskTier: string) -> bool
    ```
 
 2. **Risk Tier Assignment**: During deposit, providers select a risk tier:
+
    - **Conservative**: Lower risk, lower premium income, prioritized for safer policies
    - **Balanced**: Moderate risk and reward, general-purpose capital
    - **Aggressive**: Higher risk and reward, used for higher-premium policies
 
 3. **Capital Tracking**: The system records the provider's deposit across multiple data structures:
+
    ```
    // Update global token balance
-   (map-set token-balances 
+   (map-set token-balances
             { token: token-id }
             { balance: (+ existing-balance amount),
               availableBalance: (+ existing-available amount),
               lockedBalance: existing-locked })
-              
+
    // Update provider's personal balance
    (map-set provider-balances
             { provider: provider-principal, token: token-id }
@@ -81,6 +84,7 @@ The liquidity management cycle begins when providers commit capital to the pool:
 Before any policy creation occurs, the system verifies sufficient liquidity is available:
 
 1. **Liquidity Check**: The Policy Registry calls the Liquidity Pool's `checkLiquidity()` function:
+
    ```
    // Check if sufficient liquidity exists
    (define-public (checkLiquidity
@@ -88,7 +92,7 @@ Before any policy creation occurs, the system verifies sufficient liquidity is a
      (token-id: (string-ascii 32))
      (risk-tier: (string-ascii 32))
      (expiration-height: uint))
-     
+
      // Implementation checks:
      // 1. If token is supported
      // 2. If sufficient total liquidity exists
@@ -97,23 +101,25 @@ Before any policy creation occurs, the system verifies sufficient liquidity is a
    )
    ```
 
-2. **Pre-Flight Verification**: This check is performed *before* the buyer pays any premium:
+2. **Pre-Flight Verification**: This check is performed _before_ the buyer pays any premium:
+
    ```
    // In Policy Registry contract
    (define-public (createProtectionPolicy ...)
      (begin
        // First verify liquidity availability
-       (asserts! 
-         (contract-call? .liquidity-pool-vault checkLiquidity 
+       (asserts!
+         (contract-call? .liquidity-pool-vault checkLiquidity
                         required-collateral token-id risk-tier expiration-height)
          ERR-INSUFFICIENT-LIQUIDITY)
-         
+
        // Only if liquidity check passes, proceed with premium payment...
      )
    )
    ```
 
 3. **Risk Tier Matching**: The check enforces risk tier matching rules:
+
    ```
    // Conservative policy tier requires Conservative provider tier
    // Standard policy tier requires Balanced provider tier
@@ -135,12 +141,14 @@ Before any policy creation occurs, the system verifies sufficient liquidity is a
 Once liquidity availability is confirmed, the system allocates capital from providers to back the policy:
 
 1. **Allocation Strategy Selection**: The system employs a multi-strategy approach:
+
    - **Proportional Allocation**: Default strategy, allocates proportionally to available capital
    - **Risk-Tier Prioritization**: Within same tier, prioritizes based on commitment length
    - **Expiration-Balanced Allocation**: Attempts to balance provider exposure across expirations
    - **Minimum Allocation Threshold**: Prevents excessive fragmentation of allocations
 
 2. **Provider Selection**:
+
    ```
    // Pseudocode for provider selection
    (define-private (select-providers-for-allocation
@@ -148,31 +156,32 @@ Once liquidity availability is confirmed, the system allocates capital from prov
      (token-id: (string-ascii 32))
      (risk-tier: (string-ascii 32))
      (expiration-height: uint))
-     
+
      (let ((matching-providers (get-providers-by-risk-tier risk-tier))
            (sorted-providers (sort-providers-by-allocation-strategy matching-providers))
            (selected-providers (list))
            (allocated-amounts (list))
            (remaining-amount required-amount))
-       
+
        // Allocate to each provider according to strategy
        (for-each sorted-providers
          (lambda (provider)
-           (let ((allocation-amount (calculate-provider-allocation-amount 
+           (let ((allocation-amount (calculate-provider-allocation-amount
                                     provider remaining-amount expiration-height)))
              (when (> allocation-amount u0)
                (append selected-providers provider)
                (append allocated-amounts allocation-amount)
                (set! remaining-amount (- remaining-amount allocation-amount))))))
-       
+
        // Return selection results
-       { providers: selected-providers, 
-         amounts: allocated-amounts, 
+       { providers: selected-providers,
+         amounts: allocated-amounts,
          fulfilled: (is-eq remaining-amount u0) })
    )
    ```
 
 3. **Allocation Recording**: For each selected provider, the system records allocations:
+
    ```
    // Record allocation for each provider
    (for-each (zip selected-providers allocated-amounts)
@@ -180,7 +189,7 @@ Once liquidity availability is confirmed, the system allocates capital from prov
        (let ((provider (get 0 provider-allocation))
              (amount (get 1 provider-allocation))
              (percentage (calculate-percentage amount required-amount)))
-         
+
          // Record in provider allocations map
          (map-set provider-allocations
            { provider: provider, policy-id: policy-id }
@@ -193,26 +202,27 @@ Once liquidity availability is confirmed, the system allocates capital from prov
              allocationTimestamp: block-height,
              allocationTxId: tx-id,
              premiumDistributed: false })
-             
+
          // Update provider's available and allocated balances
          (update-provider-balance provider amount token-id "allocate")
-         
+
          // Update provider's expiration exposure tracking
          (update-provider-expiration-exposure provider expiration-height amount true)
        )))
    ```
 
 4. **Collateral Locking**: The system then locks the total allocated collateral:
+
    ```
    // Update global token locked amount
-   (map-set token-balances 
+   (map-set token-balances
      { token: token-id }
      { balance: total-balance,
        availableBalance: (- available-balance required-amount),
        lockedBalance: (+ locked-balance required-amount) })
-       
+
    // Update expiration-specific tracking
-   (map-set expirationLiquidityNeeds 
+   (map-set expirationLiquidityNeeds
      { height: expiration-height }
      { totalCollateralRequired: (+ existing-required required-amount),
        maxPotentialSettlement: (+ existing-settlement max-settlement),
@@ -225,6 +235,7 @@ Once liquidity availability is confirmed, the system allocates capital from prov
 To ensure allocation correctness, the system implements several verification mechanisms:
 
 1. **Allocation Sum Verification**:
+
    ```
    // Verify sum of all provider allocations equals policy collateral requirement
    (define-private (verify-allocation-sum (policy-id: uint))
@@ -235,6 +246,7 @@ To ensure allocation correctness, the system implements several verification mec
    ```
 
 2. **Risk Tier Consistency Check**:
+
    ```
    // Verify risk tier rules are followed for each allocation
    (define-private (verify-allocation-risk-tier (policy-id: uint) (provider: principal))
@@ -245,6 +257,7 @@ To ensure allocation correctness, the system implements several verification mec
    ```
 
 3. **Provider Balance Consistency**:
+
    ```
    // Verify provider's total allocations match their allocated balance
    (define-private (verify-provider-allocations (provider: principal))
@@ -259,81 +272,92 @@ To ensure allocation correctness, the system implements several verification mec
    // Verify provider's exposure tracking is accurate
    (define-private (verify-provider-exposure (provider: principal))
      (let ((exposure-map (get expirationExposure (get-provider-balance provider)))
-           (allocations-by-expiration (group-allocations-by-expiration 
+           (allocations-by-expiration (group-allocations-by-expiration
                                       (get-all-provider-allocations provider))))
        (for-each (map-keys exposure-map)
          (lambda (expiration-height)
            (let ((recorded-exposure (get expiration-height exposure-map))
-                 (calculated-exposure (sum-allocations 
+                 (calculated-exposure (sum-allocations
                                        (get expiration-height allocations-by-expiration))))
              (is-eq recorded-exposure calculated-exposure))))))
    ```
 
-## 3. Premium Distribution System
+## 3. Premium Management System
 
-### 3.1 Premium Collection and Accounting
+### 3.1 Premium Calculation and Verification Logic (Hybrid Approach)
 
-The premium collection process begins during policy creation:
+The BitHedge European-style options system will adopt a **hybrid approach** for premium determination to balance accuracy, flexibility, and on-chain gas efficiency:
 
-1. **Premium Payment**: Buyer pays premium directly to Policy Registry:
-   ```
-   // Transfer premium from buyer to contract
-   (try! (stx-transfer? premium tx-sender (as-contract tx-sender)))
-   ```
+1.  **Off-Chain Premium Calculation**:
 
-2. **Premium Recording**: The Policy Registry notifies the Liquidity Pool:
-   ```
-   // Record premium payment in Liquidity Pool
-   (try! (contract-call? .liquidity-pool-vault recordPremiumPayment 
-                         policy-id premium token-id expiration-height))
-   ```
+    - Sophisticated premium calculations (e.g., using models like Black-Scholes or binomial pricing, incorporating real-time market data, volatility, interest rates, etc.) are performed **off-chain**. This is ideally handled by a robust system like the existing Convex infrastructure.
+    - The off-chain system takes the user's desired policy parameters (strike price, protection amount, expiration, risk tier) as input.
+    - It outputs a calculated premium amount and potentially a set of key input parameters used in this calculation if they are simple enough to be passed and contribute to on-chain verification.
 
-3. **Premium Accounting**: The Liquidity Pool records this premium:
-   ```
-   // Update premium accounting
-   (let ((current-premiums (default-to
-                             { totalPremiums: u0, distributedPremiums: u0 }
-                             (map-get? premiumBalances { token: token-id }))))
-     (map-set premiumBalances 
-              { token: token-id }
-              { totalPremiums: (+ (get totalPremiums current-premiums) premium),
-                distributedPremiums: (get distributedPremiums current-premiums) }))
-   ```
+2.  **On-Chain Premium Submission & Verification**:
+    - The user (or frontend acting on their behalf) submits the off-chain calculated `submitted_premium` along with other policy parameters to the `BitHedgePolicyRegistryContract`'s `create-protection-policy` function.
+    - The `BitHedgePolicyRegistryContract` then calls a dedicated `verify-premium` function within the `BitHedgeMathLibraryContract`.
+    - **`BitHedgeMathLibraryContract.verify-premium` Function**:
+      - This function does **not** recalculate the full premium on-chain.
+      - Instead, it performs checks to ensure the `submitted_premium` is reasonable and not manipulative.
+      - Verification logic may include:
+        - **Bounds Checking**: Ensuring the premium isn't excessively high or suspiciously low relative to the protection amount and time to expiration. These bounds can be defined in `BitHedgeParametersContract`.
+        - **Simplified Model Check**: Optionally, a highly simplified on-chain formula could be used to derive an expected premium range. The `submitted_premium` must fall within this range.
+        - **Input Parameter Validation (if applicable)**: If key off-chain calculation inputs (e.g., a volatility bucket ID) are passed on-chain, they can be checked against allowed values in `BitHedgeParametersContract`.
+        - **Risk Tier Adjustment Check**: The verification can ensure the `submitted_premium` reflects any expected adjustments based on the selected `risk-tier` (e.g., a conservative tier might expect slightly higher premiums for sellers, or specific fee structures from `BitHedgeParametersContract`).
+    - If `verify-premium` passes, the `BitHedgePolicyRegistryContract` proceeds with policy creation using the `submitted_premium`.
+    - If verification fails, the transaction reverts, preventing the policy from being created with a potentially erroneous or gamed premium.
 
-4. **Premium Event Emission**:
-   ```
-   // Emit premium recording event
-   (print {
-     event: "premium-recorded",
-     policy-id: policy-id,
-     premium-amount: premium,
-     token: token-id,
-     expiration-height: expiration-height,
-     timestamp: block-height
-   })
-   ```
+**Data Flow Summary:**
 
-### 3.2 Premium Distribution Logic
+- **Frontend/User -> Off-Chain System (Convex)**: Policy parameters.
+- **Off-Chain System (Convex) -> Frontend/User**: Calculated premium, key inputs (optional).
+- **Frontend/User -> `BitHedgePolicyRegistryContract.create-protection-policy`**: Policy parameters, `submitted_premium`, key inputs (optional).
+- **`BitHedgePolicyRegistryContract` -> `BitHedgeMathLibraryContract.verify-premium`**: `submitted_premium`, policy parameters, key inputs (optional).
+- **`BitHedgeMathLibraryContract` -> `BitHedgePolicyRegistryContract`**: Verification result (ok/err).
+
+**Rationale for Hybrid Approach:**
+
+- **Accuracy & Flexibility**: Off-chain systems can use complex models and diverse, real-time data sources that are impractical for direct on-chain implementation.
+- **Gas Efficiency**: Avoids costly and complex financial calculations on the Stacks blockchain.
+- **Maintainability**: Pricing models can be evolved off-chain without requiring smart contract upgrades. On-chain verification logic can be simpler and more stable.
+- **Security**: The on-chain verification step acts as a critical safeguard.
+
+### 3.1.1 Advanced Premium Calculation Considerations (Off-Chain Focus)
+
+Given the hybrid approach, advanced premium calculation considerations will primarily reside within the **off-chain system (e.g., Convex)**. These include:
+
+1.  **Volatility Modeling**: Selecting and implementing appropriate volatility models (e.g., implied volatility from market data, historical volatility, GARCH models). This is computationally intensive and data-dependent, making it suitable for off-chain processing.
+2.  **Interest Rate Integration**: Incorporating risk-free interest rates into pricing models. This data is external and best managed off-chain.
+3.  **Time Decay (Theta)**: Accurately modeling time decay, especially for different expiration dates.
+4.  **Dividend Yields (if applicable to underlying)**: Though less relevant for BTC options, for other assets this would be an off-chain consideration.
+5.  **Model Calibration**: Regularly calibrating off-chain pricing models against market prices and conditions.
+
+The `BitHedgeMathLibraryContract` on-chain will **not** implement these complex calculations. Its role is to verify the output of the off-chain system based on simpler on-chain rules and parameters.
+
+### 3.2 Premium Distribution for OTM Policies
 
 Premium distribution occurs after policy expiration for policies that expired out-of-the-money:
 
 1. **Expiration Processing**: The system processes policies reaching expiration:
+
    ```
    // Process expiration batch
    (define-public (processExpirationBatch
      (block-height: uint)
      (expiration-price: uint))
-     
+
      (let ((expiring-policies (get-policies-by-expiration-height block-height)))
-       (fold process-policy-at-expiration 
-             expiring-policies 
-             { processedCount: u0, 
-               settledCount: u0, 
-               expiredCount: u0, 
+       (fold process-policy-at-expiration
+             expiring-policies
+             { processedCount: u0,
+               settledCount: u0,
+               expiredCount: u0,
                premiumDistributionCount: u0 })))
    ```
 
 2. **Out-of-the-Money Identification**: For each expiring policy, determine if it's out-of-the-money:
+
    ```
    // Determine if PUT option is out-of-the-money
    (if (>= expiration-price protected-value)
@@ -344,52 +368,55 @@ Premium distribution occurs after policy expiration for policies that expired ou
    ```
 
 3. **Premium Distribution Preparation**:
+
    ```
    // Mark policy for premium distribution
    (define-private (prepare-premium-distribution (policy-id: uint))
      (begin
        // Update policy status to Expired
        (update-policy-status policy-id STATUS-EXPIRED)
-       
+
        // Add to premium distribution queue
-       (map-set pendingPremiumDistributions 
-                { policy-id: policy-id } 
+       (map-set pendingPremiumDistributions
+                { policy-id: policy-id }
                 { true })
-                
+
        // Return result
        { status: "prepared", policy-id: policy-id }))
    ```
 
 4. **Premium Distribution Execution**:
+
    ```
    // Process premium distributions
    (define-public (processPremiumDistributions (expiration-height: uint))
      (let ((expired-policies (get-expired-policies-at-height expiration-height)))
        (fold distribute-premium-for-policy
              expired-policies
-             { distributedCount: u0, 
-               totalDistributed: u0, 
+             { distributedCount: u0,
+               totalDistributed: u0,
                failedCount: u0 })))
    ```
 
 5. **Provider-Specific Distribution**:
+
    ```
    // Distribute premium to providers for a policy
    (define-private (distribute-premium-for-policy (policy-id: uint) (result: DistributionResult))
      (let ((policy (get-policy policy-id))
            (allocations (get-policy-allocations policy-id))
            (premium (get premium policy)))
-       
+
        // Process each provider allocation
        (for-each allocations
          (lambda (allocation)
            (let ((provider (get provider allocation))
                  (percentage (get allocationPercentage allocation))
                  (provider-premium (/ (* premium percentage) u100)))
-             
+
              // Update provider's premium balance
              (update-provider-premium-balance provider provider-premium (get token allocation))
-             
+
              // Record premium distribution
              (map-set premiumDistributions
                       { policy-id: policy-id, provider: provider }
@@ -399,48 +426,49 @@ Premium distribution occurs after policy expiration for policies that expired ou
                         distributionTimestamp: block-height,
                         distributionTxId: tx-id,
                         status: "Completed" })
-                        
+
              // Mark allocation as having premium distributed
              (map-set provider-allocations
                       { provider: provider, policy-id: policy-id }
                       (merge allocation { premiumDistributed: true }))
            )))
-           
+
        // Update global premium accounting
        (update-distributed-premium-total (get token policy) premium)
-       
+
        // Release collateral for all providers
        (release-policy-collateral policy-id)
-       
+
        // Update result tracking
-       (merge result 
+       (merge result
               { distributedCount: (+ (get distributedCount result) u1),
                 totalDistributed: (+ (get totalDistributed result) premium) })))
    ```
 
 6. **Premium Claim Process**:
+
    ```
    // Claim accumulated premiums
    (define-public (claimPendingPremiums (provider: principal) (token-id: (string-ascii 32)))
      (let ((provider-balance (get-provider-balance provider token-id)))
-       
+
        // Verify caller is the provider
        (asserts! (is-eq tx-sender provider) ERR-UNAUTHORIZED)
-       
+
        // Verify there are premiums to claim
        (asserts! (> (get earnedPremiums provider-balance) u0) ERR-NO-PREMIUMS)
-       
+
        // Transfer premiums to provider
-       (try! (as-contract (stx-transfer? 
+       (try! (as-contract (stx-transfer?
                            (get earnedPremiums provider-balance)
                            tx-sender
                            provider)))
-       
+
        // Update provider's premium balance
-       (map-set provider-balances 
+       (map-set provider-balances
                 { provider: provider, token: token-id }
                 (merge provider-balance { earnedPremiums: u0 }))
-       
+
        // Return success with claimed amount
        { success: true, claimed-amount: (get earnedPremiums provider-balance) }))
    ```
@@ -450,6 +478,7 @@ Premium distribution occurs after policy expiration for policies that expired ou
 To ensure correct premium distribution, several verification mechanisms are implemented:
 
 1. **Premium Sum Verification**:
+
    ```
    // Verify sum of all provider premium distributions equals policy premium
    (define-private (verify-premium-distribution-sum (policy-id: uint))
@@ -460,24 +489,26 @@ To ensure correct premium distribution, several verification mechanisms are impl
    ```
 
 2. **Premium Proportion Verification**:
+
    ```
    // Verify each provider's premium is proportional to their allocation
    (define-private (verify-premium-proportion (policy-id: uint) (provider: principal))
      (let ((policy (get-policy policy-id))
            (allocation (get-provider-allocation provider policy-id))
            (distribution (get-premium-distribution policy-id provider))
-           (expected-premium (/ (* (get premium policy) 
-                                  (get allocationPercentage allocation)) 
+           (expected-premium (/ (* (get premium policy)
+                                  (get allocationPercentage allocation))
                                u100)))
        (is-eq (get premiumAmount distribution) expected-premium)))
    ```
 
 3. **Distribution Status Verification**:
+
    ```
    // Verify all premiums for a policy have been distributed
    (define-private (verify-all-premiums-distributed (policy-id: uint))
      (let ((allocations (get-policy-allocations policy-id)))
-       (fold 
+       (fold
          (lambda (allocation result)
            (and result (get premiumDistributed allocation)))
          allocations
@@ -509,6 +540,7 @@ The European-style model simplifies settlement processing by focusing exclusivel
 During expiration processing, the system determines which policies require settlement:
 
 1. **Settlement Eligibility Check**:
+
    ```
    // For PUT options, check if price is below protected value
    (if (< expiration-price protected-value)
@@ -519,26 +551,28 @@ During expiration processing, the system determines which policies require settl
    ```
 
 2. **Settlement Amount Calculation**:
+
    ```
    // Calculate settlement amount for PUT option
-   (define-private (calculate-put-settlement 
-     (protected-value: uint) 
+   (define-private (calculate-put-settlement
+     (protected-value: uint)
      (expiration-price: uint)
      (protection-amount: uint))
-     
+
      (let ((price-difference (- protected-value expiration-price))
            (settlement-proportion (/ price-difference protected-value)))
        (* protection-amount settlement-proportion)))
    ```
 
 3. **Settlement Preparation**:
+
    ```
    // Prepare policy for settlement
    (define-private (prepare-settlement (policy-id: uint) (settlement-amount: uint))
      (begin
        // Update policy status to Settled
        (update-policy-status policy-id STATUS-SETTLED)
-       
+
        // Record settlement details
        (map-set policies
                 { id: policy-id }
@@ -546,10 +580,10 @@ During expiration processing, the system determines which policies require settl
                        { settlementPrice: expiration-price,
                          settlementAmount: settlement-amount,
                          isSettled: true }))
-                         
+
        // Return preparation result
-       { status: "prepared", 
-         policy-id: policy-id, 
+       { status: "prepared",
+         policy-id: policy-id,
          settlement-amount: settlement-amount }))
    ```
 
@@ -558,40 +592,42 @@ During expiration processing, the system determines which policies require settl
 When a policy settles, each provider's contribution is calculated proportionally:
 
 1. **Provider Settlement Distribution**:
+
    ```
    // Calculate and record each provider's settlement contribution
-   (define-private (distribute-settlement-impact 
-     (policy-id: uint) 
+   (define-private (distribute-settlement-impact
+     (policy-id: uint)
      (total-settlement: uint))
-     
+
      (let ((allocations (get-policy-allocations policy-id)))
        (for-each allocations
          (lambda (allocation)
            (let ((provider (get provider allocation))
                  (allocation-percentage (get allocationPercentage allocation))
                  (provider-settlement (/ (* total-settlement allocation-percentage) u100)))
-             
+
              // Record provider's settlement contribution
              (map-set settlementImpacts
                       { policy-id: policy-id, provider: provider }
                       { originalAllocation: (get allocatedAmount allocation),
                         settlementContribution: provider-settlement,
-                        remainingAllocation: (- (get allocatedAmount allocation) 
+                        remainingAllocation: (- (get allocatedAmount allocation)
                                                provider-settlement),
-                        settlementPercentage: (/ (* provider-settlement u100) 
+                        settlementPercentage: (/ (* provider-settlement u100)
                                                 (get allocatedAmount allocation)),
                         settlementTimestamp: block-height,
                         settlementTxId: tx-id })
-                        
+
              // Update provider's balance
-             (update-provider-balance 
-               provider 
-               provider-settlement 
-               (get token allocation) 
+             (update-provider-balance
+               provider
+               provider-settlement
+               (get token allocation)
                "settle"))))))
    ```
 
 2. **Settlement Execution**:
+
    ```
    // Process settlement payment to policy owner
    (define-public (processSettlementAtExpiration
@@ -599,24 +635,24 @@ When a policy settles, each provider's contribution is calculated proportionally
      (recipient: principal)
      (settlement-amount: uint)
      (token-id: (string-ascii 32)))
-     
+
      (begin
        // Verify caller authorization
-       (asserts! (is-eq tx-sender (var-get policy-registry-principal)) 
+       (asserts! (is-eq tx-sender (var-get policy-registry-principal))
                  ERR-UNAUTHORIZED)
-       
+
        // Transfer settlement amount to recipient
-       (try! (as-contract (stx-transfer? 
-                          settlement-amount 
-                          tx-sender 
+       (try! (as-contract (stx-transfer?
+                          settlement-amount
+                          tx-sender
                           recipient)))
-       
+
        // Distribute settlement impact to providers
        (distribute-settlement-impact policy-id settlement-amount)
-       
+
        // Release remaining collateral
        (release-remaining-collateral policy-id)
-       
+
        // Emit settlement event
        (print {
          event: "settlement-executed",
@@ -628,30 +664,31 @@ When a policy settles, each provider's contribution is calculated proportionally
          timestamp: block-height,
          transaction-id: tx-id
        })
-       
+
        // Return success
        { success: true, settled-amount: settlement-amount }))
    ```
 
 3. **Remaining Collateral Release**:
+
    ```
    // Release remaining collateral after settlement
    (define-private (release-remaining-collateral (policy-id: uint))
      (let ((policy (get-policy policy-id))
            (allocations (get-policy-allocations policy-id))
            (total-settlement (get settlementAmount policy)))
-       
+
        // Calculate total remaining collateral
        (let ((total-collateral (fold + (map get-amount allocations) u0))
              (remaining-collateral (- total-collateral total-settlement)))
-         
+
          // Update global token balances
          (map-set token-balances
                   { token: (get token policy) }
                   (merge (get-token-balance (get token policy))
-                         { lockedBalance: (- (get lockedBalance (get-token-balance (get token policy))) 
+                         { lockedBalance: (- (get lockedBalance (get-token-balance (get token policy)))
                                            remaining-collateral) }))
-                         
+
          // Return released amount
          { released-amount: remaining-collateral })))
    ```
@@ -661,6 +698,7 @@ When a policy settles, each provider's contribution is calculated proportionally
 To ensure settlement correctness, the system implements verification mechanisms:
 
 1. **Settlement Sum Verification**:
+
    ```
    // Verify sum of all provider settlement contributions equals total settlement
    (define-private (verify-settlement-sum (policy-id: uint))
@@ -671,14 +709,15 @@ To ensure settlement correctness, the system implements verification mechanisms:
    ```
 
 2. **Settlement Proportion Verification**:
+
    ```
    // Verify each provider's settlement is proportional to their allocation
    (define-private (verify-settlement-proportion (policy-id: uint) (provider: principal))
      (let ((policy (get-policy policy-id))
            (allocation (get-provider-allocation provider policy-id))
            (impact (get-settlement-impact policy-id provider))
-           (expected-settlement (/ (* (get settlementAmount policy) 
-                                    (get allocationPercentage allocation)) 
+           (expected-settlement (/ (* (get settlementAmount policy)
+                                    (get allocationPercentage allocation))
                                  u100)))
        (is-eq (get settlementContribution impact) expected-settlement)))
    ```
@@ -692,7 +731,7 @@ To ensure settlement correctness, the system implements verification mechanisms:
            (settlement-impacts (get-settlement-impacts-by-policy policy-id))
            (total-allocated (fold + (map get-amount allocations) u0))
            (total-settled (fold + (map get-contribution settlement-impacts) u0)))
-       (is-eq (- total-allocated total-settled) 
+       (is-eq (- total-allocated total-settled)
               (get remaining-collateral (get-policy-settlement policy-id)))))
    ```
 
@@ -705,17 +744,19 @@ The BitHedge architecture handles several complex scenarios that create intricat
 When a provider's capital backs multiple policies, the system carefully tracks allocations and exposures:
 
 1. **Allocation Tracking**:
+
    ```
    // Example data for a provider backing multiple policies
-   { provider: Provider-A, policy-id: Policy-1 } -> 
+   { provider: Provider-A, policy-id: Policy-1 } ->
      { allocatedAmount: 100 STX, expirationHeight: 100, ... }
-   { provider: Provider-A, policy-id: Policy-2 } -> 
+   { provider: Provider-A, policy-id: Policy-2 } ->
      { allocatedAmount: 150 STX, expirationHeight: 100, ... }
-   { provider: Provider-A, policy-id: Policy-3 } -> 
+   { provider: Provider-A, policy-id: Policy-3 } ->
      { allocatedAmount: 200 STX, expirationHeight: 200, ... }
    ```
 
 2. **Expiration Exposure Management**:
+
    ```
    // Track provider's exposure by expiration date
    providerExpirationExposure: Map<(Provider, BlockHeight), {
@@ -723,15 +764,16 @@ When a provider's capital backs multiple policies, the system carefully tracks a
      policyCount: uint,
      maxPotentialSettlement: uint
    }>
-   
+
    // Example data
-   { provider: Provider-A, height: 100 } -> 
+   { provider: Provider-A, height: 100 } ->
      { allocatedAmount: 250 STX, policyCount: 2, ... }
-   { provider: Provider-A, height: 200 } -> 
+   { provider: Provider-A, height: 200 } ->
      { allocatedAmount: 200 STX, policyCount: 1, ... }
    ```
 
 3. **Settlement Impact Isolation**:
+
    - When Policy-1 settles, only that allocation is impacted
    - Other allocations remain unaffected
    - Provider's overall balance reflects the settlement
@@ -752,35 +794,38 @@ When a provider's capital backs multiple policies, the system carefully tracks a
 When a policy is backed by multiple providers, the system handles proportional allocation and settlement:
 
 1. **Allocation Distribution**:
+
    ```
    // Example: 1000 STX required for Policy-X
-   { provider: Provider-A, policy-id: Policy-X } -> 
+   { provider: Provider-A, policy-id: Policy-X } ->
      { allocatedAmount: 500 STX, allocationPercentage: 50, ... }
-   { provider: Provider-B, policy-id: Policy-X } -> 
+   { provider: Provider-B, policy-id: Policy-X } ->
      { allocatedAmount: 300 STX, allocationPercentage: 30, ... }
-   { provider: Provider-C, policy-id: Policy-X } -> 
+   { provider: Provider-C, policy-id: Policy-X } ->
      { allocatedAmount: 200 STX, allocationPercentage: 20, ... }
    ```
 
 2. **Proportional Premium Distribution**:
+
    ```
    // Example: 50 STX premium for Policy-X
-   { policy-id: Policy-X, provider: Provider-A } -> 
+   { policy-id: Policy-X, provider: Provider-A } ->
      { premiumAmount: 25 STX, allocationPercentage: 50, ... }
-   { policy-id: Policy-X, provider: Provider-B } -> 
+   { policy-id: Policy-X, provider: Provider-B } ->
      { premiumAmount: 15 STX, allocationPercentage: 30, ... }
-   { policy-id: Policy-X, provider: Provider-C } -> 
+   { policy-id: Policy-X, provider: Provider-C } ->
      { premiumAmount: 10 STX, allocationPercentage: 20, ... }
    ```
 
 3. **Proportional Settlement Distribution**:
+
    ```
    // Example: 400 STX settlement for Policy-X
-   { policy-id: Policy-X, provider: Provider-A } -> 
+   { policy-id: Policy-X, provider: Provider-A } ->
      { settlementContribution: 200 STX, settlementPercentage: 50, ... }
-   { policy-id: Policy-X, provider: Provider-B } -> 
+   { policy-id: Policy-X, provider: Provider-B } ->
      { settlementContribution: 120 STX, settlementPercentage: 30, ... }
-   { policy-id: Policy-X, provider: Provider-C } -> 
+   { policy-id: Policy-X, provider: Provider-C } ->
      { settlementContribution: 80 STX, settlementPercentage: 20, ... }
    ```
 
@@ -794,6 +839,7 @@ When a policy is backed by multiple providers, the system handles proportional a
 The risk tier system creates complex interactions between buyer and provider preferences:
 
 1. **Buyer-Provider Tier Mapping**:
+
    ```
    // Risk tier matching registry
    riskTierMatchingRules: Map<PolicyRiskTier, {
@@ -801,7 +847,7 @@ The risk tier system creates complex interactions between buyer and provider pre
      fallbackProviderTiers: string[],
      collateralRequirementMultiplier: Map<ProviderRiskTier, uint>
    }>
-   
+
    // Example mapping
    "Conservative" -> { primaryProviderTier: "Conservative",
                       fallbackProviderTiers: [],
@@ -818,10 +864,11 @@ The risk tier system creates complex interactions between buyer and provider pre
    ```
 
 2. **Tiered Collateral Requirements**:
+
    ```
    // Risk tier collateral requirement multipliers
    collateralRequirementMultipliers: Map<ProviderRiskTier, uint>
-   
+
    // Example multipliers
    "Conservative" -> 110  // 110% collateral requirement
    "Balanced" -> 100      // 100% collateral requirement
@@ -829,16 +876,17 @@ The risk tier system creates complex interactions between buyer and provider pre
    ```
 
 3. **Premium Calculation with Risk Tiers**:
+
    ```
    // Calculate premium with risk tier adjustments
    (define-private (calculate-premium-with-risk-tier
      (base-premium: uint)
      (policy-tier: (string-ascii 32))
      (provider-tier: (string-ascii 32)))
-     
+
      (let ((tier-multiplier (get provider-tier premium-tier-multipliers)))
        (/ (* base-premium tier-multiplier) u100)))
-   
+
    // Example tier multipliers
    premium-tier-multipliers: Map<ProviderRiskTier, uint>
    "Conservative" -> 80   // 80% of standard premium (discount)
@@ -876,6 +924,7 @@ providerAllocations: Map<(Provider, PolicyId), {
 ```
 
 This enhancement adds:
+
 - Explicit risk tier tracking in each allocation
 - Transaction reference for audit trail
 - Timestamp for temporal verification
@@ -885,7 +934,7 @@ This enhancement adds:
 ```
 // New settlement impact tracking structure
 settlementImpacts: Map<(PolicyId, Provider), {
-  originalAllocation: uint,       // Provider's original allocation 
+  originalAllocation: uint,       // Provider's original allocation
   settlementContribution: uint,   // Provider's contribution to settlement
   remainingAllocation: uint,      // Remaining allocation after settlement
   settlementPercentage: uint,     // Percentage of provider's allocation used
@@ -895,6 +944,7 @@ settlementImpacts: Map<(PolicyId, Provider), {
 ```
 
 This structure creates explicit tracking of how settlements affect each provider, enabling verification that:
+
 1. Settlement contributions are proportional to provider allocations
 2. The sum of all contributions equals the total settlement amount
 
@@ -913,6 +963,7 @@ premiumDistributions: Map<(PolicyId, Provider), {
 ```
 
 This structure provides explicit tracking of premium distribution to each provider, enabling verification that:
+
 1. Premium amounts are proportional to allocation percentages
 2. All premiums sum to the total policy premium
 3. Each provider receives their correct share
@@ -939,6 +990,7 @@ providerExpirationExposure: Map<(Provider, BlockHeight), {
 ```
 
 These enhancements add risk tier distribution tracking to expiration exposure, enabling:
+
 1. Better risk management across expirations
 2. More precise liquidity planning by tier
 3. Enhanced verification of risk tier consistency
@@ -962,6 +1014,7 @@ To ensure system correctness, the architecture should implement robust verificat
 ```
 
 These invariant checks verify that:
+
 1. Pool balance integrity: Sum of all provider balances equals total pool balance
 2. Policy allocation integrity: For each policy, sum of provider allocations equals policy collateral
 3. Provider balance integrity: For each provider, sum of policy allocations equals allocated balance
@@ -982,6 +1035,7 @@ These invariant checks verify that:
 ```
 
 These transaction-level verifications check:
+
 1. Allocation amount: Provider had sufficient balance for allocation
 2. Allocation percentage: Percentage calculation is correct
 3. Allocation risk tier: Provider's tier is compatible with policy's tier
@@ -1006,6 +1060,7 @@ These transaction-level verifications check:
 ```
 
 Enhanced events create a comprehensive audit trail that:
+
 1. Records detailed information about each operation
 2. Includes verification data (calculation basis, original values)
 3. References transaction IDs for cross-chain verification
@@ -1017,18 +1072,21 @@ Based on this comprehensive analysis, several implementation recommendations eme
 ### 8.1 Prioritized Enhancements
 
 1. **Settlement Impact Tracking**:
+
    - Implement dedicated data structure for settlement impact tracking
    - Add explicit verification mechanisms for settlement correctness
    - Create detailed audit trail of settlement processes
 
 2. **Risk Tier Registry**:
+
    - Implement explicit registry for risk tier matching rules
    - Add verification for tier compatibility in allocations
    - Create tiered collateral requirement system
 
 3. **Enhanced Verification Systems**:
+
    - Implement systematic invariant checks at critical points
-   - Create transaction-level verification mechanisms
+   - Implement transaction-level verification
    - Establish regular verification job for system integrity
 
 4. **Expiration-Focused Optimization**:
@@ -1041,18 +1099,21 @@ Based on this comprehensive analysis, several implementation recommendations eme
 The recommended implementation approach follows a phased strategy:
 
 1. **Phase 1: Core Data Structure Enhancement**
+
    - Implement enhanced allocation tracking
    - Add settlement impact tracking
    - Create premium distribution records
    - Establish expiration-focused exposure tracking
 
 2. **Phase 2: Verification System Implementation**
+
    - Develop invariant check framework
    - Implement transaction-level verification
    - Create regular verification jobs
    - Enhance event emission for audit trail
 
 3. **Phase 3: Risk Tier System Enhancement**
+
    - Implement explicit risk tier registry
    - Add tier-specific collateral requirements
    - Create tier-aware allocation algorithms
@@ -1069,6 +1130,7 @@ The recommended implementation approach follows a phased strategy:
 The BitHedge European-style options architecture creates a robust foundation for liquidity management and premium distribution. The system's design allows for efficient capital utilization while maintaining strong correctness guarantees through its verification mechanisms.
 
 The European-style settlement model (exercise only at expiration) creates significant advantages for liquidity management:
+
 1. Predictable settlement timeframes enable better capital planning
 2. Expiration-focused exposure tracking simplifies risk management
 3. Batch processing at expiration reduces gas costs
