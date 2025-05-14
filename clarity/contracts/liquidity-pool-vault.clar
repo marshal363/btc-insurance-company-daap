@@ -305,13 +305,9 @@
     ;; Perform token transfer from tx-sender to this contract
     (if (is-eq token-id STX-TOKEN-ID)
       (try! (stx-transfer? amount tx-sender (as-contract tx-sender)))
-      (let ((token-info (unwrap! (map-get? supported-tokens { token-id: token-id })
-          ERR-TOKEN-NOT-INITIALIZED
-        )))
-        (try! (contract-call? (unwrap-panic (get sbtc-contract-principal token-info))
-          transfer amount tx-sender (as-contract tx-sender) none
-        ))
-      )
+      (try! (contract-call? 'SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token
+        transfer amount tx-sender (as-contract tx-sender) none
+      ))
     )
     ;; Update global token balance
     (let ((current-global-balance (unwrap! (map-get? token-balances { token-id: token-id })
@@ -324,12 +320,11 @@
       })
     )
     ;; Update provider's balance
-    (let (
-        (provider-key {
-          provider: tx-sender,
-          token-id: token-id,
-        })
-        (current-provider-balance (default-to {
+    (let ((provider-key {
+        provider: tx-sender,
+        token-id: token-id,
+      }))
+      (let ((current-provider-balance (default-to {
           deposited-amount: u0,
           allocated-amount: u0,
           available-amount: u0,
@@ -338,16 +333,16 @@
           expiration-exposure: (map),
         }
           (map-get? provider-balances provider-key)
-        ))
+        )))
+        (map-set provider-balances provider-key {
+          deposited-amount: (+ (get deposited-amount current-provider-balance) amount),
+          allocated-amount: (get allocated-amount current-provider-balance),
+          available-amount: (+ (get available-amount current-provider-balance) amount),
+          earned-premiums: (get earned-premiums current-provider-balance),
+          pending-premiums: (get pending-premiums current-provider-balance),
+          expiration-exposure: (get expiration-exposure current-provider-balance),
+        })
       )
-      (map-set provider-balances provider-key {
-        deposited-amount: (+ (get deposited-amount current-provider-balance) amount),
-        allocated-amount: (get allocated-amount current-provider-balance),
-        available-amount: (+ (get available-amount current-provider-balance) amount),
-        earned-premiums: (get earned-premiums current-provider-balance),
-        pending-premiums: (get pending-premiums current-provider-balance),
-        expiration-exposure: (get expiration-exposure current-provider-balance),
-      })
     )
     (print {
       event: "capital-deposited",

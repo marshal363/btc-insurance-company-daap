@@ -105,10 +105,10 @@
 ;; (a_scaled * ONE_8) / b_scaled
 (define-private (div-down (a uint) (b uint))
   (if (is-eq b u0)
-    (panic ERR-DIVISION-BY-ZERO) ;; Explicit panic for division by zero
+    ERR-DIVISION-BY-ZERO ;; Return error for division by zero
     (if (is-eq a u0)
-      u0
-      (/ (* a ONE_8) b)
+      (ok u0) ;; Return ok with 0 when numerator is 0
+      (ok (/ (* a ONE_8) b)) ;; Return ok with calculation result
     )
   )
 )

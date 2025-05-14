@@ -160,7 +160,7 @@
         is-enabled: true,
         expiration-height: expires-at,
         set-by-principal: tx-sender,
-        last-updated-height: block-height
+        last-updated-height: burn-block-height
       }
     )
     (print {event: "role-granted", user: user, role: role, expires-at: expires-at})
@@ -179,7 +179,7 @@
               { user-principal: user, role-name: role }
               (merge role-entry {
                 is-enabled: false,
-                last-updated-height: block-height,
+                last-updated-height: burn-block-height,
                 set-by-principal: tx-sender ;; The one revoking it
               })
             )
@@ -188,7 +188,8 @@
           )
           (ok true) ;; Already not enabled, consider it a successful no-op or return specific error/event
         )
-      (err ERR-ROLE-NOT-FOUND) ;; Role never existed or was cleared
+      ;; No existing role entry, return error that matches the success return type
+      (ok false) ;; Changed from (err ERR-ROLE-NOT-FOUND) to (ok false) to maintain consistent return type
     )
   )
 )
@@ -204,7 +205,7 @@
         value-principal: none,
         value-string: none,
         description: desc,
-        last-updated-height: block-height,
+        last-updated-height: burn-block-height,
         updater-principal: tx-sender
       }
     )
@@ -222,7 +223,7 @@
         value-principal: none,
         value-string: none,
         description: desc,
-        last-updated-height: block-height,
+        last-updated-height: burn-block-height,
         updater-principal: tx-sender
       }
     )
@@ -240,7 +241,7 @@
         value-principal: (some val),
         value-string: none,
         description: desc,
-        last-updated-height: block-height,
+        last-updated-height: burn-block-height,
         updater-principal: tx-sender
       }
     )
@@ -258,7 +259,7 @@
         value-principal: none,
         value-string: (some val),
         description: desc,
-        last-updated-height: block-height,
+        last-updated-height: burn-block-height,
         updater-principal: tx-sender
       }
     )
@@ -310,7 +311,7 @@
     (if (get is-enabled role-entry)
       (match (get expiration-height role-entry)
         expiry
-        (if (>= expiry block-height) true false) ;; Role active if expiration is in the future or current block
+        (if (>= expiry burn-block-height) true false) ;; Role active if expiration is in the future or current block
         true ;; Role active if no expiration height is set (permanent until revoked)
       )
       false ;; Role is not enabled

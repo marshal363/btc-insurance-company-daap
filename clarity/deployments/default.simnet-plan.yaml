@@ -75,14 +75,9 @@ plan:
             path: "./.cache/requirements/SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-deposit.clar"
             clarity-version: 3
         - emulated-contract-publish:
-            contract-name: BitHedgeParametersContract
+            contract-name: bithedge-parameters-contract
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
             path: contracts/BitHedgeParametersContract.clar
-            clarity-version: 3
-        - emulated-contract-publish:
-            contract-name: math-library
-            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-            path: contracts/math-library.clar
             clarity-version: 3
         - emulated-contract-publish:
             contract-name: fundraising
@@ -93,6 +88,16 @@ plan:
             contract-name: liquidity-pool-vault
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
             path: contracts/liquidity-pool-vault.clar
+            clarity-version: 3
+        - emulated-contract-publish:
+            contract-name: math-library
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: contracts/math-library.clar
+            clarity-version: 3
+        - emulated-contract-publish:
+            contract-name: math-trait
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: traits/math-trait.clar
             clarity-version: 3
         - emulated-contract-publish:
             contract-name: oracle

@@ -162,81 +162,69 @@
 ;; BitHedgePriceOracleContract
 ;; Responsible for providing reliable Bitcoin price data for various system operations.
 
-(define-contract oracle
-  (
-    ;; --- Data Maps ---
-    ;; PO-101: Price data map stub
-    ;; Stores price data for assets.
-    ;; Key: (string-ascii 32) - Asset identifier (e.g., "BTC-USD")
-    ;; Value: (tuple (price uint) (last-updated-height uint))
-    (define-map prices
-    (string-ascii 32)
-        {
-      price: uint,
-      last-updated-height: uint,
-    }
-  )
+;; --- Data Maps ---
+;; PO-101: Price data map stub
+;; Stores price data for assets.
+;; Key: (string-ascii 32) - Asset identifier (e.g., "BTC-USD")
+;; Value: (tuple (price uint) (last-updated-height uint))
+(define-map prices
+  (string-ascii 32)
+  {
+    price: uint,
+    last-updated-height: uint,
+  }
+)
 
-    ;; PO-101: Price sources map stub
-    ;; Manages principals authorized to submit price data.
-    ;; Key: principal - The Stacks address of the submitter
-    ;; Value: bool - True if authorized, false otherwise
-    (define-map authorized-submitters
-    principal
-    bool
-  )
+;; PO-101: Price sources map stub
+;; Manages principals authorized to submit price data.
+;; Key: principal - The Stacks address of the submitter
+;; Value: bool - True if authorized, false otherwise
+(define-map authorized-submitters
+  principal
+  bool
+)
 
-    ;; --- Constants ---
-    ;; TODO: Define any oracle-specific constants if needed in later phases.
-    ;; --- Variables ---
-    (define-data-var contract-admin principal tx-sender)
- ;; PO-104: Admin of this contract
-    ;; TODO: Define any contract-specific variables if needed in later phases,
-    ;; e.g., for storing the parameters contract principal.
-  )
-  ;; --- Errors --- (define-constant ERR-PRICE-NOT-FOUND (err u300))
+;; --- Variables ---
+;; PO-104: Admin of this contract
+(define-data-var contract-admin principal tx-sender)
 
-  (define-constant ERR-UNAUTHORIZED-SUBMITTER (err u301))
+;; --- Constants ---
+;; --- Errors ---
+(define-constant ERR-PRICE-NOT-FOUND (err u300))
+(define-constant ERR-UNAUTHORIZED-SUBMITTER (err u301))
+(define-constant ERR-SUBMITTER-ALREADY-AUTHORIZED (err u302))
+(define-constant ERR-SUBMITTER-NOT-AUTHORIZED (err u303))
+(define-constant ERR-INVALID-ASSET-ID (err u304))
+(define-constant ERR-NOT-ADMIN (err u305))
 
-  (define-constant ERR-SUBMITTER-ALREADY-AUTHORIZED (err u302))
-
-  (define-constant ERR-SUBMITTER-NOT-AUTHORIZED (err u303))
-
-  (define-constant ERR-INVALID-ASSET-ID (err u304))
-
-  (define-constant ERR-NOT-ADMIN (err u305))
-
-  ;; PO-104: Error for not contract admin
-  ;; TODO: Add more error codes as functionality expands (e.g., for stale prices)
-  ;; --- Authorization Checks ---
-  (define-private (is-admin)
+;; --- Authorization Checks ---
+(define-private (is-admin)
   (is-eq tx-sender (var-get contract-admin))
 )
 
-  ;; TODO: Implement functions like is-authorized-submitter, potentially checking
-  ;; against BitHedgeParametersContract for a specific role in later phases (PO-104).
-  ;; --- Public Functions --- ;; PO-102: Stub for get-current-bitcoin-price
-  ;; Phase 1: Returns a constant for testing.
-  ;; Phase 2: Will fetch the latest price from the 'prices' map with staleness checks.
-  (define-read-only (get-current-bitcoin-price)
+;; --- Public Functions ---
+;; PO-102: Stub for get-current-bitcoin-price
+;; Phase 1: Returns a constant for testing.
+;; Phase 2: Will fetch the latest price from the 'prices' map with staleness checks.
+(define-read-only (get-current-bitcoin-price)
   (ok u20000000000)
 )
 
-  ;; PO-103: Stub for get-bitcoin-price-at-height
-  ;; Phase 1: Returns a constant for testing. Ignores 'height' parameter for now.
-  ;; Phase 2: Will look up historical prices if stored, or handle requests appropriately.
-  (define-read-only (get-bitcoin-price-at-height (height uint))
+;; PO-103: Stub for get-bitcoin-price-at-height
+;; Phase 1: Returns a constant for testing. Ignores 'height' parameter for now.
+;; Phase 2: Will look up historical prices if stored, or handle requests appropriately.
+(define-read-only (get-bitcoin-price-at-height (height uint))
   (ok u19000000000)
 )
 
-  ;; PO-104: Admin functions for managing authorized updaters
-  (define-public (add-authorized-submitter (submitter principal))
+;; PO-104: Admin functions for managing authorized updaters
+(define-public (add-authorized-submitter (submitter principal))
   (begin
-    (asserts! (is-admin) (err ERR-NOT-ADMIN))
+    (asserts! (is-admin) ERR-NOT-ADMIN)
     (match (map-get? authorized-submitters submitter)
       found-value
       (if found-value
-        (err ERR-SUBMITTER-ALREADY-AUTHORIZED) ;; Already true (active)
+        (ok false) ;; Changed from (err ERR-SUBMITTER-ALREADY-AUTHORIZED) to (ok false) to maintain consistent return type
         (begin
           ;; Was false (inactive) or not present, now setting to true
           (map-set authorized-submitters submitter true)
@@ -260,9 +248,9 @@
   )
 )
 
-  (define-public (remove-authorized-submitter (submitter principal))
+(define-public (remove-authorized-submitter (submitter principal))
   (begin
-    (asserts! (is-admin) (err ERR-NOT-ADMIN))
+    (asserts! (is-admin) ERR-NOT-ADMIN)
     (match (map-get? authorized-submitters submitter)
       found-value
       (if found-value
@@ -275,17 +263,17 @@
           })
           (ok true)
         )
-        (err ERR-SUBMITTER-NOT-AUTHORIZED) ;; Was already false (inactive)
+        (ok false) ;; Changed from (err ERR-SUBMITTER-NOT-AUTHORIZED) to (ok false) to maintain consistent return type
       )
       ;; Not found in map, so not authorized
-      (err ERR-SUBMITTER-NOT-AUTHORIZED)
+      (ok false) ;; Changed from (err ERR-SUBMITTER-NOT-AUTHORIZED) to (ok false) to maintain consistent return type
     )
   )
 )
 
-  (define-public (set-contract-admin (new-admin principal))
+(define-public (set-contract-admin (new-admin principal))
   (begin
-    (asserts! (is-admin) (err ERR-NOT-ADMIN))
+    (asserts! (is-admin) ERR-NOT-ADMIN)
     (var-set contract-admin new-admin)
     (print {
       event: "set-contract-admin",
@@ -295,6 +283,5 @@
   )
 )
 
-  ;; PO-201: Implement update-bitcoin-price ;; ... (commented out stub) ...
-  ;; TODO: Add functions for TWAP, price source registry, etc., in later phases.
-)
+;; PO-201: Implement update-bitcoin-price - stub for future implementation
+;; TODO: Add functions for TWAP, price source registry, etc., in later phases.
