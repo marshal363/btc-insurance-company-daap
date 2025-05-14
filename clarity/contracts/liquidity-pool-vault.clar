@@ -124,6 +124,21 @@
   }
 )
 
+;; Tracks the total collateral needed for all policies expiring at a specific block height.
+;; This is an aggregate view, unlike provider-specific expiration-exposure.
+;; Key: expiration-height (uint)
+;; Value: {
+;;   total-collateral-required: uint, ;; Sum of protection-amount for all policies at this height
+;;   is-liquidity-prepared: bool      ;; Flag for Phase 3 (LP-303) to indicate if liquidity is actively managed/reserved
+;; }
+(define-map expiration-liquidity-needs
+  uint ;; expiration-height
+  {
+    total-collateral-required: uint,
+    is-liquidity-prepared: bool,
+  }
+)
+
 ;; --- Data Variables ---
 (define-data-var backend-authorized-principal principal tx-sender)
 (define-data-var policy-registry-principal principal tx-sender) ;; To be set by admin
