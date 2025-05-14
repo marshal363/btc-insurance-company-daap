@@ -195,32 +195,94 @@ This phase establishes a functional, albeit initial, version of the Policy Regis
 
 #### Liquidity Pool Vault Contract (BitHedgeLiquidityPoolVaultContract)
 
-**Implementation Summary (LP-101):**
+**Implementation Summary (LP-101 to LP-110):**
 
-The foundational data structures for the `BitHedgeLiquidityPoolVaultContract` were established as per Phase 1 requirements.
+Phase 1 development for the `BitHedgeLiquidityPoolVaultContract` established its core functionalities for capital management, token handling, and initial policy interaction points. The existing codebase was found to have substantially implemented these foundational elements.
 
-- **`token-balances` map:** Defined to track total, available, and locked balances for each supported token (e.g., "STX", sBTC contract principal as string). Key: `{token-id: (string-ascii 32)}`, Value: `{total-balance: uint, available-balance: uint, locked-balance: uint}`.
-- **`provider-balances` map:** Defined to track individual provider's capital details. Key: `{provider: principal, token-id: (string-ascii 32)}`, Value: `{deposited-amount: uint, allocated-amount: uint, available-amount: uint, earned-premiums: uint, pending-premiums: uint, expiration-exposure: (map uint uint)}`. The `expiration-exposure` field (mapping expiration height to exposure amount) serves as the "expiration-exposure stub".
-- **`provider-allocations` map:** Defined to store details of a provider's capital allocation to specific policies. Key: `{provider: principal, policy-id: uint}`, Value: `{token-id: (string-ascii 32), allocated-to-policy-amount: uint, risk-tier-at-allocation: (string-ascii 32), expiration-height: uint}`.
-- **`premium-balances` map:** Defined to track total premiums collected and distributed per token. Key: `{token-id: (string-ascii 32)}`, Value: `{total-premiums-collected: uint, total-premiums-distributed-to-providers: uint}`.
-- **`expiration-liquidity-needs` map:** Defined to track the aggregate collateral required for all policies at a specific expiration height. Key: `uint` (expiration-height), Value: `{total-collateral-required: uint, is-liquidity-prepared: bool}`. The `is-liquidity-prepared` field is a stub for future use in Phase 3 (LP-303).
-- **`risk-tier-parameters` map:** This was also found pre-existing in the contract, intended for storing parameters for each risk tier (collateral ratios, premium multipliers, etc.), though its full population and logic are for later phases.
+- **LP-101 (Core Data Structures):**
 
-These structures provide the necessary framework for managing token balances, provider capital, policy collateralization, and premium accounting within the liquidity pool.
+  - Key data maps were defined:
+    - `token-balances`: Tracks total, available, and locked amounts per supported token (e.g., "STX", sBTC contract principal string).
+    - `provider-balances`: Manages individual provider capital, including deposited, allocated, and available amounts, along with stubs for `earned-premiums`, `pending-premiums`, and an `expiration-exposure` map (mapping expiration height to exposure amount).
+    - `provider-allocations`: Stores details of a provider's capital allocation to specific policies, including `token-id`, `allocated-to-policy-amount`, `risk-tier-at-allocation`, and `expiration-height`.
+    - `premium-balances`: Tracks total premiums collected and distributed per token.
+    - `expiration-liquidity-needs`: A stub map to track aggregate collateral required per expiration height, including an `is-liquidity-prepared` flag for future use.
+    - `risk-tier-parameters`: A stub map for storing risk tier configurations (collateral ratios, etc.), intended for full implementation in later phases.
+    - `supported-tokens`: Manages initialized tokens and their associated SIP-010 contract principals if applicable.
+
+- **LP-102 (Admin Functions):**
+
+  - Owner-protected functions `set-policy-registry-principal`, `set-parameters-contract-principal`, and `set-math-library-principal` were implemented, along with their respective read-only getters. These allow the `CONTRACT-OWNER` to configure addresses of other critical BitHedge contracts.
+  - Associated data variables (`optional principal`) were defined for each.
+
+- **LP-103 (`deposit-capital` Function):**
+
+  - A public function `deposit-capital` allows providers (`tx-sender`) to deposit STX or SIP-010 tokens.
+  - It validates inputs (amount, token support, risk tier via a local `is-valid-risk-tier` helper).
+  - It handles token transfers to the contract, updates global `token-balances` (total, available), and updates/initializes the depositing provider's record in `provider-balances` (deposited, available).
+  - An event "capital-deposited" is emitted.
+
+- **LP-104 (`withdraw-capital` Function):**
+
+  - A public function `withdraw-capital` enables providers to withdraw their `available-amount`.
+  - It validates inputs and checks the provider's available balance.
+  - It handles STX or SIP-010 token transfers from the contract to the provider.
+  - It updates both `provider-balances` (deposited, available) and global `token-balances` (total, available).
+  - An event "capital-withdrawn" is emitted.
+
+- **LP-105 (`lock-collateral` Function):**
+
+  - This public function is callable only by the `policy-registry-principal`.
+  - It accepts `policy-id`, `collateral-amount`, `token-id`, `risk-tier`, `expiration-height`, and `policy-owner-principal`.
+  - It performs an initial global liquidity check for the token.
+  - For Phase 1, it uses a simplified provider allocation logic, designating the `CONTRACT-OWNER` as the provider against whom collateral is locked. It checks this designated provider's available capital.
+  - Updates global `token-balances` (available decreases, locked increases).
+  - Updates the designated provider's `provider-balances` (available decreases, allocated increases) and their `expiration-exposure` for the given height.
+  - Crucially, it records the allocation details in the `provider-allocations` map, linking the provider, policy, and collateral specifics.
+  - An event "collateral-locked" is emitted.
+
+- **LP-106 (Token Balance Tracking):**
+
+  - The `token-balances` map correctly tracks `total-balance`, `available-balance`, and `locked-balance`. These are appropriately updated by `deposit-capital`, `withdraw-capital`, and `lock-collateral`. Read-only getters (`get-total-token-balance`, `get-available-balance`, `get-locked-collateral`) are also present.
+
+- **LP-107 (Contract Integration Points):**
+
+  - `lock-collateral` and `record-premium-payment` are restricted to be callable only by the `policy-registry-principal`.
+  - The `check-liquidity` read-only function is available for the Policy Registry (or any caller) to query liquidity status.
+
+- **LP-108 (Provider Balance Tracking):**
+
+  - The `provider-balances` map comprehensively tracks `deposited-amount`, `allocated-amount`, `available-amount`, and `expiration-exposure`. Fields for `earned-premiums` and `pending-premiums` are included as stubs for future development. These are updated by `deposit-capital`, `withdraw-capital`, and `lock-collateral`. A `get-provider-balance` getter is available.
+
+- **LP-109 (`check-liquidity` Function):**
+
+  - A read-only function `check-liquidity` is implemented.
+  - For Phase 1, it performs a basic check on the overall `available-balance` for the specified `token-id`.
+  - It includes `risk-tier` and `expiration-height` parameters in its signature as placeholders for more advanced logic in later phases.
+
+- **LP-110 (Token Type Management):**
+
+  - The `initialize-token` public function allows the `CONTRACT-OWNER` to add support for STX or SIP-010 tokens, storing the SIP-010 contract principal in the `supported-tokens` map. It also initializes relevant balance maps for the new token.
+  - A private helper `is-token-supported` and a public read-only `is-token-initialized-public` are available.
+
+- **LP-111 (Linter Error):**
+  - A persistent linter error ("missing contract name for call") was noted in the `deposit-capital` function related to a SIP-010 `contract-call?`. This was not addressed as per current instructions to avoid prolonged linter error fixing.
+
+This summary covers the existing functionalities found in the Liquidity Pool Vault contract, aligning with the Phase 1 objectives.
 
 | Task ID | Description                                                                                                                                                                                 | Dependencies                   | Complexity | Estimated Days | References                                                                                                                                                                                                                                                        |
 | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ | ---------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | LP-101  | Define core data structures (token-balances, provider-balances, provider-allocations, premium-balances, expiration-exposure stubs, expiration-liquidity-needs stubs). **Status: Completed** | PA-104, PA-105                 | Medium     | 3              | [@bithedge-smart-contract-architecture.md#2.-Liquidity-Pool-Vault-Contract-Architecture-European-Style], [@bithedge-liquidity-premium-management.md#2.1-Provider-Capital-Commitment-Process], [@bithedge-contract-architecture.md#1.2-BitHedgeLiquidityPool.clar] |
-| LP-102  | Implement admin functions (e.g., setting PR address from PA, owner checks linked to PA-103)                                                                                                 | LP-101, PA-103, PA-102         | Low        | 1              | [@modular-interactions.md#1.-Contract-Reference-Mechanisms]                                                                                                                                                                                                       |
-| LP-103  | Implement `deposit-capital` function (provider deposits funds, includes risk-tier selection)                                                                                                | LP-101, LP-102, LP-110, PA-105 | Medium     | 2.5            | [@bithedge-liquidity-premium-management.md#2.1-Provider-Capital-Commitment-Process], [@bithedge-european-architecture-spec.md#3.3-Provider-Capital-Management-Flow]                                                                                               |
-| LP-104  | Implement `withdraw-capital` function (basic version, checks `available-amount`)                                                                                                            | LP-101, LP-103                 | Medium     | 2              | [@bithedge-liquidity-premium-management.md#2.1-Provider-Capital-Commitment-Process], [@bithedge-european-architecture-spec.md#3.3-Provider-Capital-Management-Flow]                                                                                               |
-| LP-105  | Implement `lock-collateral` (initial version, called by PR; tracks policy-id, amount, token, risk-tier, expiration-height)                                                                  | LP-101, LP-108, LP-109, PA-105 | High       | 3.5            | [@bithedge-liquidity-premium-management.md#2.3-Capital-Allocation-Algorithm], [@bithedge-european-style-implementation.md#4.1-Collateral-Management], [@bithedge-european-architecture-spec.md#3.1-Policy-Creation-Flow#Data-passed-during-collateral-locking]    |
-| LP-106  | Implement token balance tracking (total, available, locked) updated by deposit, withdraw, lock collateral functions                                                                         | LP-101, LP-103, LP-104, LP-105 | Medium     | 2              | [@bithedge-liquidity-premium-management.md#2.1-Provider-Capital-Commitment-Process#3.-Capital-Tracking], [@bithedge-european-architecture-spec.md#2.2-Liquidity-Pool-Vault-Data-Model#Token-Balance-Tracking]                                                     |
-| LP-107  | Add contract integration points (callable by PR, e.g. `lock-collateral`, `check-liquidity`)                                                                                                 | LP-101                         | Medium     | 1              | [@modular-interactions.md#2.-Architecture-Patterns-for-Contract-Interactions]                                                                                                                                                                                     |
-| LP-108  | Implement provider balance tracking (deposited, allocated, available, earned/pending premiums stubs)                                                                                        | LP-101, LP-103, LP-104, LP-105 | Medium     | 2.5            | [@bithedge-liquidity-premium-management.md#2.1-Provider-Capital-Commitment-Process#3.-Capital-Tracking], [@bithedge-european-architecture-spec.md#2.2-Liquidity-Pool-Vault-Data-Model#Provider-Balance-Tracking]                                                  |
-| LP-109  | Implement `check-liquidity` (initial version: checks overall `available-balance` for the token, placeholder for risk-tier and expiration-height specific checks)                            | LP-101, LP-106, LP-108         | Medium     | 2              | [@bithedge-liquidity-premium-management.md#2.2-Liquidity-Verification-System], [@bithedge-european-architecture-spec.md#3.1-Policy-Creation-Flow#Data-passed-during-liquidity-check]                                                                              |
-| LP-110  | Implement token type management (`initialize-token`, `is-token-supported`, sBTC contract principal storage)                                                                                 | LP-101                         | Medium     | 1.5            | [@BitHedge-Advanced-Clarity-Patterns.md#Support-for-Multiple-Token-Types-SIP-010-and-SIP-009], [@clarity/contracts/liquidity-pool-vault.clar#Token-Management-Functions-LP-110]                                                                                   |
-| LP-111  | Fix Linter Error in `deposit-capital` related to contract call                                                                                                                              | LP-103                         | Low        | 0.5            | N/A                                                                                                                                                                                                                                                               |
+| LP-102  | Implement admin functions (e.g., setting PR address from PA, owner checks linked to PA-103). **Status: Completed**                                                                          | LP-101, PA-103, PA-102         | Low        | 1              | [@modular-interactions.md#1.-Contract-Reference-Mechanisms]                                                                                                                                                                                                       |
+| LP-103  | Implement `deposit-capital` function (provider deposits funds, includes risk-tier selection). **Status: Completed**                                                                         | LP-101, LP-102, LP-110, PA-105 | Medium     | 2.5            | [@bithedge-liquidity-premium-management.md#2.1-Provider-Capital-Commitment-Process], [@bithedge-european-architecture-spec.md#3.3-Provider-Capital-Management-Flow]                                                                                               |
+| LP-104  | Implement `withdraw-capital` function (basic version, checks `available-amount`). **Status: Completed**                                                                                     | LP-101, LP-103                 | Medium     | 2              | [@bithedge-liquidity-premium-management.md#2.1-Provider-Capital-Commitment-Process], [@bithedge-european-architecture-spec.md#3.3-Provider-Capital-Management-Flow]                                                                                               |
+| LP-105  | Implement `lock-collateral` (initial version, called by PR; tracks policy-id, amount, token, risk-tier, expiration-height). **Status: Completed**                                           | LP-101, LP-108, LP-109, PA-105 | High       | 3.5            | [@bithedge-liquidity-premium-management.md#2.3-Capital-Allocation-Algorithm], [@bithedge-european-style-implementation.md#4.1-Collateral-Management], [@bithedge-european-architecture-spec.md#3.1-Policy-Creation-Flow#Data-passed-during-collateral-locking]    |
+| LP-106  | Implement token balance tracking (total, available, locked) updated by deposit, withdraw, lock collateral functions. **Status: Completed**                                                  | LP-101, LP-103, LP-104, LP-105 | Medium     | 2              | [@bithedge-liquidity-premium-management.md#2.1-Provider-Capital-Commitment-Process#3.-Capital-Tracking], [@bithedge-european-architecture-spec.md#2.2-Liquidity-Pool-Vault-Data-Model#Token-Balance-Tracking]                                                     |
+| LP-107  | Add contract integration points (callable by PR, e.g. `lock-collateral`, `check-liquidity`). **Status: Completed**                                                                          | LP-101                         | Medium     | 1              | [@modular-interactions.md#2.-Architecture-Patterns-for-Contract-Interactions]                                                                                                                                                                                     |
+| LP-108  | Implement provider balance tracking (deposited, allocated, available, earned/pending premiums stubs). **Status: Completed**                                                                 | LP-101, LP-103, LP-104, LP-105 | Medium     | 2.5            | [@bithedge-liquidity-premium-management.md#2.1-Provider-Capital-Commitment-Process#3.-Capital-Tracking], [@bithedge-european-architecture-spec.md#2.2-Liquidity-Pool-Vault-Data-Model#Provider-Balance-Tracking]                                                  |
+| LP-109  | Implement `check-liquidity` (initial version: checks overall `available-balance` for the token, placeholder for risk-tier and expiration-height specific checks). **Status: Completed**     | LP-101, LP-106, LP-108         | Medium     | 2              | [@bithedge-liquidity-premium-management.md#2.2-Liquidity-Verification-System], [@bithedge-european-architecture-spec.md#3.1-Policy-Creation-Flow#Data-passed-during-liquidity-check]                                                                              |
+| LP-110  | Implement token type management (`initialize-token`, `is-token-supported`, sBTC contract principal storage). **Status: Completed**                                                          | LP-101                         | Medium     | 1.5            | [@BitHedge-Advanced-Clarity-Patterns.md#Support-for-Multiple-Token-Types-SIP-010-and-SIP-009], [@clarity/contracts/liquidity-pool-vault.clar#Token-Management-Functions-LP-110]                                                                                   |
+| LP-111  | Fix Linter Error in `deposit-capital` related to contract call. **Status: Pending (Linter Error Noted)**                                                                                    | LP-103                         | Low        | 0.5            | N/A                                                                                                                                                                                                                                                               |
 
 #### BitHedgePriceOracleContract (Stubs for Phase 1)
 

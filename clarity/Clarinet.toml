@@ -75,6 +75,16 @@ epoch = 3.0
 #clarity_version = 3
 #epoch = 3.0
 
+[contracts.bithedge-parameters-contract]
+path = 'contracts/BitHedgeParametersContract.clar'
+clarity_version = 3
+epoch = 3.0
+
+[contracts.math-library]
+path = 'contracts/math-library.clar'
+clarity_version = 3
+epoch = 3.0
+
 [repl.analysis]
 passes = ['check_checker']
 

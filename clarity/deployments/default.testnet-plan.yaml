@@ -33,6 +33,27 @@ plan:
             path: "./.cache/requirements/SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-deposit.clar"
             clarity-version: 3
         - contract-publish:
+            contract-name: BitHedgeParametersContract
+            expected-sender: ST3EXYD6X5D7R4RHC7FR6Y54SQBF2267YY4YSFXHR
+            cost: 50000 # Placeholder cost
+            path: contracts/BitHedgeParametersContract.clar
+            anchor-block-only: true
+            clarity-version: 3
+        - contract-publish:
+            contract-name: math-library
+            expected-sender: ST3EXYD6X5D7R4RHC7FR6Y54SQBF2267YY4YSFXHR
+            cost: 50000 # Placeholder cost
+            path: contracts/math-library.clar
+            anchor-block-only: true
+            clarity-version: 3
+        - contract-publish:
+            contract-name: liquidity-pool-vault
+            expected-sender: ST3EXYD6X5D7R4RHC7FR6Y54SQBF2267YY4YSFXHR
+            cost: 50000 # Placeholder cost
+            path: contracts/liquidity-pool-vault.clar
+            anchor-block-only: true
+            clarity-version: 3
+        - contract-publish:
             contract-name: fundraising
             expected-sender: ST3EXYD6X5D7R4RHC7FR6Y54SQBF2267YY4YSFXHR
             cost: 6735

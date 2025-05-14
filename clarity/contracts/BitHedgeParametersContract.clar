@@ -1,4 +1,3 @@
-\
 ;; BitHedge European-Style Parameters Contract
 ;; Version: 0.1 (Phase 1 Development - PA-101, PA-103, PA-104)
 ;; Summary: Central repository for system configuration parameters, fee structures, and authorized roles.

@@ -72,7 +72,7 @@
     ;; Phase 1 (ML-104) stub: Basic check and placeholder return.
     ;; Actual settlement calculation (e.g., max(0, strike - spot) for PUT)
     ;; will be implemented in ML-202.
-    (asserts! (or (is-eq policy-type \"PUT\") (is-eq policy-type \"CALL\")) (err u202)) ;; ERR-INVALID-POLICY-TYPE (example)
+    (asserts! (or (is-eq policy-type "PUT") (is-eq policy-type "CALL")) (err u202)) ;; ERR-INVALID-POLICY-TYPE (example)
     ;; For now, just return 0 as a placeholder.
     (ok u0) 
   )

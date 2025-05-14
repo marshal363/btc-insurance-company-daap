@@ -52,6 +52,11 @@
 (define-constant ERR-NO_PROVIDER_FOR_TIER (err u413))
 (define-constant ERR-ALLOCATION_LOGIC_ERROR (err u414))
 
+;; Error codes for LP-102
+(define-constant ERR-PR-PRINCIPAL-NOT-SET-LP (err u415))
+(define-constant ERR-PARAMS-PRINCIPAL-NOT-SET-LP (err u416))
+(define-constant ERR-MATH-PRINCIPAL-NOT-SET-LP (err u417))
+
 ;; Risk Tier Constants (SH-102) - More may be added as parameters later
 (define-constant RISK-TIER-CONSERVATIVE "Conservative")
 (define-constant RISK-TIER-BALANCED "Balanced")
@@ -141,7 +146,9 @@
 
 ;; --- Data Variables ---
 (define-data-var backend-authorized-principal principal tx-sender)
-(define-data-var policy-registry-principal principal tx-sender) ;; To be set by admin
+(define-data-var policy-registry-principal (optional principal) none) ;; LP-102: For Policy Registry contract
+(define-data-var parameters-contract-principal (optional principal) none) ;; LP-102: For Parameters contract
+(define-data-var math-library-principal (optional principal) none) ;; LP-102: For Math Library contract
 
 ;; Map to track initialized tokens (LP-110)
 (define-map supported-tokens
@@ -248,20 +255,41 @@
 )
 
 ;; --- Administrative Functions (LP-102) ---
-(define-public (set-backend-authorized-principal (new-principal principal))
+
+(define-public (set-policy-registry-principal (new-principal principal))
   (begin
     (asserts! (is-eq tx-sender CONTRACT-OWNER) ERR-UNAUTHORIZED)
-    (var-set backend-authorized-principal new-principal)
+    (var-set policy-registry-principal (some new-principal))
     (ok true)
   )
 )
 
-(define-public (set-policy-registry-principal (registry-principal principal))
+(define-read-only (get-policy-registry-principal)
+  (var-get policy-registry-principal)
+)
+
+(define-public (set-parameters-contract-principal (new-principal principal))
   (begin
     (asserts! (is-eq tx-sender CONTRACT-OWNER) ERR-UNAUTHORIZED)
-    (var-set policy-registry-principal registry-principal)
+    (var-set parameters-contract-principal (some new-principal))
     (ok true)
   )
+)
+
+(define-read-only (get-parameters-contract-principal)
+  (var-get parameters-contract-principal)
+)
+
+(define-public (set-math-library-principal (new-principal principal))
+  (begin
+    (asserts! (is-eq tx-sender CONTRACT-OWNER) ERR-UNAUTHORIZED)
+    (var-set math-library-principal (some new-principal))
+    (ok true)
+  )
+)
+
+(define-read-only (get-math-library-principal)
+  (var-get math-library-principal)
 )
 
 ;; --- Capital Management Functions (LP-103) ---
@@ -355,7 +383,7 @@
     (if (is-eq token-id STX-TOKEN-ID)
       (try! (as-contract (stx-transfer? amount tx-sender provider)))
       (let ((token-info (unwrap! (map-get? supported-tokens { token-id: token-id })
-          ERR-TOKEN-NOT_INITIALIZED
+          ERR-TOKEN-NOT-INITIALIZED
         )))
         (try! (as-contract (contract-call? (unwrap-panic (get sbtc-contract-principal token-info))
           transfer amount tx-sender provider none
@@ -392,9 +420,9 @@
     (expiration-height uint)
   )
   (begin
-    (asserts! (is-token-supported token-id) ERR-TOKEN-NOT_INITIALIZED)
+    (asserts! (is-token-supported token-id) ERR-TOKEN-NOT-INITIALIZED)
     (let ((global-balance (unwrap! (map-get? token-balances { token-id: token-id })
-        ERR-TOKEN-NOT_INITIALIZED
+        ERR-TOKEN-NOT-INITIALIZED
       )))
       ;; Phase 1: Basic check of overall available balance for the token.
       ;; More sophisticated checks (tier-specific liquidity, concentration) will be in later phases.
@@ -419,11 +447,11 @@
     (asserts! (is-eq tx-sender (var-get policy-registry-principal))
       ERR-POLICY-REGISTRY-ONLY
     )
-    (asserts! (is-token-supported token-id) ERR-TOKEN-NOT_INITIALIZED)
+    (asserts! (is-token-supported token-id) ERR-TOKEN-NOT-INITIALIZED)
     (asserts! (> collateral-amount u0) ERR-AMOUNT-MUST-BE-POSITIVE)
     (asserts! (is-valid-risk-tier risk-tier) ERR-INVALID-RISK-TIER)
     (let ((global-bal (unwrap! (map-get? token-balances { token-id: token-id })
-        ERR-TOKEN-NOT_INITIALIZED
+        ERR-TOKEN-NOT-INITIALIZED
       )))
       (asserts! (>= (get available-balance global-bal) collateral-amount)
         ERR-INSUFFICIENT-LIQUIDITY
@@ -507,12 +535,12 @@
     (asserts! (is-eq tx-sender (var-get policy-registry-principal))
       ERR-POLICY-REGISTRY-ONLY
     )
-    (asserts! (is-token-supported token-id) ERR-TOKEN-NOT_INITIALIZED)
+    (asserts! (is-token-supported token-id) ERR-TOKEN-NOT-INITIALIZED)
     (asserts! (> premium-amount u0) ERR-AMOUNT-MUST-BE-POSITIVE)
     ;; The premium is technically paid by the policy-owner-principal to the Policy Registry, which then informs LP.
     ;; The LP needs to account for this premium as collected. For European options, premiums typically pool and are distributed later.
     (let ((prem-bal (unwrap! (map-get? premium-balances { token-id: token-id })
-        ERR-TOKEN-NOT_INITIALIZED
+        ERR-TOKEN-NOT-INITIALIZED
       )))
       (map-set premium-balances { token-id: token-id }
         (merge prem-bal { total-premiums-collected: (+ (get total-premiums-collected prem-bal) premium-amount) })

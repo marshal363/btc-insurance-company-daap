@@ -90,19 +90,19 @@
 
 ;; Index to retrieve all policies owned by a specific principal.
 ;; Key: principal (policy owner)
-;; Value: (list MAX_POLICIES_PER_LISTING uint) (list of policy IDs owned by the principal)
+;; Value: { ids: (list MAX_POLICIES_PER_LISTING uint) } (wrapped list in a tuple)
 (define-map policies-by-owner
   principal
-  (list MAX_POLICIES_PER_LISTING uint)
+  { ids: (list MAX_POLICIES_PER_LISTING uint) }
 )
 
 ;; Index to retrieve all policies expiring at a specific block height.
 ;; This is crucial for batch processing of expirations.
 ;; Key: uint (expiration block height)
-;; Value: (list MAX_POLICIES_PER_LISTING uint) (list of policy IDs expiring at that height)
+;; Value: { ids: (list MAX_POLICIES_PER_LISTING uint) } (wrapped list in a tuple)
 (define-map policies-by-expiration-height
   uint
-  (list MAX_POLICIES_PER_LISTING uint)
+  { ids: (list MAX_POLICIES_PER_LISTING uint) }
 )
 
 ;; --- Public Functions ---
@@ -226,16 +226,18 @@
                   }
                 )
 
-                ;; 10. Update Indices (PR-105)
-                (let ((owner-policies (default-to (list) (map-get? policies-by-owner policy-owner-principal))))
+                ;; 10. Update Indices (PR-105) - Adjusted for tuple structure
+                (let ((owner-policy-map-entry (default-to {ids: (list)} (map-get? policies-by-owner policy-owner-principal)))
+                      (owner-policies-list (get ids owner-policy-map-entry)))
                   (map-set policies-by-owner policy-owner-principal
-                    (unwrap! (as-max-len? (append owner-policies new-policy-id) MAX_POLICIES_PER_LISTING) ERR-OWNER_POLICY_LIST_FULL)
+                    {ids: (unwrap! (as-max-len? (append owner-policies-list new-policy-id) MAX_POLICIES_PER_LISTING) ERR-OWNER_POLICY_LIST_FULL)}
                   )
                 )
 
-                (let ((exp-height-policies (default-to (list) (map-get? policies-by-expiration-height expiration-height))))
+                (let ((exp-height-policy-map-entry (default-to {ids: (list)} (map-get? policies-by-expiration-height expiration-height)))
+                      (exp-height-policies-list (get ids exp-height-policy-map-entry)))
                   (map-set policies-by-expiration-height expiration-height
-                    (unwrap! (as-max-len? (append exp-height-policies new-policy-id) MAX_POLICIES_PER_LISTING) ERR-EXPIRATION_POLICY_LIST_FULL)
+                    {ids: (unwrap! (as-max-len? (append exp-height-policies-list new-policy-id) MAX_POLICIES_PER_LISTING) ERR-EXPIRATION_POLICY_LIST_FULL)}
                   )
                 )
 
@@ -312,12 +314,12 @@
 
 ;; Retrieves the list of policy IDs associated with a given owner.
 (define-read-only (get-policies-by-owner (owner principal))
-  (ok (default-to (list) (map-get? policies-by-owner owner)))
+  (ok (get ids (default-to {ids: (list)} (map-get? policies-by-owner owner))))
 )
 
 ;; Retrieves the list of policy IDs expiring at a given block height.
 (define-read-only (get-policies-by-expiration-height (height uint))
-  (ok (default-to (list) (map-get? policies-by-expiration-height height)))
+  (ok (get ids (default-to {ids: (list)} (map-get? policies-by-expiration-height height))))
 )
 
 ;; Retrieves the total number of policies created (value of the next ID to be assigned).
