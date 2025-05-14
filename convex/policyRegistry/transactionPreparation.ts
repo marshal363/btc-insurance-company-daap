@@ -141,16 +141,44 @@ export const internalPreparePolicyCreationTransaction = internalMutation({
       console.error("CRITICAL: Liquidity Pool (Counterparty) STX_ADDRESS could not be determined.");
       throw new Error("System configuration error: Counterparty address is not configured correctly.");
     }
+    
+    const amountBTC = quote.buyerParamsSnapshot.protectionAmount;
+    // TODO: Determine positionType, collateralToken, settlementToken based on conventions or quote data
+    // For now, using placeholders or typical values for a BTC PUT option buyer.
+    const collateralTokenString = "BTC";    // Example: This should align with what the LP holds as collateral for this policy type
+    
+    // LPI-101: Collateral Check
+    console.log(`[TransactionPreparationInternal] Performing collateral check for token: ${collateralTokenString}`);
+    const poolMetrics: Doc<"pool_metrics"> | null = await ctx.runQuery(api.liquidityPool.poolState.getPoolMetrics, { token: collateralTokenString });
+
+    if (!poolMetrics) {
+        console.warn(`[TransactionPreparationInternal] Pool metrics not found for token: ${collateralTokenString}. Assuming insufficient collateral.`);
+        throw new Error(`Insufficient Liquidity Pool collateral (metrics unavailable for ${collateralTokenString}).`);
+    }
+
+    const requiredCollateralSatoshis = btcToSatoshis(amountBTC); // Assuming protectionAmount is in BTC
+    // Ensure poolMetrics.available_liquidity is defined and is a number
+    if (typeof poolMetrics.available_liquidity !== 'number') {
+        console.error(`[TransactionPreparationInternal] available_liquidity for ${collateralTokenString} is not a number or is undefined. Metrics:`, poolMetrics);
+        throw new Error(`Invalid Liquidity Pool metrics for ${collateralTokenString}. Cannot verify collateral.`);
+    }
+    
+    console.log(`[TransactionPreparationInternal] Required collateral (Satoshis): ${requiredCollateralSatoshis}, Available in LP (Satoshis): ${poolMetrics.available_liquidity}`);
+
+    if (poolMetrics.available_liquidity < requiredCollateralSatoshis) {
+        console.warn(`[TransactionPreparationInternal] Insufficient collateral. Required: ${requiredCollateralSatoshis}, Available: ${poolMetrics.available_liquidity}`);
+        throw new Error(`Insufficient Liquidity Pool collateral to back this policy. Required: ${requiredCollateralSatoshis} ${collateralTokenString} (Satoshis), Available: ${poolMetrics.available_liquidity} ${collateralTokenString} (Satoshis).`);
+    }
+    console.log("[TransactionPreparationInternal] Collateral check passed.");
+    // End LPI-101
 
     const strikePriceUSD = (quote.marketDataSnapshot.btcPrice * quote.buyerParamsSnapshot.protectedValuePercentage) / 100;
-    const amountBTC = quote.buyerParamsSnapshot.protectionAmount;
     const premiumSTX = quote.quoteResult.premium; // Premium is in STX
     const expirationDays = quote.buyerParamsSnapshot.expirationDays;
     const policyTypeString = quote.buyerParamsSnapshot.policyType; // "PUT" or "CALL"
     // TODO: Determine positionType, collateralToken, settlementToken based on conventions or quote data
     // For now, using placeholders or typical values for a BTC PUT option buyer.
     const positionTypeString = "LONG_PUT"; // Example for buyer
-    const collateralTokenString = "BTC";    // Example
     const settlementTokenString = "STX";  // Example, premium paid in STX, settlement could be STX or sBTC based on policy.
 
     // Get Contract Details
