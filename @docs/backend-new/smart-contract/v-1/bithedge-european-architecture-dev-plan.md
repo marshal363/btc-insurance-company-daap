@@ -35,13 +35,60 @@ The implementation will follow a phased approach, starting with foundational con
 
 #### BitHedgeParametersContract
 
-| Task ID | Description                                                                                                          | Dependencies | Complexity | Estimated Days | References                                                                                                                                                                                                                          |
-| ------- | -------------------------------------------------------------------------------------------------------------------- | ------------ | ---------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| PA-101  | Define core data structures (system-parameters, fee-structure stubs, authorized-roles)                               | None         | Medium     | 1.5            | [@bithedge-smart-contract-architecture.md#BitHedgeParametersContract], [@bithedge-contract-architecture.md#2.4-BitHedgeParametersContract.clar]                                                                                     |
-| PA-102  | Implement basic get/set functions for system parameters (protected access)                                           | PA-101       | Medium     | 1.5            | [@bithedge-smart-contract-architecture.md#BitHedgeParametersContract], [@bithedge-contract-architecture.md#2.4-BitHedgeParametersContract.clar]                                                                                     |
-| PA-103  | Implement role management functions (grant-role, revoke-role, has-role)                                              | PA-101       | Medium     | 2              | [@bithedge-smart-contract-architecture.md#Role-Based-Access-Control], [@BitHedge-Advanced-Clarity-Patterns.md#Role-Based-Access-Control-RBAC], [@BitHedge-Senior-Clarity-Technical-Analysis.md#4-Multi-Level-Access-Control-System] |
-| PA-104  | Define initial set of global error codes and constants for the system                                                | None         | Low        | 1              | [@clarity-best-practices.md#1.-Standardized-Error-Handling]                                                                                                                                                                         |
-| PA-105  | Define data structure for risk tier parameters (name, collateral-ratio, premium-multiplier, max-exposure-percentage) | PA-101       | Medium     | 1              | [@bithedge-european-architecture-spec.md#2.3-Risk-Tier-System-Mapping], [@bithedge-liquidity-premium-management.md#2.1-Provider-Capital-Commitment-Process], [@bithedge-contract-architecture.md#1.2-BitHedgeLiquidityPool.clar]    |
+**Implementation Summary (PA-101 & PA-102):**
+
+The initial development for the `BitHedgeParametersContract` focused on establishing its core data structures and basic access mechanisms.
+
+- **PA-101 (Core Data Structures):**
+  - `system-parameters` map: Defined to store various system-wide parameters. It supports multiple data types (uint, bool, principal, string-ascii) using optional fields for flexibility and includes metadata like description, last update height, and updater principal. The key is `(string-ascii 64)` for descriptive parameter IDs.
+  - `fee-structure` map: Established to hold definitions for different fee types. Each entry includes fields for percentage (in basis points), min/max flat amounts, recipient principal, an activity flag, description, and update metadata. The key is `(string-ascii 32)`.
+  - `authorized-roles` map: Created to manage role-based access control. It maps a composite key `(user-principal, role-name (string-ascii 32))` to details like whether the role is enabled, an optional expiration height, the principal who set the role, and update metadata.
+  - A `contract-initialized-flag (bool)` data variable was also added.
+- **PA-102 (Get/Set System Parameters):**
+  - Type-specific public setter functions (`set-system-parameter-uint`, `-bool`, `-principal`, `-string`) were implemented. These are protected, requiring `tx-sender` to be `CONTRACT-OWNER`. When setting a parameter of one type, the optional fields for other types are cleared (`none`) to ensure data integrity. Each setter also updates the parameter's description and metadata (last update height, updater).
+  - Read-only getter functions were added: `get-system-parameter` (retrieves the full parameter record) and type-specific getters (`get-system-parameter-uint`, `-bool`, `-principal`, `-string`) that return the specific `(optional <type>)` value.
+
+These foundational elements allow for controlled storage and retrieval of system parameters, paving the way for role management and more complex parameter interactions.
+
+**Implementation Summary (PA-103, PA-104, PA-105):**
+
+Further development on the `BitHedgeParametersContract` introduced role management, global constants, standardized error codes, and the data structure for risk tier parameters.
+
+- **PA-103 (Role Management Functions):**
+
+  - Implemented `grant-role` and `revoke-role` as public, `CONTRACT-OWNER` protected functions. These allow assignment and revocation of string-based roles to user principals. Roles can optionally have an `expiration-height`.
+  - `revoke-role` was refined to treat an attempt to revoke an already disabled or non-existent role for a user as a successful no-op (returning `(ok true)` if the role entry exists but is disabled, or `(err ERR-ROLE-NOT-FOUND)` if no entry exists).
+  - A read-only function `has-role` was added to check if a user possesses a specific active (enabled and not expired) role.
+  - Events `role-granted` and `role-revoked` are emitted to facilitate off-chain tracking.
+
+- **PA-104 (Global Error Codes and Constants):**
+
+  - A set of system-wide numerical constants was defined, including `UINT-MAX`, `BASIS_POINTS_MULTIPLIER`, and `BASIS_POINTS_DENOMINATOR` for financial calculations.
+  - Standardized string constants for common role names (e.g., `ROLE-ADMIN`, `ROLE-SYSTEM-PARAMETER-MANAGER`) were introduced to improve consistency and reduce typographical errors in role management.
+  - A new range of global error codes (u100-u120, e.g., `ERR-GENERIC`, `ERR-NOT-YET-IMPLEMENTED`, `ERR-SYSTEM-PAUSED`) was defined for common error scenarios across all BitHedge contracts.
+  - A few additional specific error codes for `BitHedgeParametersContract` (u1006-u1008, e.g., `ERR-RISK-TIER-NOT-FOUND`, `ERR-ROLE-ALREADY-GRANTED`) were also added.
+
+- **PA-105 (Risk Tier Parameter Data Structure):**
+  - The `risk-tier-parameters` data map was defined to store configurations for different risk tiers.
+  - The map key is `tier-name (string-ascii 32)`.
+  - The value is a tuple containing:
+    - `tier-type: (string-ascii 16)` (to distinguish "BUYER" from "PROVIDER" tiers).
+    - `collateral-ratio-basis-points: uint` (primarily for provider tiers).
+    - `premium-adjustment-basis-points: uint` (can influence premium calculations).
+    - `max-exposure-per-policy-basis-points: uint` (for provider exposure management).
+    - `max-exposure-per-expiration-basis-points: uint` (for provider exposure management).
+    - `is-active: bool` (to enable or disable the tier).
+    - `description: (string-ascii 256)`.
+    - `last-updated-height: uint` and `updater-principal: principal` for metadata and auditability.
+  - This structure provides a flexible foundation for managing diverse risk profiles within the system.
+
+| Task ID | Description                                                                                                                                 | Dependencies | Complexity | Estimated Days | References                                                                                                                                                                                                                          |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ------------ | ---------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PA-101  | Define core data structures (system-parameters, fee-structure stubs, authorized-roles). **Status: Completed**                               | None         | Medium     | 1.5            | [@bithedge-smart-contract-architecture.md#BitHedgeParametersContract], [@bithedge-contract-architecture.md#2.4-BitHedgeParametersContract.clar]                                                                                     |
+| PA-102  | Implement basic get/set functions for system parameters (protected access). **Status: Completed**                                           | PA-101       | Medium     | 1.5            | [@bithedge-smart-contract-architecture.md#BitHedgeParametersContract], [@bithedge-contract-architecture.md#2.4-BitHedgeParametersContract.clar]                                                                                     |
+| PA-103  | Implement role management functions (grant-role, revoke-role, has-role). **Status: Completed**                                              | PA-101       | Medium     | 2              | [@bithedge-smart-contract-architecture.md#Role-Based-Access-Control], [@BitHedge-Advanced-Clarity-Patterns.md#Role-Based-Access-Control-RBAC], [@BitHedge-Senior-Clarity-Technical-Analysis.md#4-Multi-Level-Access-Control-System] |
+| PA-104  | Define initial set of global error codes and constants for the system. **Status: Completed**                                                | None         | Low        | 1              | [@clarity-best-practices.md#1.-Standardized-Error-Handling]                                                                                                                                                                         |
+| PA-105  | Define data structure for risk tier parameters (name, collateral-ratio, premium-multiplier, max-exposure-percentage). **Status: Completed** | PA-101       | Medium     | 1              | [@bithedge-european-architecture-spec.md#2.3-Risk-Tier-System-Mapping], [@bithedge-liquidity-premium-management.md#2.1-Provider-Capital-Commitment-Process], [@bithedge-contract-architecture.md#1.2-BitHedgeLiquidityPool.clar]    |
 
 #### BitHedgeMathLibraryContract
 
