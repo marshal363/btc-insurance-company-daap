@@ -89,24 +89,26 @@
   )
   (begin
     ;; Initial Basic Validations
-    (asserts! (> expiration-height current-block-height) ERR-EXPIRATION-IN-PAST-ML)
+    (asserts! (> expiration-height current-block-height)
+      ERR-EXPIRATION-IN-PAST-ML
+    )
     (asserts! (> submitted-premium u0) ERR-PREMIUM-ZERO-OR-LESS)
-    (asserts! (or (is-eq policy-type "PUT") (is-eq policy-type "CALL")) ERR-POLICY-TYPE-INVALID-ML)
-
+    (asserts! (or (is-eq policy-type "PUT") (is-eq policy-type "CALL"))
+      ERR-POLICY-TYPE-INVALID-ML
+    )
     ;; Use passed-in risk tier parameters
     (asserts! risk-tier-is-active ERR-RISK-TIER-NOT-ACTIVE)
-              
     ;; current-oracle-price is passed in, can be used for more complex premium logic if needed.
     ;; For now, the premium bounds are based on protection_amount and risk tier adjustment.
     (let (
         (premium-adj-bp risk-tier-premium-adjustment-bp)
         (min-base-premium-factor u1) ;; Example: 0.01% base min premium factor (1/10000)
         (max-premium-factor u5000) ;; Example: 50% max premium factor (5000/10000)
-
         ;; min_base_premium = protection_amount * (min_base_premium_factor / 10000)
         (min-base-premium (mul-down protection-amount min-base-premium-factor))
-        (min-base-premium-scaled (unwrap! (div-down min-base-premium BASIS_POINTS_DENOMINATOR) ERR-ARITHMETIC))
-
+        (min-base-premium-scaled (unwrap! (div-down min-base-premium BASIS_POINTS_DENOMINATOR)
+          ERR-ARITHMETIC
+        ))
         ;; adjusted_min_premium = min_base_premium_scaled * (1 + premium_adj_bp / 10000)
         ;; Assuming premium_adj_bp is an additive adjustment on top of a base.
         ;; If premium_adj_bp is, for example, 100 (1%), new factor is (1 + 0.01) = 1.01
@@ -124,17 +126,21 @@
         ;; So, effective_factor = BASIS_POINTS_DENOMINATOR + premium_adj_bp
         (effective-premium-factor (+ BASIS_POINTS_DENOMINATOR premium-adj-bp))
         (adjusted-min-premium (mul-down min-base-premium-scaled effective-premium-factor))
-        (adjusted-min-premium-final (unwrap! (div-down adjusted-min-premium BASIS_POINTS_DENOMINATOR) ERR-ARITHMETIC))
-        
+        (adjusted-min-premium-final (unwrap! (div-down adjusted-min-premium BASIS_POINTS_DENOMINATOR)
+          ERR-ARITHMETIC
+        ))
         ;; max_premium = protection_amount * (max_premium_factor / 10000)
         (max-premium-calc (mul-down protection-amount max-premium-factor))
-        (max-premium-final (unwrap! (div-down max-premium-calc BASIS_POINTS_DENOMINATOR) ERR-ARITHMETIC))
+        (max-premium-final (unwrap! (div-down max-premium-calc BASIS_POINTS_DENOMINATOR)
+          ERR-ARITHMETIC
+        ))
       )
-      
-      (asserts! (>= submitted-premium adjusted-min-premium-final) ERR-INVALID-PREMIUM)
+      (asserts! (>= submitted-premium adjusted-min-premium-final)
+        ERR-INVALID-PREMIUM
+      )
       (asserts! (<= submitted-premium max-premium-final) ERR-INVALID-PREMIUM)
-
-      (ok true) ;; All checks passed
+      (ok true)
+      ;; All checks passed
     )
   )
 )
@@ -148,16 +154,18 @@
 ;; - policy-type: (string-ascii 8) e.g., "PUT", "CALL".
 (define-read-only (calculate-settlement-amount
     (protected-value uint)
-    (protection-amount uint) 
+    (protection-amount uint)
     (expiration-price uint)
     (policy-type (string-ascii 8))
   )
   (begin
-    (asserts! (or (is-eq policy-type "PUT") (is-eq policy-type "CALL")) ERR-POLICY-TYPE-INVALID-ML)
+    (asserts! (or (is-eq policy-type "PUT") (is-eq policy-type "CALL"))
+      ERR-POLICY-TYPE-INVALID-ML
+    )
     ;; For now, just return 0 as a placeholder.
     ;; Actual settlement calculation (e.g., max(0, strike - spot) for PUT)
     ;; will be implemented in ML-202.
-    (ok u0) 
+    (ok u0)
   )
 )
 
@@ -166,22 +174,27 @@
 ;; This stub takes a list of price observations. For now, it calculates a simple average of prices.
 ;; Inputs:
 ;; - price-observations: A list of tuples, each containing a price and its duration/weight.
-;;                       (list MAX_TWAP_PRICE_POINTS {price: uint, block-duration: uint})
+;;                       (list MAX_TWAP_PRICE_POINTS (tuple (price uint) (block-duration uint)))
 ;; Output: (response uint uint) - The calculated TWAP or an error.
-(define-read-only (calculate-twap-simple (price-observations (list MAX_TWAP_PRICE_POINTS {price: uint, block-duration: uint})))
+(define-read-only (calculate-twap-simple (price-observations (list MAX_TWAP_PRICE_POINTS {
+  price: uint,
+  block-duration: uint,
+})))
   (begin
     (asserts! (> (len price-observations) u0) ERR-EMPTY-PRICE-DATA-ML)
-
     ;; Stub logic: Calculate simple average of prices, ignore block-duration for now.
     ;; Using fold to iterate and sum directly to try and bypass potential linter issue with map in let.
     (let (
-        (summation-result (fold sum-price-observation price-observations {total-price: u0, count: u0}))
+        (summation-result (fold sum-price-observation price-observations {
+          total-price: u0,
+          count: u0,
+        }))
         (total-price (get total-price summation-result))
         (num-observations (get count summation-result))
       )
       ;; num-observations should be > u0 due to the asserts! above.
       ;; The check (is-eq num-observations u0) is mostly a defensive safeguard here.
-      (if (is-eq num-observations u0) 
+      (if (is-eq num-observations u0)
         ERR-EMPTY-PRICE-DATA-ML
         (ok (/ total-price num-observations)) ;; Simple average
       )
@@ -192,26 +205,44 @@
 ;; --- Private Functions ---
 
 ;; Private helper for ML-203 to extract price from a price observation tuple
-(define-private (get-price-from-observation (observation {price: uint, block-duration: uint}))
+(define-private (get-price-from-observation (observation {
+  price: uint,
+  block-duration: uint,
+}))
   (get price observation)
 )
 
 ;; Private helper for ML-203 using fold to sum prices and count observations
-(define-private (sum-price-observation (observation {price: uint, block-duration: uint}) (accumulator {total-price: uint, count: uint}))
+(define-private (sum-price-observation
+    (observation {
+      price: uint,
+      block-duration: uint,
+    })
+    (accumulator {
+      total-price: uint,
+      count: uint,
+    })
+  )
   {
     total-price: (+ (get total-price accumulator) (get price observation)),
-    count: (+ (get count accumulator) u1)
+    count: (+ (get count accumulator) u1),
   }
 )
 
 ;; Adds two fixed-point numbers (assuming same precision)
-(define-private (add (a uint) (b uint))
+(define-private (add
+    (a uint)
+    (b uint)
+  )
   (+ a b)
 )
 
 ;; Subtracts second fixed-point number from the first (assuming same precision)
 ;; Panics on underflow if b > a.
-(define-private (sub (a uint) (b uint))
+(define-private (sub
+    (a uint)
+    (b uint)
+  )
   (- a b)
 )
 
@@ -219,7 +250,10 @@
 ;; (a * ONE_8) * (b * ONE_8) / ONE_8 = a * b * ONE_8
 ;; So, if a and b are already scaled by ONE_8, the operation is:
 ;; a_scaled * b_scaled / ONE_8
-(define-private (mul-down (a uint) (b uint))
+(define-private (mul-down
+    (a uint)
+    (b uint)
+  )
   (/ (* a b) ONE_8)
 )
 
@@ -227,7 +261,10 @@
 ;; (a * ONE_8) / (b * ONE_8) * ONE_8 = a / b * ONE_8
 ;; So, if a and b are already scaled by ONE_8, the operation is:
 ;; (a_scaled * ONE_8) / b_scaled
-(define-private (div-down (a uint) (b uint))
+(define-private (div-down
+    (a uint)
+    (b uint)
+  )
   (if (is-eq b u0)
     ERR-DIVISION-BY-ZERO ;; Return error for division by zero
     (if (is-eq a u0)
@@ -237,5 +274,4 @@
   )
 )
 
-(print { message: "BitHedgeMathLibraryContract refactored for ML-201: verify-submitted-premium now takes direct oracle/param data." })
-(print { message: "BitHedgeMathLibraryContract updated for ML-203: Refactored TWAP stub to use fold directly, attempting to fix syntax binding error." }) 
+(print { message: "BitHedgeMathLibraryContract refactored for ML-201: verify-submitted-premium now takes direct oracle/param data." }) (print { message: "BitHedgeMathLibraryContract updated for ML-203: Refactored TWAP stub to use fold directly, attempting to fix syntax binding error." })

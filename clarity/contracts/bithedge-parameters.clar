@@ -477,6 +477,4 @@
 )
 
 ;; --- Private Functions ---
-
-
-(print { message: "BitHedgeParametersContract.clar Phase 1: PA-101 - Core data structures defined." }) 
+ 

@@ -42,6 +42,9 @@
 (define-constant ERR-PARAMS-CALL-FAILED-PR (err u320))
 (define-constant ERR-RISK-TIER-DATA-INVALID-PR (err u321))
 
+;; PR-210: Error for stale oracle price
+(define-constant ERR-ORACLE-PRICE-TOO-STALE (err u322))
+
 ;; Policy Status Constants (PR-104)
 (define-constant STATUS-ACTIVE "Active")
 (define-constant STATUS-PENDING-SETTLEMENT "PendingSettlement")
@@ -181,19 +184,26 @@
             (asserts! (> expiration-height burn-block-height)
               ERR-EXPIRATION-IN-PAST
             )
-            ;; 3. Fetch data for Premium Verification
-            (let ((current-oracle-price (unwrap! (contract-call? oracle-contract get-current-bitcoin-price)
-                ERR-ORACLE-CALL-FAILED-PR
-              )))
-              (let ((risk-tier-params (unwrap!
-                  (contract-call? params-contract get-risk-tier-parameters
-                    risk-tier
-                  )
-                  ERR-PARAMS-CALL-FAILED-PR
-                )))
-                (let (
-                    (risk-tier-is-active (get is-active risk-tier-params))
-                    (risk-tier-premium-adjustment-bp (get premium-adjustment-basis-points risk-tier-params))
+            ;; 3. Fetch data for Premium Verification & Freshness Check
+            (let (
+                  ;; Fetch max oracle price age from Parameters contract
+                  (max-price-age-blocks (unwrap! (contract-call? params-contract get-system-parameter-uint "max-oracle-price-age-blocks")
+                                          (err ERR-PARAMS-CALL-FAILED-PR))) ;; Assuming specific error for this fetch or reuse general one
+                  ;; Fetch current price and its timestamp from Oracle
+                  (oracle-price-response (unwrap! (contract-call? oracle-contract get-current-bitcoin-price) ERR-ORACLE-CALL-FAILED-PR))
+                  (current-oracle-price (get price oracle-price-response)) ;; Assuming {price: uint, timestamp: uint}
+                  (oracle-price-timestamp (get timestamp oracle-price-response))
+                  ;; Risk Tier parameters
+                  (risk-tier-params (unwrap! (contract-call? params-contract get-risk-tier-parameters risk-tier) ERR-PARAMS-CALL-FAILED-PR))
+                 )
+
+              ;; PR-210: Oracle Price Freshness Check
+              (asserts! (<= (- burn-block-height oracle-price-timestamp) max-price-age-blocks) ERR-ORACLE-PRICE-TOO-STALE)
+
+              ;; This 'let' block uses the risk-tier-params defined above
+              (let (
+                  (risk-tier-is-active (get is-active risk-tier-params))
+                  (risk-tier-premium-adjustment-bp (get premium-adjustment-basis-points risk-tier-params))
                   )
                   ;; Ensure fetched params are not none if they are optional in the parameters contract's response
                   ;; Assuming get-risk-tier-parameters returns a tuple where these fields are direct values, not optional.
@@ -408,6 +418,289 @@
         new-status: new-status,
       })
       (ok true)
+    )
+  )
+)
+
+;; --- Errors for PR-201 and related flows ---
+(define-constant ERR-POLICY-NOT-YET-EXPIRED (err u200))
+(define-constant ERR-POLICY-INVALID-STATE-FOR-EXPIRATION (err u201))
+(define-constant ERR-ORACLE-CALL-FAILED (err u202))
+(define-constant ERR-MATH-CALL-FAILED (err u203))
+(define-constant ERR-LP-SETTLEMENT-CALL-FAILED (err u204))
+(define-constant ERR-POLICY-ALREADY-PROCESSED (err u205)) ;; If status is already settled or expired
+
+;; Errors for PR-207: distribute-premium
+(define-constant ERR-POLICY-NOT-OTM (err u206))
+(define-constant ERR-POLICY-NOT-PENDING-PREMIUM-DISTRIBUTION (err u207))
+(define-constant ERR-LP-PREMIUM-DISTRIBUTION-FAILED (err u208))
+
+;; PR-204: policy-settlements map
+;; Stores detailed settlement records for policies.
+(define-map policy-settlements
+  uint
+  {
+    expiration-price-scaled: uint, ;; Price from oracle at expiration
+    settlement-amount-scaled: uint, ;; Calculated settlement amount
+    settlement-processing-height: uint, ;; Block height when this record was made
+    settled-by: principal, ;; tx-sender who initiated this processing
+  }
+)
+
+;; PR-205: pending-premium-distributions map
+;; Tracks policies that are OTM and awaiting premium distribution.
+(define-map pending-premium-distributions
+  uint
+  bool
+)
+
+;; policy-id -> true if pending
+
+;; Private helper for processing a single policy given an explicit expiration price
+(define-private (priv-process-one-policy-at-expiration (policy-id uint) (price-for-settlement uint))
+  (let
+    (
+      (policy (unwrap! (map-get? policies policy-id) ERR-POLICY-NOT-FOUND))
+      (policy-owner (get owner policy))
+      (policy-protected-value (get protected-value policy))
+      (policy-protection-amount (get protection-amount policy))
+      (policy-expiration-height (get expiration-height policy))
+      (policy-type (get policy-type policy))
+      (policy-status (get status policy))
+      (policy-collateral-token (get collateral-token policy))
+      (current-height burn-block-height) ;; settlement_processing_height is when this runs
+      (math-principal (unwrap! (var-get math-library-principal) ERR-MATH-PRINCIPAL-NOT-SET))
+      (lp-principal (unwrap! (var-get liquidity-pool-principal) ERR-LP-PRINCIPAL-NOT-SET))
+    )
+
+    ;; Validations for policy status and if it has already expired by its own height vs current block height
+    ;; These are already in the public wrapper, but good for direct calls too if this were public.
+    ;; For a private helper called by a trusted function that already did these, they might be omitted for gas.
+    ;; For now, keeping them for robustness.
+    (asserts! (<= policy-expiration-height current-height) ERR-POLICY-NOT-YET-EXPIRED) ;; Ensures policy is due
+    (asserts! (is-eq policy-status STATUS-ACTIVE) ERR-POLICY-INVALID-STATE-FOR-EXPIRATION)
+
+    ;; 3. Calculating Settlement Amount (ML-202 dependency)
+    (let
+      ((settlement-amount-scaled (unwrap! (contract-call? math-principal calculate-settlement-amount
+                                          policy-protected-value
+                                          policy-protection-amount
+                                          price-for-settlement ;; Use provided price
+                                          policy-type
+                                        ) ERR-MATH-CALL-FAILED)))
+      (if (> settlement-amount-scaled u0)
+        ;; Policy is In-The-Money (ITM)
+        (begin
+          (try! (update-policy-status policy-id STATUS-PENDING-SETTLEMENT))
+          (map-set policy-settlements policy-id
+            {
+              expiration-price-scaled: price-for-settlement,
+              settlement-amount-scaled: settlement-amount-scaled,
+              settlement-processing-height: current-height,
+              settled-by: tx-sender
+            }
+          )
+          (match (contract-call? lp-principal process-settlement-at-expiration
+                   policy-id
+                   settlement-amount-scaled
+                   policy-collateral-token
+                   policy-owner)
+            success-lp-settlement
+            (begin
+              (try! (update-policy-status policy-id STATUS-SETTLED-ITM))
+              (print {
+                event: "policy-expiration-processed-itm",
+                block-height: current-height,
+                policy-id: policy-id,
+                status: STATUS-SETTLED-ITM,
+                expiration-price-scaled: price-for-settlement,
+                settlement-amount-scaled: settlement-amount-scaled
+              })
+              (ok true) ;; Indicate ITM success
+            )
+            error-lp-settlement
+            (begin
+              (print {
+                event: "policy-expiration-lp-settlement-failed",
+                block-height: current-height,
+                policy-id: policy-id,
+                status: STATUS-PENDING-SETTLEMENT,
+                error: error-lp-settlement
+              })
+              (err ERR-LP-SETTLEMENT-CALL-FAILED)
+            )
+          )
+        )
+        ;; Policy is Out-of-The-Money (OTM)
+        (begin
+          (try! (update-policy-status policy-id STATUS-EXPIRED-OTM))
+          (map-set policy-settlements policy-id
+            {
+              expiration-price-scaled: price-for-settlement,
+              settlement-amount-scaled: u0,
+              settlement-processing-height: current-height,
+              settled-by: tx-sender
+            }
+          )
+          (map-set pending-premium-distributions policy-id true)
+          (print {
+            event: "policy-expiration-processed-otm",
+            block-height: current-height,
+            policy-id: policy-id,
+            status: STATUS-EXPIRED-OTM,
+            expiration-price-scaled: price-for-settlement
+          })
+          (ok false) ;; Indicate OTM success (boolean to differentiate from ITM for fold accumulator)
+        )
+      )
+    )
+  )
+)
+
+;; PR-201: Implement process-single-policy-at-expiration (Refactored)
+(define-public (process-single-policy-at-expiration (policy-id uint))
+  (let (
+      (policy (unwrap! (map-get? policies policy-id) ERR-POLICY-NOT-FOUND))
+      (policy-status (get status policy))
+      (policy-expiration-height (get expiration-height policy))
+      (current-height burn-block-height)
+    )
+    (asserts! (not (is-eq policy-status STATUS-SETTLED)) ERR-POLICY-ALREADY-PROCESSED)
+    (asserts! (not (is-eq policy-status STATUS-EXPIRED-OTM)) ERR-POLICY-ALREADY-PROCESSED)
+    (asserts! (>= current-height policy-expiration-height) ERR-POLICY-NOT-YET-EXPIRED)
+    (asserts! (is-eq policy-status STATUS-ACTIVE) ERR-POLICY-INVALID-STATE-FOR-EXPIRATION)
+
+    ;; Step 1: Fetch the actual expiration price from the oracle for this specific policy's expiration.
+    (let ((oracle-principal (unwrap! (var-get price-oracle-principal) ERR-ORACLE-PRINCIPAL-NOT-SET)))
+      (let ((expiration-price-response (contract-call? oracle-principal get-bitcoin-price-at-height policy-expiration-height)))
+        (match expiration-price-response
+          price-tuple
+            (let ((expiration-price-scaled (get price price-tuple))) ;; Assuming the tuple is {price: uint, ...}
+              ;; Now call the internal processing function with the fetched price
+              (priv-process-one-policy-at-expiration policy-id expiration-price-scaled)
+            )
+          error-val
+            (begin
+              (print {event: "single-policy-expiration-oracle-error", message: "Failed to get price from oracle for policy expiration.", policy-id: policy-id, error: error-val})
+              (err ERR-ORACLE-CALL-FAILED)
+            )
+        )
+      )
+    )
+  )
+)
+
+;; PR-206: Implement process-expiration-batch
+(define-public (process-expiration-batch (expiration-height-to-process uint))
+  (let (
+      (oracle-principal (unwrap! (var-get price-oracle-principal) ERR-ORACLE-PRINCIPAL-NOT-SET))
+      (policy-ids-list-optional (map-get? policies-by-expiration-height expiration-height-to-process))
+    )
+    (if (is-none policy-ids-list-optional)
+      ;; No policies for this expiration height
+      (begin
+        (print {event: "batch-expiration-processed-info", message: "No policies found for this expiration height", height: expiration-height-to-process})
+        (ok {processed-count: u0, itm-count: u0, otm-count: u0, error-count: u0})
+      )
+      (let (
+          (policy-ids (get ids (unwrap-panic policy-ids-list-optional)))
+          ;; Simplification: uses current price for whole batch. For more accuracy, would need oracle call per policy or batched price for the specific expiration-height-to-process
+          (batch-price-response (contract-call? oracle-principal get-bitcoin-price-at-height expiration-height-to-process))
+          (current-block-height burn-block-height) ;; For event logging
+        )
+        (match batch-price-response
+          price-tuple
+            (let ((batch-price-scaled (get price price-tuple)))
+                (fold process-one-policy-in-batch
+                  policy-ids
+                  {processed-count: u0, itm-count: u0, otm-count: u0, error-count: u0, batch-price: batch-price-scaled, event-block-height: current-block-height}
+                )
+            )
+          error-val
+            (begin
+                (print {event: "batch-expiration-oracle-error", message: "Failed to get batch price from oracle.", height: expiration-height-to-process, error: error-val})
+                ;; Decide how to handle: fail all, or mark all as error? For now, returning an overall error.
+                (err ERR-ORACLE-CALL-FAILED)
+            )
+        )
+      )
+    )
+  )
+)
+
+;; Private helper for the fold operation in process-expiration-batch
+;; Takes a policy-id and the current accumulator state.
+(define-private (process-one-policy-in-batch (policy-id uint) (accumulator {processed-count: uint, itm-count: uint, otm-count: uint, error-count: uint, batch-price: uint, event-block-height: uint}))
+  (let (
+      (batch-price-for-policy (get batch-price accumulator))
+      (event-height (get event-block-height accumulator))
+      (policy-result (priv-process-one-policy-at-expiration policy-id batch-price-for-policy)) ;; Call the renamed private function
+    )
+    (if (is-ok policy-result)
+      (let ((is-itm (unwrap-panic policy-result))) ;; priv-process-one-policy-at-expiration returns (ok bool) where true is ITM
+        (if is-itm
+          ;; ITM case
+          (merge accumulator {processed-count: (+ u1 (get processed-count accumulator)), itm-count: (+ u1 (get itm-count accumulator))})
+          ;; OTM case
+          (merge accumulator {processed-count: (+ u1 (get processed-count accumulator)), otm-count: (+ u1 (get otm-count accumulator))})
+        )
+      )
+      ;; Error case
+      (begin
+        (print {
+          event: "batch-expiration-policy-error",
+          block-height: event-height,
+          policy-id: policy-id,
+          error: (err-get policy-result) ;; Get the error value from the (err ...) response
+        })
+        (merge accumulator {processed-count: (+ u1 (get processed-count accumulator)), error-count: (+ u1 (get error-count accumulator))})
+      )
+    )
+  )
+)
+
+;; PR-207: Implement distribute-premium for a single OTM policy
+(define-public (distribute-premium (policy-id uint))
+  (let (
+      (policy (unwrap! (map-get? policies policy-id) ERR-POLICY-NOT-FOUND))
+      (policy-status (get status policy))
+      (is-pending-distribution (unwrap! (map-get? pending-premium-distributions policy-id) ERR-POLICY-NOT-PENDING-PREMIUM-DISTRIBUTION))
+      (lp-principal (unwrap! (var-get liquidity-pool-principal) ERR-LP-PRINCIPAL-NOT-SET))
+      (submitted-premium (get submitted-premium policy))
+      (collateral-token (get collateral-token policy))
+    )
+
+    ;; 1. Validate policy status and pending distribution flag
+    (asserts! (is-eq policy-status STATUS-EXPIRED-OTM) ERR-POLICY-NOT-OTM)
+    (asserts! is-pending-distribution ERR-POLICY-NOT-PENDING-PREMIUM-DISTRIBUTION) ;; ensure it's true
+
+    ;; 2. Call Liquidity Pool to distribute premiums
+    (match (contract-call? lp-principal distribute-premium-to-providers policy-id submitted-premium collateral-token)
+      success-lp-distribution
+      (begin
+        ;; 3. Update pending distribution status
+        (map-set pending-premium-distributions policy-id false) ;; Mark as processed
+
+        ;; 4. Emit event
+        (print {
+          event: "policy-premium-distributed",
+          block-height: burn-block-height,
+          policy-id: policy-id,
+          premium-amount-distributed: submitted-premium,
+          token-id: collateral-token
+        })
+        (ok true)
+      )
+      error-lp-distribution
+      (begin
+        (print {
+          event: "policy-premium-distribution-failed",
+          block-height: burn-block-height,
+          policy-id: policy-id,
+          error: error-lp-distribution
+        })
+        (err ERR-LP-PREMIUM-DISTRIBUTION-FAILED)
+      )
     )
   )
 )

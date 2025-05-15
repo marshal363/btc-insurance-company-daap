@@ -33,10 +33,10 @@ plan:
             path: "./.cache/requirements/SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-deposit.clar"
             clarity-version: 3
         - contract-publish:
-            contract-name: BitHedgeParametersContract
+            contract-name: bithedge-parameters
             expected-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
             cost: 50000 # Placeholder cost
-            path: contracts/BitHedgeParametersContract.clar
+            path: contracts/bithedge-parameters.clar
             anchor-block-only: true
             clarity-version: 3
         - contract-publish:

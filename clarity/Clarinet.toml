@@ -75,8 +75,8 @@ epoch = 3.0
 #clarity_version = 3
 #epoch = 3.0
 
-[contracts.bithedge-parameters-contract]
-path = 'contracts/BitHedgeParametersContract.clar'
+[contracts.bithedge-parameters]
+path = 'contracts/bithedge-parameters.clar'
 clarity_version = 3
 epoch = 3.0
 
