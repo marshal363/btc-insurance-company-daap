@@ -193,8 +193,9 @@
     })
     (print {
       event: "token-initialized",
-      token: token-id,
-      sbtc_principal: sbtc-principal-if-sip010,
+      block-height: burn-block-height,
+      token-id: token-id,
+      sbtc-contract-principal: sbtc-principal-if-sip010,
     })
     (ok true)
   )
@@ -346,10 +347,11 @@
     )
     (print {
       event: "capital-deposited",
-      depositor: tx-sender,
+      block-height: burn-block-height,
+      provider-principal: tx-sender,
       amount: amount,
-      token: token-id,
-      risk_tier: risk-tier,
+      token-id: token-id,
+      risk-tier: risk-tier,
     })
     (ok true)
   )
@@ -359,26 +361,25 @@
     (amount uint)
     (token-id (string-ascii 32))
   )
-  (let*
-    (
+  (let (
       (provider tx-sender)
       (provider-key {
-      provider: provider,
-      token-id: token-id,
-    })
+        provider: provider,
+        token-id: token-id,
+      })
       (provider-bal (unwrap! (map-get? provider-balances provider-key) ERR-NOT_ENOUGH_BALANCE)) ;; Ensure provider exists
       (available-to-withdraw (get available-amount provider-bal))
       (global-bal (unwrap! (map-get? token-balances { token-id: token-id })
-      ERR-TOKEN-NOT-INITIALIZED
-    ))
+        ERR-TOKEN-NOT_INITIALIZED
+      ))
     )
-    (asserts! (is-token-supported token-id) ERR-TOKEN-NOT-INITIALIZED)
-    (asserts! (> amount u0) ERR-AMOUNT-MUST-BE-POSITIVE)
+    (asserts! (is-token-supported token-id) ERR-TOKEN-NOT_INITIALIZED)
+    (asserts! (> amount u0) ERR-AMOUNT-MUST-BE_POSITIVE)
     (asserts! (>= available-to-withdraw amount) ERR-NOT_ENOUGH_BALANCE)
     (if (is-eq token-id STX-TOKEN-ID)
       (try! (as-contract (stx-transfer? amount tx-sender provider)))
       (let ((token-info (unwrap! (map-get? supported-tokens { token-id: token-id })
-          ERR-TOKEN-NOT-INITIALIZED
+          ERR-TOKEN-NOT_INITIALIZED
         )))
         (try! (as-contract (contract-call? (unwrap-panic (get sbtc-contract-principal token-info))
           transfer amount tx-sender provider none
@@ -399,9 +400,10 @@
     )
     (print {
       event: "capital-withdrawn",
-      provider: provider,
+      block-height: burn-block-height,
+      provider-principal: provider,
       amount: amount,
-      token: token-id,
+      token-id: token-id,
     })
     (ok true)
   )
@@ -504,12 +506,14 @@
           })
           (print {
             event: "collateral-locked",
-            policy_id: policy-id,
-            provider: provider-principal,
-            amount: collateral-amount,
-            token: token-id,
-            risk_tier: risk-tier,
-            expiration_height: expiration-height,
+            block-height: burn-block-height,
+            policy-id: policy-id,
+            allocated-provider-principal: provider-principal,
+            collateral-amount: collateral-amount,
+            token-id: token-id,
+            risk-tier: risk-tier,
+            expiration-height: expiration-height,
+            policy-owner-principal: policy-owner-principal,
           })
           (ok true)
         )
@@ -546,11 +550,12 @@
     ;; In Phase 1, we assume the premium amount is just recorded. Actual fund flow to providers is Phase 2.
     (print {
       event: "premium-recorded-for-policy",
-      policy_id: policy-id,
-      policy_owner: policy-owner-principal,
+      block-height: burn-block-height,
+      policy-id: policy-id,
+      policy-owner-principal: policy-owner-principal,
       amount: premium-amount,
-      token: token-id,
-      expiration_height: expiration-height,
+      token-id: token-id,
+      expiration-height: expiration-height,
     })
     (ok true)
   )

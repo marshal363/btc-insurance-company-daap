@@ -1,20 +1,18 @@
 ;; BitHedge Policy Registry Contract
-;; Version: 0.1 (Phase 1 Development - PR-101, PR-102, PR-103, PR-104, PR-106)
+;; Version: 0.1.3 (Adapting to Math Library ML-201 Refactor)
 ;; Summary: Manages the lifecycle of European-style protection policies.
 ;; Description: This contract handles policy creation, tracking by owner and expiration,
 ;;              and stores detailed information for each policy. It serves as the central
 ;;              registry for all protection policies within the BitHedge ecosystem.
 
 ;; --- Traits ---
-;; TODO: Re-implement math-contract trait when trait resolution is fixed
-;; (use-trait math-contract .math-trait.math-trait)
+;; (use-trait math-contract .math-trait.math-trait) ;; Keep for future trait-based calls
 
 ;; --- Constants ---
 (define-constant CONTRACT-OWNER tx-sender)
-(define-constant CONTRACT-VERSION "0.1.2") ;; Updated version
+(define-constant CONTRACT-VERSION "0.1.3")
 
 ;; Maximum number of policy IDs to store in list-based indexes
-;; This helps manage storage and gas costs.
 (define-constant MAX_POLICIES_PER_LISTING u100)
 
 ;; Fixed-point precision (8 decimal places) - Assuming this might be used from math-library or defined locally if needed often.
@@ -23,11 +21,11 @@
 
 ;; Error Codes (Starting from u300 for this contract)
 (define-constant ERR-UNAUTHORIZED (err u301))
-(define-constant ERR-POLICY-ID-COUNTER-OVERFLOW (err u302)) ;; Placeholder, actual check might be complex
+(define-constant ERR-POLICY-ID-COUNTER-OVERFLOW (err u302))
 (define-constant ERR-POLICY-NOT-FOUND (err u303))
 (define-constant ERR-OWNER_POLICY_LIST_FULL (err u304))
 (define-constant ERR-EXPIRATION_POLICY_LIST_FULL (err u305))
-(define-constant ERR-PRINCIPAL-NOT-SET (err u306))
+(define-constant ERR-PRINCIPAL-NOT-SET (err u306)) ;; Generic, consider more specific ones
 (define-constant ERR-LP-PRINCIPAL-NOT-SET (err u307))
 (define-constant ERR-MATH-PRINCIPAL-NOT-SET (err u308))
 (define-constant ERR-ORACLE-PRINCIPAL-NOT-SET (err u309))
@@ -40,6 +38,9 @@
 (define-constant ERR-ZERO-PROTECTION-AMOUNT (err u316))
 (define-constant ERR-ZERO-PREMIUM (err u317))
 (define-constant ERR-EXPIRATION-IN-PAST (err u318))
+(define-constant ERR-ORACLE-CALL-FAILED-PR (err u319))
+(define-constant ERR-PARAMS-CALL-FAILED-PR (err u320))
+(define-constant ERR-RISK-TIER-DATA-INVALID-PR (err u321))
 
 ;; Policy Status Constants (PR-104)
 (define-constant STATUS-ACTIVE "Active")
@@ -158,137 +159,155 @@
     ;; 1. Retrieve Contract Principals (PR-102 dependency)
     (let ((lp-principal (unwrap! (var-get liquidity-pool-principal) ERR-LP-PRINCIPAL-NOT-SET)))
       (let ((math-contract (unwrap! (var-get math-library-principal) ERR-MATH-PRINCIPAL-NOT-SET)))
-        ;; (let ((params-principal (unwrap! (var-get parameters-contract-principal) ERR-PARAMS-PRINCIPAL-NOT-SET))))
-        ;; TODO: Uncomment and use params-principal when calls to ParametersContract are needed (e.g., for risk tier validation from PA-105)
-        ;; 2. Parameter Validation (PR-108)
-        (asserts! (not (is-eq policy-owner-principal contract-caller))
-          ERR-UNAUTHORIZED
-        )
-        ;; Basic check: owner shouldn't be this contract itself
-        (asserts! (or (is-eq policy-type "PUT") (is-eq policy-type "CALL"))
-          ERR-INVALID-POLICY-TYPE
-        )
-        ;; ERR-INVALID-POLICY-TYPE
-        ;; TODO: Add more robust risk-tier validation, possibly by calling ParametersContract (PA-105)
-        (asserts! (> (len risk-tier) u0) ERR-EMPTY-RISK-TIER)
-        ;; ERR-EMPTY-RISK-TIER
-        (asserts! (> (len protected-asset-name) u0) ERR-EMPTY-ASSET-NAME)
-        ;; ERR-EMPTY-ASSET-NAME
-        (asserts! (> (len collateral-token-name) u0) ERR-EMPTY-COLLATERAL-TOKEN)
-        ;; ERR-EMPTY-COLLATERAL-TOKEN
-        (asserts! (> protected-value-scaled u0) ERR-ZERO-PROTECTED-VALUE)
-        ;; ERR-ZERO-PROTECTED-VALUE
-        (asserts! (> protection-amount-scaled u0) ERR-ZERO-PROTECTION-AMOUNT)
-        ;; ERR-ZERO-PROTECTION-AMOUNT
-        (asserts! (> submitted-premium-scaled u0) ERR-ZERO-PREMIUM)
-        ;; ERR-ZERO-PREMIUM
-        (asserts! (> expiration-height burn-block-height) ERR-EXPIRATION-IN-PAST)
-        ;; ERR-EXPIRATION-IN-PAST
-        ;; 3. Premium Verification (Call ML-103)
-        ;; TODO: Re-implement using math-contract trait when trait resolution is fixed
-        ;; Temporarily disabled for compilation
-        ;; (try! (contract-call? .math-library verify-submitted-premium
-        ;;   submitted-premium-scaled protected-value-scaled
-        ;;   protection-amount-scaled burn-block-height expiration-height
-        ;;   policy-type risk-tier
-        ;; ))
-        ;; 4. Calculate Required Collateral (Simplified for Phase 1 PR-103)
-        ;; For a European PUT, collateral is typically the full protection amount.
-        ;; For a CALL, it would be the underlying asset. This is a simplification.
-        ;; More advanced logic might use collateral-ratio from ParametersContract (PA-105)
-        (let ((required-collateral-scaled protection-amount-scaled))
-          ;; TODO: If policy-type is CALL, collateral logic differs (e.g., might be specific amount of protected-asset-name)
-          ;; This assumes protection-amount-scaled is in units of collateral-token-name for PUTs.
-          ;; 5. Liquidity Check (Call LP-109)
-          ;; TODO: Re-implement using lp-principal trait when trait resolution is fixed
-          ;; Temporarily disabled for compilation
-          ;; (try! (contract-call? .liquidity-pool-vault check-liquidity required-collateral-scaled
-          ;;   collateral-token-name risk-tier expiration-height
-          ;; ))
-          ;; 6. Consume Policy ID (PR-102)
-          (let ((new-policy-id (unwrap! (consume-next-policy-id) ERR-POLICY-ID-COUNTER-OVERFLOW)))
-            ;; 7. Lock Collateral (Call LP-105)
-            ;; TODO: Re-implement using lp-principal trait when trait resolution is fixed
-            ;; Temporarily disabled for compilation
-            ;; (try! (contract-call? .liquidity-pool-vault lock-collateral new-policy-id
-            ;;   required-collateral-scaled collateral-token-name risk-tier
-            ;;   expiration-height policy-owner-principal
-            ;; ))
-            ;; 8. Record Premium Payment (Call LP function - assuming LP-202 or similar exists and is callable by PR)
-            ;; TODO: Re-implement using lp-principal trait when trait resolution is fixed
-            ;; Temporarily disabled for compilation
-            ;; (try! (contract-call? .liquidity-pool-vault record-premium-payment new-policy-id
-            ;;   submitted-premium-scaled collateral-token-name expiration-height
-            ;;   policy-owner-principal
-            ;; ))
-            ;; 9. Store Policy Details
-            (let ((current-block-height burn-block-height))
-              (map-set policies new-policy-id {
-                policy-owner: policy-owner-principal,
-                policy-type: policy-type,
-                risk-tier: risk-tier,
-                protected-asset: protected-asset-name,
-                collateral-token: collateral-token-name,
-                protected-value: protected-value-scaled,
-                protection-amount: protection-amount-scaled,
-                submitted-premium: submitted-premium-scaled,
-                collateral-locked: required-collateral-scaled, ;; Storing the calculated/locked collateral
-                creation-height: current-block-height,
-                expiration-height: expiration-height,
-                settlement-height: none, ;; Not settled at creation
-                status: STATUS-ACTIVE, ;; Initial status
-                price-at-expiration: none,
-                settlement-amount-paid: none,
-              })
-              ;; 10. Update Indices (PR-105) - Adjusted for tuple structure
-              (let (
-                  (owner-policy-map-entry (default-to { ids: (list) }
-                    (map-get? policies-by-owner policy-owner-principal)
+        (let ((oracle-contract (unwrap! (var-get price-oracle-principal) ERR-ORACLE-PRINCIPAL-NOT-SET)))
+          (let ((params-contract (unwrap! (var-get parameters-contract-principal)
+              ERR-PARAMS-PRINCIPAL-NOT-SET
+            )))
+            ;; 2. Parameter Validation (PR-108)
+            (asserts! (not (is-eq policy-owner-principal contract-caller))
+              ERR-UNAUTHORIZED
+            )
+            (asserts! (or (is-eq policy-type "PUT") (is-eq policy-type "CALL"))
+              ERR-INVALID-POLICY-TYPE
+            )
+            (asserts! (> (len risk-tier) u0) ERR-EMPTY-RISK-TIER)
+            (asserts! (> (len protected-asset-name) u0) ERR-EMPTY-ASSET-NAME)
+            (asserts! (> (len collateral-token-name) u0)
+              ERR-EMPTY-COLLATERAL-TOKEN
+            )
+            (asserts! (> protected-value-scaled u0) ERR-ZERO-PROTECTED-VALUE)
+            (asserts! (> protection-amount-scaled u0) ERR-ZERO-PROTECTION-AMOUNT)
+            (asserts! (> submitted-premium-scaled u0) ERR-ZERO-PREMIUM)
+            (asserts! (> expiration-height burn-block-height)
+              ERR-EXPIRATION-IN-PAST
+            )
+            ;; 3. Fetch data for Premium Verification
+            (let ((current-oracle-price (unwrap! (contract-call? oracle-contract get-current-bitcoin-price)
+                ERR-ORACLE-CALL-FAILED-PR
+              )))
+              (let ((risk-tier-params (unwrap!
+                  (contract-call? params-contract get-risk-tier-parameters
+                    risk-tier
+                  )
+                  ERR-PARAMS-CALL-FAILED-PR
+                )))
+                (let (
+                    (risk-tier-is-active (get is-active risk-tier-params))
+                    (risk-tier-premium-adjustment-bp (get premium-adjustment-basis-points risk-tier-params))
+                  )
+                  ;; Ensure fetched params are not none if they are optional in the parameters contract's response
+                  ;; Assuming get-risk-tier-parameters returns a tuple where these fields are direct values, not optional.
+                  ;; If they can be optional, further unwrap! or default-to logic is needed here.
+                  ;; For now, assuming direct access as per current math-lib expectation.
+                  ;; 4. Premium Verification (Call ML-201 - refactored math-library function)
+                  (try! (contract-call? math-contract verify-submitted-premium
+                    submitted-premium-scaled protected-value-scaled
+                    protection-amount-scaled burn-block-height
+                    expiration-height policy-type current-oracle-price
+                    risk-tier-is-active risk-tier-premium-adjustment-bp
                   ))
-                  (owner-policies-list (get ids owner-policy-map-entry))
-                )
-                ;; Check if adding a new item would exceed the maximum allowed
-                (if (>= (len owner-policies-list) MAX_POLICIES_PER_LISTING)
-                  ERR-OWNER_POLICY_LIST_FULL
-                  (map-set policies-by-owner policy-owner-principal { ids: (unwrap-panic (as-max-len? (append owner-policies-list new-policy-id)
-                    MAX_POLICIES_PER_LISTING
-                  )) }
+                  ;; 5. Calculate Required Collateral (Simplified for Phase 1 PR-103)
+                  (let ((required-collateral-scaled protection-amount-scaled))
+                    ;; 6. Liquidity Check (Call LP-109) - REMAINS COMMENTED FOR NOW
+                    ;; (try! (contract-call? lp-principal check-liquidity required-collateral-scaled
+                    ;; collateral-token-name risk-tier expiration-height
+                    ;; ))
+                    ;; 7. Consume Policy ID (PR-102)
+                    (let ((new-policy-id (unwrap! (consume-next-policy-id)
+                        ERR-POLICY-ID-COUNTER-OVERFLOW
+                      )))
+                      ;; 8. Lock Collateral (Call LP-105) - REMAINS COMMENTED FOR NOW
+                      ;; (try! (contract-call? lp-principal lock-collateral new-policy-id
+                      ;; required-collateral-scaled collateral-token-name risk-tier
+                      ;; expiration-height policy-owner-principal
+                      ;; ))
+                      ;; 9. Record Premium Payment (Call LP function) - REMAINS COMMENTED FOR NOW
+                      ;; (try! (contract-call? lp-principal record-premium-payment new-policy-id
+                      ;; submitted-premium-scaled collateral-token-name expiration-height
+                      ;; policy-owner-principal
+                      ;; ))
+                      ;; 10. Store Policy Details
+                      (let ((current-block-height burn-block-height))
+                        (map-set policies new-policy-id {
+                          policy-owner: policy-owner-principal,
+                          policy-type: policy-type,
+                          risk-tier: risk-tier,
+                          protected-asset: protected-asset-name,
+                          collateral-token: collateral-token-name,
+                          protected-value: protected-value-scaled,
+                          protection-amount: protection-amount-scaled,
+                          submitted-premium: submitted-premium-scaled,
+                          collateral-locked: required-collateral-scaled, ;; Storing the calculated/locked collateral
+                          creation-height: current-block-height,
+                          expiration-height: expiration-height,
+                          settlement-height: none, ;; Not settled at creation
+                          status: STATUS-ACTIVE, ;; Initial status
+                          price-at-expiration: none,
+                          settlement-amount-paid: none,
+                        })
+                        ;; 11. Update Indices (PR-105) - Adjusted for tuple structure
+                        (let (
+                            (owner-policy-map-entry (default-to { ids: (list) }
+                              (map-get? policies-by-owner policy-owner-principal)
+                            ))
+                            (owner-policies-list (get ids owner-policy-map-entry))
+                          )
+                          ;; Check if adding a new item would exceed the maximum allowed
+                          (if (>= (len owner-policies-list)
+                              MAX_POLICIES_PER_LISTING
+                            )
+                            ERR-OWNER_POLICY_LIST_FULL
+                            (map-set policies-by-owner policy-owner-principal { ids: (unwrap-panic (as-max-len?
+                              (append owner-policies-list new-policy-id)
+                              MAX_POLICIES_PER_LISTING
+                            )) }
+                            )
+                          )
+                        )
+                        (let (
+                            (exp-height-policy-map-entry (default-to { ids: (list) }
+                              (map-get? policies-by-expiration-height
+                                expiration-height
+                              )))
+                            (exp-height-policies-list (get ids exp-height-policy-map-entry))
+                          )
+                          ;; Check if adding a new item would exceed the maximum allowed
+                          (if (>= (len exp-height-policies-list)
+                              MAX_POLICIES_PER_LISTING
+                            )
+                            ERR-EXPIRATION_POLICY_LIST_FULL
+                            (map-set policies-by-expiration-height
+                              expiration-height { ids: (unwrap-panic (as-max-len?
+                              (append exp-height-policies-list new-policy-id)
+                              MAX_POLICIES_PER_LISTING
+                            )) }
+                            )
+                          )
+                        )
+                        ;; 12. Emit Event (SH-101)
+                        (print {
+                          event: "policy-created",
+                          block-height: current-block-height,
+                          policy-id: new-policy-id,
+                          owner-principal: policy-owner-principal,
+                          policy-type: policy-type,
+                          risk-tier: risk-tier,
+                          protected-asset: protected-asset-name,
+                          collateral-token: collateral-token-name,
+                          protected-value-scaled: protected-value-scaled,
+                          protection-amount-scaled: protection-amount-scaled,
+                          submitted-premium-scaled: submitted-premium-scaled,
+                          required-collateral-scaled: required-collateral-scaled,
+                          expiration-height: expiration-height,
+                          status: STATUS-ACTIVE,
+                        })
+                        ;; 13. Return Success
+                        (ok new-policy-id)
+                      )
+                    )
                   )
                 )
               )
-              (let (
-                  (exp-height-policy-map-entry (default-to { ids: (list) }
-                    (map-get? policies-by-expiration-height expiration-height)
-                  ))
-                  (exp-height-policies-list (get ids exp-height-policy-map-entry))
-                )
-                ;; Check if adding a new item would exceed the maximum allowed
-                (if (>= (len exp-height-policies-list) MAX_POLICIES_PER_LISTING)
-                  ERR-EXPIRATION_POLICY_LIST_FULL
-                  (map-set policies-by-expiration-height expiration-height { ids: (unwrap-panic (as-max-len? (append exp-height-policies-list new-policy-id)
-                    MAX_POLICIES_PER_LISTING
-                  )) }
-                  )
-                )
-              )
-              ;; 11. Emit Event (SH-101)
-              (print {
-                event: "policy-created",
-                policy_id: new-policy-id,
-                owner: policy-owner-principal,
-                policy_type: policy-type,
-                risk_tier: risk-tier,
-                protected_asset: protected-asset-name,
-                collateral_token: collateral-token-name,
-                protected_value_scaled: protected-value-scaled,
-                protection_amount_scaled: protection-amount-scaled,
-                submitted_premium_scaled: submitted-premium-scaled,
-                required_collateral_scaled: required-collateral-scaled,
-                expiration_height: expiration-height,
-                creation_height: current-block-height,
-              })
-              ;; 12. Return Success
-              (ok new-policy-id)
             )
           )
         )
@@ -383,9 +402,10 @@
       (map-set policies policy-id (merge existing-policy { status: new-status }))
       (print {
         event: "policy-status-updated",
-        policy_id: policy-id,
-        old_status: (get status existing-policy),
-        new_status: new-status,
+        block-height: burn-block-height,
+        policy-id: policy-id,
+        old-status: (get status existing-policy),
+        new-status: new-status,
       })
       (ok true)
     )

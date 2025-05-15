@@ -230,7 +230,8 @@
           (map-set authorized-submitters submitter true)
           (print {
             event: "added-authorized-submitter",
-            submitter: submitter,
+            block-height: burn-block-height,
+            submitter-principal: submitter,
           })
           (ok true)
         )
@@ -240,7 +241,8 @@
         (map-set authorized-submitters submitter true)
         (print {
           event: "added-authorized-submitter",
-          submitter: submitter,
+          block-height: burn-block-height,
+          submitter-principal: submitter,
         })
         (ok true)
       )
@@ -259,7 +261,8 @@
           (map-set authorized-submitters submitter false)
           (print {
             event: "removed-authorized-submitter",
-            submitter: submitter,
+            block-height: burn-block-height,
+            submitter-principal: submitter,
           })
           (ok true)
         )
@@ -277,7 +280,8 @@
     (var-set contract-admin new-admin)
     (print {
       event: "set-contract-admin",
-      new-admin: new-admin,
+      block-height: burn-block-height,
+      new-admin-principal: new-admin,
     })
     (ok true)
   )

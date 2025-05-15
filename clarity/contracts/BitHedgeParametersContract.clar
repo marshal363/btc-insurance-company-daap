@@ -147,6 +147,9 @@
 (define-data-var contract-initialized-flag bool false)
 
 
+;; --- Helper Functions ---
+;; (PA-103 related helper, should be present if PA-103 is fully complete)
+
 ;; --- Public Functions ---
 ;; (To be implemented in PA-102, PA-103)
 
@@ -163,7 +166,14 @@
         last-updated-height: burn-block-height
       }
     )
-    (print {event: "role-granted", user: user, role: role, expires-at: expires-at})
+    (print {
+      event: "role-granted",
+      block-height: burn-block-height,
+      user-principal: user,
+      role-name: role,
+      expiration-height: expires-at,
+      granted-by: tx-sender
+    })
     (ok true)
   )
 )
@@ -183,7 +193,13 @@
                 set-by-principal: tx-sender ;; The one revoking it
               })
             )
-            (print {event: "role-revoked", user: user, role: role})
+            (print {
+              event: "role-revoked",
+              block-height: burn-block-height,
+              user-principal: user,
+              role-name: role,
+              revoked-by: tx-sender
+            })
             (ok true)
           )
           (ok true) ;; Already not enabled, consider it a successful no-op or return specific error/event
@@ -209,6 +225,15 @@
         updater-principal: tx-sender
       }
     )
+    (print {
+      event: "system-parameter-updated",
+      block-height: burn-block-height,
+      parameter-id: id,
+      parameter-type: "uint",
+      new-value-uint: val,
+      description: desc,
+      updated-by: tx-sender
+    })
     (ok true)
   )
 )
@@ -227,6 +252,15 @@
         updater-principal: tx-sender
       }
     )
+    (print {
+      event: "system-parameter-updated",
+      block-height: burn-block-height,
+      parameter-id: id,
+      parameter-type: "bool",
+      new-value-bool: val,
+      description: desc,
+      updated-by: tx-sender
+    })
     (ok true)
   )
 )
@@ -245,6 +279,15 @@
         updater-principal: tx-sender
       }
     )
+    (print {
+      event: "system-parameter-updated",
+      block-height: burn-block-height,
+      parameter-id: id,
+      parameter-type: "principal",
+      new-value-principal: val,
+      description: desc,
+      updated-by: tx-sender
+    })
     (ok true)
   )
 )
@@ -263,10 +306,105 @@
         updater-principal: tx-sender
       }
     )
+    (print {
+      event: "system-parameter-updated",
+      block-height: burn-block-height,
+      parameter-id: id,
+      parameter-type: "string",
+      new-value-string: val,
+      description: desc,
+      updated-by: tx-sender
+    })
     (ok true)
   )
 )
 
+;; PA-201: Functions to get/set risk tier parameters
+(define-public (set-risk-tier-parameters
+    (tier-name-param (string-ascii 32))
+    (tier-type-param (string-ascii 16))
+    (collateral-ratio-param uint)
+    (premium-adjustment-param uint)
+    (max-exposure-policy-param uint)
+    (max-exposure-expiration-param uint)
+    (is-active-param bool)
+    (description-param (string-ascii 256))
+  )
+  (begin
+    ;; Protected by CONTRACT-OWNER or ROLE-SYSTEM-PARAMETER-MANAGER
+    (asserts! (or (is-eq tx-sender CONTRACT-OWNER) (has-role tx-sender ROLE-SYSTEM-PARAMETER-MANAGER)) ERR-UNAUTHORIZED)
+
+    (map-set risk-tier-parameters { tier-name: tier-name-param }
+      {
+        tier-type: tier-type-param,
+        collateral-ratio-basis-points: collateral-ratio-param,
+        premium-adjustment-basis-points: premium-adjustment-param,
+        max-exposure-per-policy-basis-points: max-exposure-policy-param,
+        max-exposure-per-expiration-basis-points: max-exposure-expiration-param,
+        is-active: is-active-param,
+        description: description-param,
+        last-updated-height: burn-block-height,
+        updater-principal: tx-sender
+      }
+    )
+    (print {
+      event: "risk-tier-parameter-updated",
+      block-height: burn-block-height,
+      tier-name: tier-name-param,
+      tier-type: tier-type-param,
+      collateral-ratio: collateral-ratio-param,
+      premium-adjustment: premium-adjustment-param,
+      max-exposure-policy: max-exposure-policy-param,
+      max-exposure-expiration: max-exposure-expiration-param,
+      is-active: is-active-param,
+      description: description-param,
+      updated-by: tx-sender
+    })
+    (ok true)
+  )
+)
+
+;; PA-202: Define detailed fee structures and management functions
+(define-public (set-fee-structure
+    (fee-type-param (string-ascii 32))
+    (percentage-bp-param uint)
+    (flat-min-param uint)
+    (flat-max-param uint)
+    (recipient-param principal)
+    (is-active-param bool)
+    (description-param (string-ascii 128))
+  )
+  (begin
+    ;; Protected by CONTRACT-OWNER or ROLE-FEE-STRUCTURE-MANAGER
+    (asserts! (or (is-eq tx-sender CONTRACT-OWNER) (has-role tx-sender ROLE-FEE-STRUCTURE-MANAGER)) ERR-UNAUTHORIZED)
+
+    (map-set fee-structure { fee-type: fee-type-param }
+      {
+        percentage-basis-points: percentage-bp-param,
+        flat-min-amount: flat-min-param,
+        flat-max-amount: flat-max-param,
+        recipient-principal: recipient-param,
+        is-active: is-active-param,
+        description: description-param,
+        last-updated-height: burn-block-height,
+        updater-principal: tx-sender
+      }
+    )
+    (print {
+      event: "fee-structure-updated",
+      block-height: burn-block-height,
+      fee-type: fee-type-param,
+      percentage-basis-points: percentage-bp-param,
+      flat-min-amount: flat-min-param,
+      flat-max-amount: flat-max-param,
+      recipient: recipient-param,
+      is-active: is-active-param,
+      description: description-param,
+      updated-by: tx-sender
+    })
+    (ok true)
+  )
+)
 
 ;; --- Read-Only Functions ---
 ;; (To be implemented in PA-102, PA-103)
@@ -317,6 +455,24 @@
       false ;; Role is not enabled
     )
     false ;; Role not found for the user
+  )
+)
+
+;; (PA-201)
+(define-read-only (get-risk-tier-parameters (tier-name-param (string-ascii 32)))
+  (match (map-get? risk-tier-parameters { tier-name: tier-name-param })
+    params
+    (ok params)
+    (err ERR-RISK-TIER-NOT-FOUND)
+  )
+)
+
+;; (PA-202)
+(define-read-only (get-fee-structure (fee-type-param (string-ascii 32)))
+  (match (map-get? fee-structure { fee-type: fee-type-param })
+    fee-details
+    (ok fee-details)
+    (err ERR-FEE-TYPE-NOT-FOUND)
   )
 )
 
