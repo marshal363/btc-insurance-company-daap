@@ -23,6 +23,25 @@
 (define-constant ROLE-VERIFICATION-CONTRACT-ADMIN "vc-admin")
 (define-constant ROLE-MATH-LIB-ADMIN "ml-admin")
 
+;; NEW PARAMETER KEY CONSTANTS (PA-301 & PA-302)
+
+;; PA-301: System Limits and Thresholds
+(define-constant PARAM-LIMIT-MAX-POLICIES-PER-USER "limits.user.max-policies") ;; uint: Max active policies per user
+(define-constant PARAM-LIMIT-MAX-ALLOC-PER-PROVIDER-USD "limits.provider.max-allocation-usd") ;; uint: Max total USD value a provider can have allocated (scaled by appropriate decimals)
+(define-constant PARAM-BATCH-SIZE-EXPIRATION "config.batch.size-expiration") ;; uint: Policies per batch in expiration processing
+(define-constant PARAM-BATCH-SIZE-PREMIUM-DIST "config.batch.size-premium-dist") ;; uint: Premiums per batch in distribution processing
+(define-constant PARAM-ORACLE-MAX-PRICE-AGE-BLOCKS "config.oracle.max-price-age-blocks") ;; uint: Max age of oracle price in blocks for it to be considered valid
+(define-constant PARAM-ORACLE-MAX-DEVIATION-BP "config.oracle.max-deviation-bp") ;; uint: Max price deviation for oracle updates (basis points, e.g., 500 for 5%)
+(define-constant PARAM-MIN-POLICY-DURATION-BLOCKS "config.policy.min-duration-blocks") ;; uint: Minimum policy duration in blocks
+(define-constant PARAM-MAX-POLICY-DURATION-BLOCKS "config.policy.max-duration-blocks") ;; uint: Maximum policy duration in blocks
+(define-constant PARAM-MIN-PROTECTION-VALUE-USD "config.policy.min-protection-value-usd") ;; uint: Minimum policy protection notional in USD (e.g., scaled by 10^8)
+(define-constant PARAM-MAX-PROTECTION-VALUE-USD "config.policy.max-protection-value-usd") ;; uint: Maximum policy protection notional in USD (e.g., scaled by 10^8)
+(define-constant PARAM-MIN-SUBMITTED-PREMIUM-USD "config.policy.min-submitted-premium-usd") ;; uint: Minimum submitted premium in USD (e.g., scaled by 10^8)
+
+;; PA-302: Provider Incentives for Expiration Coverage
+(define-constant PARAM-INCENTIVE-EXP-COV-BONUS-BP "config.incentives.exp-coverage-bonus-bp") ;; uint: Premium bonus in basis points for providers covering under-supplied expirations (e.g., 500 for 5% bonus)
+(define-constant PARAM-INCENTIVE-EXP-COV-THRESHOLD-PCT "config.incentives.exp-coverage-threshold-pct") ;; uint: Coverage percentage (0-100) below which an expiration date is considered under-supplied and eligible for incentives.
+
 ;; --- Error Codes (PA-104 is for a more global set, these are specific or common) ---
 
 ;; System-Wide Error Codes (PA-104) - Intended for use across all BitHedge contracts
@@ -482,7 +501,8 @@
         (if (>= expiry burn-block-height)
           true
           false
-        ) ;; Role active if expiration is in the future or current block
+        )
+        ;; Role active if expiration is in the future or current block
         true ;; Role active if no expiration height is set (permanent until revoked)
       )
       false ;; Role is not enabled
