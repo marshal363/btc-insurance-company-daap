@@ -18,6 +18,10 @@
 ;; Basis Points Denominator (consistent with Parameters contract)
 (define-constant BASIS_POINTS_DENOMINATOR u10000)
 
+;; Constants for verify-submitted-premium (PCIA-105)
+(define-constant MIN_PREMIUM_STX_FLOOR u1000) ;; Minimum premium floor: 0.001 STX (in microSTX)
+(define-constant MAX_PREMIUM_STX_CAP u500000000000) ;; Max premium cap: 500,000 STX (in microSTX) - very loose cap
+
 ;; Error Codes
 (define-constant ERR-DIVISION-BY-ZERO (err u101)) ;; From ML-101
 (define-constant ERR-EXPIRATION-IN-PAST (err u201)) ;; From ML-103 (will be uM08)
@@ -64,31 +68,37 @@
 
 ;; --- Read Only Functions ---
 
-;; Verifies a submitted premium against basic policy parameters.
-;; ML-201: Full premium verification logic.
-;; Inputs:
-;; - submitted-premium: The premium amount submitted by the user.
-;; - protected-value: The strike price or value being protected.
-;; - protection-amount: The amount being protected.
-;; - current-block-height: The current block height, to calculate time to expiry.
-;; - expiration-height: The block height at which the policy expires.
-;; - policy-type: (string-ascii 8) e.g., "PUT", "CALL".
-;; - current-oracle-price: uint - Current price of the underlying asset from the oracle.
-;; - risk-tier-is-active: bool - Whether the specified risk tier is active.
-;; - risk-tier-premium-adjustment-bp: uint - Premium adjustment basis points for the risk tier.
+;; Verifies a submitted premium against basic policy parameters for MVP.
+;; PCIA-101: This function implements a bare-minimum model for MVP premium verification.
+;;           Detailed premium bound calculations based on risk models are deferred to PCIA-105.
+;; PCIA-105: This version incorporates refined bounds logic.
 (define-read-only (verify-submitted-premium
-    (submitted-premium uint)
-    (protected-value uint) ;; strike price / value being protected
-    (protection-amount uint)
-    (current-block-height uint) ;; effectively burn-block-height passed by caller
+    (submitted-premium uint) ;; Expected to be in microSTX (collateral token's smallest unit, e.g. STX)
+    (protected-value uint) ;; Strike price, expected in USD cents
+    (protection-amount uint) ;; Notional amount of the protected asset, expected in its smallest unit (e.g., Satoshis for BTC)
+    (current-block-height uint) ;; Current burn-block-height, passed by the caller
     (expiration-height uint)
-    (policy-type (string-ascii 8))
-    (current-oracle-price uint) ;; New Parameter
-    (risk-tier-is-active bool) ;; New Parameter
-    (risk-tier-premium-adjustment-bp uint) ;; New Parameter
+    (policy-type (string-ascii 8)) ;; e.g., "PUT" or "CALL"
+    (current-oracle-price uint) ;; Current oracle price of the protected asset (e.g., BTC in USD cents).
+    (risk-tier-is-active bool) ;; Boolean indicating if the policy's selected risk tier is active.
+    (risk-tier-premium-adjustment-bp uint) ;; Basis points for premium adjustment (e.g., u100 for 1% increase to min premium).
   )
   (begin
-    ;; Initial Basic Validations
+    ;; Doc: verify-submitted-premium (PCIA-105 Refinement)
+    ;; Purpose: Performs refined checks on the submitted policy premium based on defined bounds.
+    ;;          Ensures basic validity and applies STX-based min/max bounds.
+    ;; Inputs:
+    ;;   - submitted-premium: Scaled premium amount (e.g., in microSTX if collateral is STX).
+    ;;   - protected-value: Scaled strike price (e.g., in USD cents for a BTC/USD policy).
+    ;;   - protection-amount: Scaled notional amount of the protected asset (e.g., in Satoshis for BTC).
+    ;;   - current-block-height: Current burn chain height.
+    ;;   - expiration-height: Policy expiration block height.
+    ;;   - policy-type: "PUT" or "CALL" (must be string-ascii 8).
+    ;;   - current-oracle-price: Scaled current price of the protected asset (used for intrinsic value calculation for context).
+    ;;   - risk-tier-is-active: Boolean from ParametersContract indicating if the risk tier is active.
+    ;;   - risk-tier-premium-adjustment-bp: Basis points from ParametersContract used to increase the min acceptable premium.
+    ;; Returns: (ok true) if verification passes, otherwise an error code.
+    ;; 1. Basic Input Validations (from MVP)
     (asserts! (> expiration-height current-block-height)
       ERR-EXPIRATION-IN-PAST-ML
     )
@@ -96,52 +106,57 @@
     (asserts! (or (is-eq policy-type "PUT") (is-eq policy-type "CALL"))
       ERR-POLICY-TYPE-INVALID-ML
     )
-    ;; Use passed-in risk tier parameters
     (asserts! risk-tier-is-active ERR-RISK-TIER-NOT-ACTIVE)
-    ;; current-oracle-price is passed in, can be used for more complex premium logic if needed.
-    ;; For now, the premium bounds are based on protection_amount and risk tier adjustment.
-    (let (
-        (premium-adj-bp risk-tier-premium-adjustment-bp)
-        (min-base-premium-factor u1) ;; Example: 0.01% base min premium factor (1/10000)
-        (max-premium-factor u5000) ;; Example: 50% max premium factor (5000/10000)
-        ;; min_base_premium = protection_amount * (min_base_premium_factor / 10000)
-        (min-base-premium (mul-down protection-amount min-base-premium-factor))
-        (min-base-premium-scaled (unwrap! (div-down min-base-premium BASIS_POINTS_DENOMINATOR)
-          ERR-ARITHMETIC
-        ))
-        ;; adjusted_min_premium = min_base_premium_scaled * (1 + premium_adj_bp / 10000)
-        ;; Assuming premium_adj_bp is an additive adjustment on top of a base.
-        ;; If premium_adj_bp is, for example, 100 (1%), new factor is (1 + 0.01) = 1.01
-        ;; Or, if it's a direct multiplier for the scaled base: min_base_premium_scaled * (premium_adj_bp / 10000)
-        ;; The current logic seems to treat premium_adj_bp as a multiplier for min_base_premium_scaled.
-        ;; Let's assume it means the final premium should be: base_premium * (1 + adj_bp/DENOMINATOR)
-        ;; Or if adj_bp is itself the *total* adjustment factor, then base_premium * (adj_bp/DENOMINATOR)
-        ;; The original code: (mul-down min-base-premium-scaled premium-adj-bp) then (div-down ... BASIS_POINTS_DENOMINATOR)
-        ;; This implies premium-adj-bp is a factor that also needs scaling by BASIS_POINTS_DENOMINATOR.
-        ;; Let's clarify the intended math for premium_adj_bp.
-        ;; If premium_adj_bp = u500 (i.e. 5%), does it mean final_premium = base * 0.05 or base * 1.05?
-        ;; The variable name "premium-adjustment-basis-points" suggests it's an adjustment.
-        ;; If positive, increases premium; if negative (not possible with uint), decreases.
-        ;; Let's assume it's an additive percentage on top of the base.
-        ;; So, effective_factor = BASIS_POINTS_DENOMINATOR + premium_adj_bp
-        (effective-premium-factor (+ BASIS_POINTS_DENOMINATOR premium-adj-bp))
-        (adjusted-min-premium (mul-down min-base-premium-scaled effective-premium-factor))
-        (adjusted-min-premium-final (unwrap! (div-down adjusted-min-premium BASIS_POINTS_DENOMINATOR)
-          ERR-ARITHMETIC
-        ))
-        ;; max_premium = protection_amount * (max_premium_factor / 10000)
-        (max-premium-calc (mul-down protection-amount max-premium-factor))
-        (max-premium-final (unwrap! (div-down max-premium-calc BASIS_POINTS_DENOMINATOR)
-          ERR-ARITHMETIC
-        ))
+    ;; 2. Refined Premium Bound Checks (PCIA-105)
+    ;; Lower Bound Calculation:
+    ;; The minimum premium is a base STX floor, adjusted upwards by the risk tier's basis points.
+    ;; Assumes risk-tier-premium-adjustment-bp is an additive percentage increase to the floor.
+    ;; E.g., if floor is 1000 microSTX and adjustment is 50bp (0.5%),
+    ;; adjustment_value = (1000 * 50) / 10000 = 50 microSTX.
+    ;; min_acceptable_premium = 1000 + 50 = 1050 microSTX.
+    (let ((base-premium-adjustment (unwrap!
+        (div-down
+          (mul-down MIN_PREMIUM_STX_FLOOR risk-tier-premium-adjustment-bp)
+          BASIS_POINTS_DENOMINATOR
+        )
+        ERR-ARITHMETIC
+      )))
+      (let ((min-acceptable-premium (+ MIN_PREMIUM_STX_FLOOR base-premium-adjustment)))
+        ;; Ensures submitted premium is not below the calculated minimum acceptable STX premium.
+        (asserts! (>= submitted-premium min-acceptable-premium)
+          ERR-INVALID-PREMIUM
+        )
       )
-      (asserts! (>= submitted-premium adjusted-min-premium-final)
-        ERR-INVALID-PREMIUM
-      )
-      (asserts! (<= submitted-premium max-premium-final) ERR-INVALID-PREMIUM)
-      (ok true)
-      ;; All checks passed
     )
+    ;; Upper Bound Calculation:
+    ;; A simple capability check against a hardcoded maximum STX premium.
+    ;; More sophisticated dynamic upper bounds (e.g., percentage of STX value of notional) would require
+    ;; STX/USD or STX/BTC oracle price access, which is beyond this function's current direct scope.
+    (asserts! (<= submitted-premium MAX_PREMIUM_STX_CAP) ERR-INVALID-PREMIUM)
+    ;; Intrinsic Value Calculation (for context/logging - does NOT enforce a bound on STX premium directly here):
+    ;; This calculation uses USD-based figures. The off-chain service is expected to calculate an STX premium
+    ;; whose value is greater than or equal to the USD intrinsic value (when converted at a fair STX/USD rate).
+    (let ((intrinsic-value-usd-cents (if (is-eq policy-type "PUT")
+        (if (> protected-value current-oracle-price)
+          (- protected-value current-oracle-price)
+          u0
+        )
+        ;; max(0, strike - spot)
+        (if (> current-oracle-price protected-value)
+          (- current-oracle-price protected-value)
+          u0
+        )
+        ;; max(0, spot - strike) for CALL
+      )))
+      (print {
+        note: "Intrinsic value (USD cents) calculated for context only.",
+        policy-type: policy-type,
+        strike-usd-cents: protected-value,
+        spot-usd-cents: current-oracle-price,
+        intrinsic-usd-cents: intrinsic-value-usd-cents,
+      })
+    )
+    (ok true) ;; All checks passed.
   )
 )
 
@@ -152,20 +167,50 @@
 ;; - protection-amount: The notional amount being protected/covered by the option.
 ;; - expiration-price: The price of the underlying asset at expiration.
 ;; - policy-type: (string-ascii 8) e.g., "PUT", "CALL".
+
 (define-read-only (calculate-settlement-amount
-    (protected-value uint)
-    (protection-amount uint)
-    (expiration-price uint)
-    (policy-type (string-ascii 8))
+    (protected-value uint) ;; Scaled strike price (e.g., USD value * ONE_8)
+    (protection-amount uint) ;; Scaled notional amount of asset (e.g., BTC quantity * asset_precision, assumed asset_precision == ONE_8)
+    (expiration-price uint) ;; Scaled price of underlying at expiration (same scale as protected-value)
+    (policy-type (string-ascii 8)) ;; "PUT" or "CALL"
   )
   (begin
+    ;; Doc: calculate-settlement-amount (PCIA-104 Implementation)
+    ;; Purpose: Calculates the settlement amount for a protection policy at expiration.
+    ;;          The settlement amount is returned scaled by ONE_8.
+    ;; Assumptions for Scaling:
+    ;;   - protected-value (strike price) is scaled by ONE_8.
+    ;;   - expiration-price (spot price at expiry) is scaled by ONE_8.
+    ;;   - protection-amount (notional quantity of the asset) is scaled by a factor equal to ONE_8
+    ;;     (e.g., if asset is BTC with 8 decimal places, protection-amount is in satoshis, and ONE_8 = u100000000).
+    ;; Formula Derivation (e.g., for PUT):
+    ;;   Raw Payout = MAX(0, Strike_USD - Spot_USD) * Notional_Asset_Units
+    ;;   Scaled Payout = (MAX(0, (protected-value/ONE_8) - (expiration-price/ONE_8)) * (protection-amount/ONE_8)) * ONE_8
+    ;;                 = MAX(0, protected-value - expiration-price) * protection-amount / ONE_8
+    ;;                 = mul-down(MAX(0, protected-value - expiration-price), protection-amount)
+    ;; Warning: The private `mul-down` function `(/ (* a b) ONE_8)` can panic on overflow if `(* a b)` is too large.
     (asserts! (or (is-eq policy-type "PUT") (is-eq policy-type "CALL"))
       ERR-POLICY-TYPE-INVALID-ML
     )
-    ;; For now, just return 0 as a placeholder.
-    ;; Actual settlement calculation (e.g., max(0, strike - spot) for PUT)
-    ;; will be implemented in ML-202.
-    (ok u0)
+    (if (is-eq policy-type "PUT")
+      ;; PUT Option: Settlement if Strike > Expiration Price
+      (if (> protected-value expiration-price)
+        ;; Policy is In-The-Money (ITM)
+        (let ((price-difference (- protected-value expiration-price)))
+          (ok (mul-down price-difference protection-amount))
+        )
+        (ok u0) ;; Policy is Out-of-The-Money (OTM) or At-The-Money (ATM)
+      )
+      ;; ELSE (must be CALL Option due to asserts! above)
+      ;; CALL Option: Settlement if Expiration Price > Strike
+      (if (> expiration-price protected-value)
+        ;; Policy is In-The-Money (ITM)
+        (let ((price-difference (- expiration-price protected-value)))
+          (ok (mul-down price-difference protection-amount))
+        )
+        (ok u0) ;; Policy is Out-of-The-Money (OTM) or At-The-Money (ATM)
+      )
+    )
   )
 )
 
@@ -274,4 +319,5 @@
   )
 )
 
-(print { message: "BitHedgeMathLibraryContract refactored for ML-201: verify-submitted-premium now takes direct oracle/param data." }) (print { message: "BitHedgeMathLibraryContract updated for ML-203: Refactored TWAP stub to use fold directly, attempting to fix syntax binding error." })
+(print { message: "BitHedgeMathLibraryContract refactored for ML-201: verify-submitted-premium now takes direct oracle/param data." }) 
+(print { message: "BitHedgeMathLibraryContract updated for ML-203: Refactored TWAP stub to use fold directly, attempting to fix syntax binding error." })

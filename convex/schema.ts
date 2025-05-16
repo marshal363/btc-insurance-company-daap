@@ -186,6 +186,9 @@ export default defineSchema({
         protectionAmount: v.number(),
         expirationDays: v.number(),
         policyType: v.string(),
+        riskTier: v.string(),
+        protectedAssetName: v.string(),
+        collateralTokenName: v.string(),
       })
     ),
 

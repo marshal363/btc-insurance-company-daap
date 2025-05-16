@@ -86,9 +86,10 @@
 (define-constant ERR-NO-ALLOCATIONS-FOUND (err u431))
 
 ;; Risk Tier Constants (SH-102) - More may be added as parameters later
-(define-constant RISK-TIER-CONSERVATIVE "Conservative")
-(define-constant RISK-TIER-BALANCED "Balanced")
-(define-constant RISK-TIER-AGGRESSIVE "Aggressive")
+;; Updated to canonical lowercase strings to match Convex internal representation
+(define-constant RISK-TIER-CONSERVATIVE "conservative")
+(define-constant RISK-TIER-BALANCED "balanced")
+(define-constant RISK-TIER-AGGRESSIVE "aggressive")
 
 ;; Token Identifiers
 (define-constant STX-TOKEN-ID "STX")
@@ -1858,6 +1859,22 @@
 ;; Check if an expiration height has any policies
 (define-read-only (has-policies-at-expiration (expiration-height uint))
   (>= (get-expiration-policy-count expiration-height) u1)
+)
+
+;; Public version of find-providers-for-policy for verification contract
+(define-read-only (find-providers-for-policy-public
+    (policy-id uint)
+    (token-id (string-ascii 32))
+  )
+  (find-providers-for-policy policy-id token-id)
+)
+
+;; Public version of get-provider-allocation-amount for verification contract
+(define-read-only (get-provider-allocation-amount-public
+    (provider principal)
+    (policy-id uint)
+  )
+  (get-provider-allocation-amount provider policy-id)
 )
 
 (print { message: "European-Liquidity-Pool-Vault.clar updated for Phase 2, Steps LP-201, LP-202, LP-203, LP-204, LP-205, LP-206, LP-207, LP-208, and LP-209" })

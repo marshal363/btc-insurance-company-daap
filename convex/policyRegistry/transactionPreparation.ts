@@ -130,6 +130,15 @@ export const internalPreparePolicyCreationTransaction = internalMutation({
     if (typeof quote.buyerParamsSnapshot.protectedValuePercentage !== 'number') {
         throw new Error("Missing protectedValuePercentage in quote.buyerParamsSnapshot");
     }
+    if (typeof quote.buyerParamsSnapshot.riskTier !== 'string') {
+        throw new Error("Missing riskTier in quote.buyerParamsSnapshot");
+    }
+    if (typeof quote.buyerParamsSnapshot.protectedAssetName !== 'string') {
+        throw new Error("Missing protectedAssetName in quote.buyerParamsSnapshot");
+    }
+    if (typeof quote.buyerParamsSnapshot.collateralTokenName !== 'string') {
+        throw new Error("Missing collateralTokenName in quote.buyerParamsSnapshot");
+    }
 
     const ownerAddress = userStxAddress;
     
@@ -149,19 +158,18 @@ export const internalPreparePolicyCreationTransaction = internalMutation({
     
     // LPI-101: Collateral Check
     console.log(`[TransactionPreparationInternal] Performing collateral check for token: ${collateralTokenString}`);
-    const poolMetrics: Doc<"pool_metrics"> | null = await ctx.runQuery(api.liquidityPool.poolState.getPoolMetrics, { token: collateralTokenString });
+    const poolMetricsRaw = await ctx.runQuery(api.liquidityPool.poolState.getPoolMetrics, { token: collateralTokenString });
 
-    if (!poolMetrics) {
-        console.warn(`[TransactionPreparationInternal] Pool metrics not found for token: ${collateralTokenString}. Assuming insufficient collateral.`);
-        throw new Error(`Insufficient Liquidity Pool collateral (metrics unavailable for ${collateralTokenString}).`);
+    // Check if poolMetricsRaw is null, or if it's not the expected Doc<"pool_metrics"> structure
+    // by verifying the presence of essential fields like '_id' and 'available_liquidity'.
+    if (!poolMetricsRaw || !('_id' in poolMetricsRaw && typeof (poolMetricsRaw as any).available_liquidity === 'number')) {
+        console.warn(`[TransactionPreparationInternal] Pool metrics not found or in unexpected format for token: ${collateralTokenString}. Response:`, poolMetricsRaw);
+        throw new Error(`Insufficient Liquidity Pool collateral (metrics unavailable or in wrong format for ${collateralTokenString}).`);
     }
+    // At this point, poolMetricsRaw has been validated to be shaped like Doc<"pool_metrics">.
+    const poolMetrics: Doc<"pool_metrics"> = poolMetricsRaw as Doc<"pool_metrics">;
 
     const requiredCollateralSatoshis = btcToSatoshis(amountBTC); // Assuming protectionAmount is in BTC
-    // Ensure poolMetrics.available_liquidity is defined and is a number
-    if (typeof poolMetrics.available_liquidity !== 'number') {
-        console.error(`[TransactionPreparationInternal] available_liquidity for ${collateralTokenString} is not a number or is undefined. Metrics:`, poolMetrics);
-        throw new Error(`Invalid Liquidity Pool metrics for ${collateralTokenString}. Cannot verify collateral.`);
-    }
     
     console.log(`[TransactionPreparationInternal] Required collateral (Satoshis): ${requiredCollateralSatoshis}, Available in LP (Satoshis): ${poolMetrics.available_liquidity}`);
 
@@ -176,26 +184,50 @@ export const internalPreparePolicyCreationTransaction = internalMutation({
     const premiumSTX = quote.quoteResult.premium; // Premium is in STX
     const expirationDays = quote.buyerParamsSnapshot.expirationDays;
     const policyTypeString = quote.buyerParamsSnapshot.policyType; // "PUT" or "CALL"
-    // TODO: Determine positionType, collateralToken, settlementToken based on conventions or quote data
-    // For now, using placeholders or typical values for a BTC PUT option buyer.
-    const positionTypeString = "LONG_PUT"; // Example for buyer
-    const settlementTokenString = "STX";  // Example, premium paid in STX, settlement could be STX or sBTC based on policy.
+    
+    // PCIA-203: Source riskTier and protectedAssetName from the quote document
+    const riskTierString = quote.buyerParamsSnapshot.riskTier;
+    const protectedAssetString = quote.buyerParamsSnapshot.protectedAssetName;
+    
+    console.log(`[TransactionPreparationInternal] Using risk tier from quote: ${riskTierString}`);
+    console.log(`[TransactionPreparationInternal] Using protected asset from quote: ${protectedAssetString}`);
 
+    // PCIA-205: Source collateralTokenNameString from quote
+    const collateralTokenNameString = quote.buyerParamsSnapshot.collateralTokenName;
+    console.log(`[TransactionPreparationInternal] Using collateral token name from quote: ${collateralTokenNameString}`);
+
+    // const positionTypeString = "LONG_PUT"; // Not a direct contract param, remove
+    // const counterpartyAddress = liquidityPoolContract.address; // Not a direct contract param, remove
+
+    // PCIA-203: Removed riskTier calculation logic as it's now sourced from the quote.
+    
     // Get Contract Details
     const policyRegistryContract = getContractByName("policy-registry");
     const contractAddress = policyRegistryContract.address;
     const contractName = policyRegistryContract.name;
-    const functionName = "create-policy-entry"; // From policyRegistry/writer.ts
+    const functionName = "create-protection-policy";
 
-    // Construct SERIALIZABLE functionArgs
+    // Construct SERIALIZABLE functionArgs according to policy-registry.clar::create-protection-policy
+    // (policy-owner-principal principal)
+    // (policy-type (string-ascii 8))
+    // (risk-tier (string-ascii 32))
+    // (protected-asset-name (string-ascii 10))
+    // (collateral-token-name (string-ascii 32))
+    // (protected-value-scaled uint)       ; USD Cents
+    // (protection-amount-scaled uint)     ; Satoshis
+    // (expiration-height uint)
+    // (submitted-premium-scaled uint)     ; microSTX
     const serializableFunctionArgs: SerializableFunctionArg[] = [
       { cvFunction: "standardPrincipalCV", rawValue: ownerAddress },
-      { cvFunction: "standardPrincipalCV", rawValue: counterpartyAddress },
+      { cvFunction: "stringAsciiCV", rawValue: policyTypeString }, // e.g., "PUT" (len 3 <= 8)
+      { cvFunction: "stringAsciiCV", rawValue: riskTierString },   // e.g., "conservative" (len 12 <= 32)
+      { cvFunction: "stringAsciiCV", rawValue: protectedAssetString }, // "BTC" (len 3 <= 10)
+      { cvFunction: "stringAsciiCV", rawValue: collateralTokenNameString }, // "STX" (len 3 <= 32)
       { cvFunction: "uintCV", rawValue: usdToCents(strikePriceUSD) },
       { cvFunction: "uintCV", rawValue: btcToSatoshis(amountBTC) },
-      { cvFunction: "uintCV", rawValue: currentBurnBlockHeight + (expirationDays * AVG_STACKS_BLOCKS_PER_DAY) },
-      { cvFunction: "uintCV", rawValue: stxToMicroStx(premiumSTX) },
-      { cvFunction: "stringAsciiCV", rawValue: policyTypeString },
+      { cvFunction: "uintCV", rawValue: currentBurnBlockHeight + (expirationDays * AVG_STACKS_BLOCKS_PER_DAY) }, // expirationHeight
+      { cvFunction: "uintCV", rawValue: stxToMicroStx(premiumSTX) } // submitted-premium-scaled (microSTX)
+      // positionTypeString, counterpartyAddress, settlementTokenString removed as they are not direct contract params.
     ];
 
     // Assemble ContractCallOptions for the frontend
@@ -214,16 +246,17 @@ export const internalPreparePolicyCreationTransaction = internalMutation({
     // Store semantic parameters for backend use (unchanged from previous logic)
     const storedParameters = {
       owner: ownerAddress,
-      counterparty: counterpartyAddress,
+      // counterparty: counterpartyAddress, // Removed from direct contract call
       protectedValue: usdToCents(strikePriceUSD), 
       protectionAmount: btcToSatoshis(amountBTC), 
       expirationHeight: currentBurnBlockHeight + (expirationDays * AVG_STACKS_BLOCKS_PER_DAY),
-      premium: stxToMicroStx(premiumSTX), // Storing in microSTX for consistency
+      premium: stxToMicroStx(premiumSTX), 
       policyType: policyTypeString,
-      // Add other semantic fields if needed for backend records
-      positionType: positionTypeString,
-      collateralToken: collateralTokenString,
-      settlementToken: settlementTokenString,
+      // positionType: positionTypeString, // Removed from direct contract call
+      collateralToken: collateralTokenNameString, // Storing the effective collateral token name
+      // settlementToken: settlementTokenString, // Removed from direct contract call
+      riskTier: riskTierString,
+      protectedAsset: protectedAssetString, // Added for completeness
     };
 
     const userIdForTransaction = userStxAddress; 

@@ -233,7 +233,7 @@ export const checkAndSubmitOraclePrice = internalAction({
           txid: result.txid,
           submittedPriceSatoshis: Math.round(latestAggregatedPriceData.price * 100000000), // Convert to satoshis
           reason: result.reason || "Price update required",
-          percentChange: result.percentChange,
+          percentChange: result.percentChange === null ? undefined : result.percentChange,
           sourceCount: latestAggregatedPriceData.sourceCount || 0,
           status: "submitted",
         });

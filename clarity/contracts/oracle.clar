@@ -1,7 +1,8 @@
 ;; title: oracle
-;; version: 1.2.1 (Hardcoded Params)
-;; summary: Oracle Contract for BitHedge platform - Simplified
-;; description: Provides reliable price data for Bitcoin. Stores validated price submitted by authorized source. Parameters are hardcoded.
+;; version: 2.0.8
+;; summary: Oracle Contract for BitHedge platform - MVP Implementation
+;; description: Provides reliable price data for Bitcoin. Stores validated price submitted by authorized source.
+;;              Integrates with Parameters Contract for validation thresholds. Staleness check is responsibility of the caller.
 
 ;; Implementation Status:
 ;; ---------------------
@@ -57,107 +58,224 @@
 
 ;;;;  public functions
 
-;;;;  @desc Sets the latest aggregated price. Only callable by the authorized submitter.
-;;;;  Uses hardcoded validation parameters. The timestamp is automatically set to the current burn-block-height.
-;;;;  @param price The aggregated price (uint, with PRICE_DECIMALS)
-;;;;  @returns (ok bool) or (err uint)
-;; (define-public (set-aggregated-price (price uint))
-;;   (begin
-;;;;      --- Authorization ---
-;;     (asserts! (is-eq tx-sender (var-get authorized-submitter)) ERR-NOT-AUTHORIZED)
-;;;;      --- Get Current Time ---
-;;     (let ((current-timestamp burn-block-height))
-;;;;        --- Validation ---
-;;       (let (
-;;           (last-price-val (var-get latest-price))
-;;           (last-timestamp-val (var-get latest-timestamp)) ;; Get last timestamp for deviation check context if needed
-;;           (max-deviation-percentage ORACLE_MAX_DEVIATION_PCT)
-;;           (max-age-seconds ORACLE_MAX_AGE_SECONDS)
-;;           (max-age-blocks (/ max-age-seconds u10)) ;; Recalculate max age in blocks
-;;         )
-;;;;          REMOVED Timestamp validation checks - using burn-block-height directly
-;;;;          1. Deviation validation (Checks if price changed too much since last update)
-;;         (if (> last-price-val u0)
-;;           (let (
-;;               (price-diff (if (> price last-price-val)
-;;                 (- price last-price-val)
-;;                 (- last-price-val price)
-;;               ))
-;;;;                Calculate max allowed difference based on the last price
-;;               (max-allowed-diff (/ (* last-price-val max-deviation-percentage) u1000000))
-;;;;                Also check if the last price is too old according to max_age_seconds
-;;               (is-last-price-stale (if (< current-timestamp max-age-blocks) ;; Handle chain genesis case
-;;                 false
-;;                 (< last-timestamp-val (- current-timestamp max-age-blocks))
-;;               ))
-;;             )
-;;;;              Allow update if last price was stale OR if deviation is within bounds
-;;             (asserts! (or is-last-price-stale (<= price-diff max-allowed-diff))
-;;               ERR-PRICE-OUT-OF-BOUNDS
-;;             )
-;;           )
-;;           true ;; Skip deviation check if no previous price exists
-;;         )
-;;       )
-;;     )
-;;;;      --- State Update ---
-;;     (var-set latest-price price)
-;;     (var-set latest-timestamp current-timestamp)
-;;;;      Use the current block height
-;;;;      --- Event Emission ---
-;;     (print {
-;;       event: "price-updated",
-;;       price: price,
-;;       timestamp: current-timestamp,
-;;       submitter: tx-sender,
-;;     })
-;;;;      Use current block height
-;;     (ok true)
-;;   )
-;;;;    End outer let for current-timestamp
-;; )
+;; @desc Sets the latest aggregated price. Only callable by authorized submitters.
+;; @param price The aggregated price (uint)
+;; @returns (ok bool) or (err uint)
+(define-public (set-aggregated-price (price uint))
+  (begin
+    ;; --- Authorization ---
+    (asserts! (is-authorized-submitter) ERR-NOT-AUTHORIZED)
+    ;; --- Validation ---
+    (let (
+        (current-timestamp burn-block-height)
+        (last-price-val (var-get latest-price))
+        (last-timestamp-val (var-get latest-timestamp))
+      )
+      (if (> last-price-val u0) ;; Perform validation only if a previous price exists
+        (match (var-get parameters-contract-principal)
+          params-principal-some
+          (try! (validate-price-update price last-price-val last-timestamp-val
+            current-timestamp params-principal-some
+          ))
+          none ;; Parameters contract not set, skip detailed validation
+          (ok true)
+        )
+        (ok true) ;; Skip validation if no previous price
+      )
+    )
+    ;; --- State Update (occurs if validation above didn't abort) ---
+    (var-set latest-price price)
+    (var-set latest-timestamp burn-block-height)
+    ;; --- Event Emission ---
+    (print {
+      event: "price-updated",
+      block-height: burn-block-height,
+      price: price,
+      timestamp: burn-block-height,
+      submitter: tx-sender,
+    })
+    (ok true)
+  )
+)
 
-;;;;  @desc Updates the authorized submitter principal. Only callable by the current contract owner.
-;;;;  @param new-submitter The principal of the new authorized submitter.
-;;;;  @returns (ok bool) or (err uint)
-;; (define-public (set-authorized-submitter (new-submitter principal))
-;;   (begin
-;;     (asserts! (is-eq tx-sender CONTRACT-OWNER) ERR-NOT-AUTHORIZED)
-;;     (var-set authorized-submitter new-submitter)
-;;     (print {
-;;       event: "authorized-submitter-updated",
-;;       new-submitter: new-submitter,
-;;     })
-;;     (ok true)
-;;   )
-;; )
+;; @desc Adds a new authorized submitter. Only callable by the contract admin.
+;; @param submitter The principal to authorize for price updates
+;; @returns (ok bool) or (err uint)
+(define-public (add-authorized-submitter (submitter principal))
+  (begin
+    (asserts! (is-admin) ERR-NOT-AUTHORIZED)
+    (map-set authorized-submitters submitter true)
+    (print {
+      event: "added-authorized-submitter",
+      block-height: burn-block-height,
+      submitter-principal: submitter,
+    })
+    (ok true)
+  )
+)
 
-;;;;  read only functions
+;; @desc Removes an authorized submitter. Only callable by the contract admin.
+;; @param submitter The principal to remove from authorized submitters
+;; @returns (ok bool) or (err uint)
+(define-public (remove-authorized-submitter (submitter principal))
+  (begin
+    (asserts! (is-admin) ERR-NOT-AUTHORIZED)
+    (map-set authorized-submitters submitter false)
+    (print {
+      event: "removed-authorized-submitter",
+      block-height: burn-block-height,
+      submitter-principal: submitter,
+    })
+    (ok true)
+  )
+)
 
-;;;;  @desc Gets the latest validated price and its timestamp.
-;;;;  Staleness check is now done implicitly by the caller based on timestamp.
-;;;;  The contract itself doesn't prevent reading stale data, only setting it.
-;;;;  @returns (ok {price: uint, timestamp: uint}) or (err uint) if no price data exists
-;; (define-read-only (get-latest-price)
-;;   (let (
-;;       (price (var-get latest-price))
-;;       (timestamp (var-get latest-timestamp))
-;;     )
-;;;;      Check if a price has been set
-;;     (asserts! (> price u0) ERR-NO-PRICE-DATA)
-;;;;      Return the price and timestamp - REMOVED STALENESS CHECK FROM HERE
-;;     (ok {
-;;       price: price,
-;;       timestamp: timestamp,
-;;     })
-;;   )
-;; )
+;; @desc Updates the contract admin. Only callable by the current admin.
+;; @param new-admin The principal to set as the new contract admin
+;; @returns (ok bool) or (err uint)
+(define-public (set-contract-admin (new-admin principal))
+  (begin
+    (asserts! (is-admin) ERR-NOT-AUTHORIZED)
+    (var-set contract-admin new-admin)
+    (print {
+      event: "set-contract-admin",
+      block-height: burn-block-height,
+      new-admin-principal: new-admin,
+    })
+    (ok true)
+  )
+)
 
-;;;;  @desc Gets the currently authorized submitter principal.
-;;;;  @returns (ok principal)
-;; (define-read-only (get-authorized-submitter)
-;;   (ok (var-get authorized-submitter))
-;; )
+;; @desc Sets the Parameters Contract principal. Only callable by the contract admin.
+;; @param params-principal The principal of the Parameters Contract that implements parameter-trait
+;; @returns (ok bool) or (err uint)
+(define-public (set-parameters-contract-principal (params-principal principal))
+  (begin
+    (asserts! (is-admin) ERR-NOT-AUTHORIZED)
+    (var-set parameters-contract-principal (some params-principal))
+    (print {
+      event: "parameters-contract-set",
+      block-height: burn-block-height,
+      params-principal: params-principal,
+    })
+    (ok true)
+  )
+)
+
+;; --- Read-Only Functions ---
+
+;; @desc Gets the latest validated price and its timestamp. Caller is responsible for staleness check.
+;; @returns (ok {price: uint, timestamp: uint}) or (err ERR-NO-PRICE-DATA)
+(define-read-only (get-current-bitcoin-price)
+  (let (
+      (price (var-get latest-price))
+      (timestamp (var-get latest-timestamp))
+    )
+    (asserts! (> price u0) ERR-NO-PRICE-DATA)
+    ;; Ensure a price has been set
+    (ok {
+      price: price,
+      timestamp: timestamp,
+    })
+  )
+)
+
+;; @desc Gets the Bitcoin price at a specific height (for settlements).
+;; For MVP, this function returns the latest price. Caller responsible for staleness.
+;; @param height The block height at which to get the price (currently ignored for MVP)
+;; @returns (ok {price: uint, timestamp: uint}) or (err ERR-NO-PRICE-DATA)
+(define-read-only (get-bitcoin-price-at-height (height uint))
+  (get-current-bitcoin-price)
+)
+
+;; @desc Checks if a principal is an authorized submitter
+;; @param principal The principal to check
+;; @returns (bool) True if authorized, false otherwise
+(define-read-only (is-authorized-submitter-public (principal principal))
+  (default-to false (map-get? authorized-submitters principal))
+)
+
+;; @desc Gets the current contract admin
+;; @returns (principal) The contract admin
+(define-read-only (get-contract-admin)
+  (var-get contract-admin)
+)
+
+;; @desc Gets the current parameters contract principal if set
+;; @returns (optional principal) The parameters contract principal or none
+(define-read-only (get-parameters-contract-principal)
+  (var-get parameters-contract-principal)
+)
+
+;; --- Helper Functions ---
+
+;; @desc Fetches a uint parameter from the specified Parameters Contract.
+;;       Assumes the parameter contract implements `get-system-parameter-uint` from `parameter-trait`.
+;;       The trait function `get-system-parameter-uint` returns `(response (optional uint) uint)`.
+;; @param params-principal The principal of the Parameters Contract.
+;; @param param-name The name of the parameter to fetch (e.g., "oracle-max-age-blocks").
+;; @returns (response uint uint) - (ok value) if successful, or (err ERR-PARAMETER-CONTRACT-ERROR) if the call fails or parameter not found/wrong type.
+(define-private (get-parameter-from-contract
+    (params-principal principal)
+    (param-name (string-ascii 64))
+  )
+  (match (contract-call? params-principal get-system-parameter-uint param-name)
+    ;; Case 1: contract-call? succeeded. Result is (response (optional uint) uint) from trait.
+    ok-outer-response ;; This is the (response (optional uint) uint) from the trait method
+    (match ok-outer-response
+      ;; Case 1a: Trait method returned (ok (optional uint))
+      ok-inner-optional-uint ;; This is (optional uint)
+      (match ok-inner-optional-uint
+        ;; Case 1a-i: The (optional uint) is (some val)
+        (some val)
+        (ok val)
+        ;; Case 1a-ii: The (optional uint) is none (parameter not found or not uint)
+        none
+        (err ERR-PARAMETER-CONTRACT-ERROR)
+      )
+      ;; Case 1b: Trait method returned (err ...)
+      err-inner-response
+      (err ERR-PARAMETER-CONTRACT-ERROR) ;; Error from trait implementation
+    )
+    ;; Case 2: contract-call? itself failed (e.g., no such contract, or contract panicked during call)
+    err-outer-response
+    (err ERR-PARAMETER-CONTRACT-ERROR)
+  )
+)
+
+;; --- Private Helper for Validation ---
+(define-private (validate-price-update
+    (price uint)
+    (last-price-val uint)
+    (last-timestamp-val uint)
+    (current-timestamp uint)
+    (params-principal principal)
+  )
+  (let (
+      (max-deviation-pct-val (unwrap!
+        (get-parameter-from-contract params-principal "oracle-max-deviation-pct")
+        ERR-PARAMETER-CONTRACT-ERROR
+      ))
+      (max-age-blocks-val (unwrap!
+        (get-parameter-from-contract params-principal "oracle-max-age-blocks")
+        ERR-PARAMETER-CONTRACT-ERROR
+      ))
+      (price-diff (if (> price last-price-val)
+        (- price last-price-val)
+        (- last-price-val price)
+      ))
+      (max-allowed-diff (/ (* last-price-val max-deviation-pct-val) u1000000))
+      (is-last-price-stale (if (< current-timestamp max-age-blocks-val)
+        false
+        (< last-timestamp-val (- current-timestamp max-age-blocks-val))
+      ))
+    )
+    (asserts! (or is-last-price-stale (<= price-diff max-allowed-diff))
+      ERR-PRICE-OUT-OF-BOUNDS
+    )
+    (ok true)
+  )
+)
 
 ;; BitHedgePriceOracleContract
 ;; Responsible for providing reliable Bitcoin price data for various system operations.
@@ -202,6 +320,10 @@
   (is-eq tx-sender (var-get contract-admin))
 )
 
+(define-private (is-authorized-submitter)
+  (default-to false (map-get? authorized-submitters tx-sender))
+)
+
 ;; --- Public Functions ---
 ;; PO-102: Stub for get-current-bitcoin-price
 ;; Phase 1: Returns a constant for testing.
@@ -215,76 +337,6 @@
 ;; Phase 2: Will look up historical prices if stored, or handle requests appropriately.
 (define-read-only (get-bitcoin-price-at-height (height uint))
   (ok u19000000000)
-)
-
-;; PO-104: Admin functions for managing authorized updaters
-(define-public (add-authorized-submitter (submitter principal))
-  (begin
-    (asserts! (is-admin) ERR-NOT-ADMIN)
-    (match (map-get? authorized-submitters submitter)
-      found-value
-      (if found-value
-        (ok false) ;; Changed from (err ERR-SUBMITTER-ALREADY-AUTHORIZED) to (ok false) to maintain consistent return type
-        (begin
-          ;; Was false (inactive) or not present, now setting to true
-          (map-set authorized-submitters submitter true)
-          (print {
-            event: "added-authorized-submitter",
-            block-height: burn-block-height,
-            submitter-principal: submitter,
-          })
-          (ok true)
-        )
-      )
-      ;; Not found in map, so add as true
-      (begin
-        (map-set authorized-submitters submitter true)
-        (print {
-          event: "added-authorized-submitter",
-          block-height: burn-block-height,
-          submitter-principal: submitter,
-        })
-        (ok true)
-      )
-    )
-  )
-)
-
-(define-public (remove-authorized-submitter (submitter principal))
-  (begin
-    (asserts! (is-admin) ERR-NOT-ADMIN)
-    (match (map-get? authorized-submitters submitter)
-      found-value
-      (if found-value
-        (begin
-          ;; Was true (active), now setting to false
-          (map-set authorized-submitters submitter false)
-          (print {
-            event: "removed-authorized-submitter",
-            block-height: burn-block-height,
-            submitter-principal: submitter,
-          })
-          (ok true)
-        )
-        (ok false) ;; Changed from (err ERR-SUBMITTER-NOT-AUTHORIZED) to (ok false) to maintain consistent return type
-      )
-      ;; Not found in map, so not authorized
-      (ok false) ;; Changed from (err ERR-SUBMITTER-NOT-AUTHORIZED) to (ok false) to maintain consistent return type
-    )
-  )
-)
-
-(define-public (set-contract-admin (new-admin principal))
-  (begin
-    (asserts! (is-admin) ERR-NOT-ADMIN)
-    (var-set contract-admin new-admin)
-    (print {
-      event: "set-contract-admin",
-      block-height: burn-block-height,
-      new-admin-principal: new-admin,
-    })
-    (ok true)
-  )
 )
 
 ;; PO-201: Implement update-bitcoin-price - stub for future implementation

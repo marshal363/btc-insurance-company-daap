@@ -23,42 +23,41 @@
 (define-constant ROLE-VERIFICATION-CONTRACT-ADMIN "vc-admin")
 (define-constant ROLE-MATH-LIB-ADMIN "ml-admin")
 
-
 ;; --- Error Codes (PA-104 is for a more global set, these are specific or common) ---
 
 ;; System-Wide Error Codes (PA-104) - Intended for use across all BitHedge contracts
-(define-constant ERR-GENERIC (err u100))                      ;; A general catch-all if nothing more specific fits
-(define-constant ERR-NOT-YET-IMPLEMENTED (err u101))         ;; For functions or features that are planned but not coded
-(define-constant ERR-SYSTEM-PAUSED (err u102))               ;; Global system pause is active, most actions suspended
-(define-constant ERR-INVALID-STATE (err u103))               ;; Operation attempted in an incorrect contract or system state
-(define-constant ERR-ARITHMETIC-OVERFLOW (err u104))         ;; Calculation resulted in a value greater than UINT_MAX
-(define-constant ERR-ARITHMETIC-UNDERFLOW (err u105))        ;; Calculation resulted in a value less than zero (for uints)
-(define-constant ERR-DIVISION-BY-ZERO (err u106))            ;; Attempted to divide by zero
-(define-constant ERR-AMOUNT-TOO-LOW (err u107))              ;; Provided amount does not meet a minimum requirement
-(define-constant ERR-AMOUNT-TOO-HIGH (err u108))             ;; Provided amount exceeds a maximum limit
-(define-constant ERR-STALE-ORACLE-PRICE (err u109))          ;; Oracle price data is considered too old to be reliable
-(define-constant ERR-INVALID-EXPIRATION-HEIGHT (err u110))   ;; Expiration block height is invalid (e.g., in the past, too far future)
-(define-constant ERR-TOKEN-TRANSFER-FAILED (err u111))       ;; An underlying SIP-010 token transfer operation failed
-(define-constant ERR-INSUFFICIENT-TOKEN-BALANCE (err u112))  ;; Account has an insufficient balance of a specific token
-(define-constant ERR-MAP-ITEM-NOT-FOUND (err u113))          ;; Expected item not found in a map
-(define-constant ERR-INVALID-CALLER (err u114))              ;; tx-sender or contract-caller not authorized for a specific inter-contract call
-(define-constant ERR-MAXIMUM-LIMIT-REACHED (err u115))       ;; A system or user-specific limit has been reached
+(define-constant ERR-GENERIC (err u100)) ;; A general catch-all if nothing more specific fits
+(define-constant ERR-NOT-YET-IMPLEMENTED (err u101)) ;; For functions or features that are planned but not coded
+(define-constant ERR-SYSTEM-PAUSED (err u102)) ;; Global system pause is active, most actions suspended
+(define-constant ERR-INVALID-STATE (err u103)) ;; Operation attempted in an incorrect contract or system state
+(define-constant ERR-ARITHMETIC-OVERFLOW (err u104)) ;; Calculation resulted in a value greater than UINT_MAX
+(define-constant ERR-ARITHMETIC-UNDERFLOW (err u105)) ;; Calculation resulted in a value less than zero (for uints)
+(define-constant ERR-DIVISION-BY-ZERO (err u106)) ;; Attempted to divide by zero
+(define-constant ERR-AMOUNT-TOO-LOW (err u107)) ;; Provided amount does not meet a minimum requirement
+(define-constant ERR-AMOUNT-TOO-HIGH (err u108)) ;; Provided amount exceeds a maximum limit
+(define-constant ERR-STALE-ORACLE-PRICE (err u109)) ;; Oracle price data is considered too old to be reliable
+(define-constant ERR-INVALID-EXPIRATION-HEIGHT (err u110)) ;; Expiration block height is invalid (e.g., in the past, too far future)
+(define-constant ERR-TOKEN-TRANSFER-FAILED (err u111)) ;; An underlying SIP-010 token transfer operation failed
+(define-constant ERR-INSUFFICIENT-TOKEN-BALANCE (err u112)) ;; Account has an insufficient balance of a specific token
+(define-constant ERR-MAP-ITEM-NOT-FOUND (err u113)) ;; Expected item not found in a map
+(define-constant ERR-INVALID-CALLER (err u114)) ;; tx-sender or contract-caller not authorized for a specific inter-contract call
+(define-constant ERR-MAXIMUM-LIMIT-REACHED (err u115)) ;; A system or user-specific limit has been reached
 (define-constant ERR-MINIMUM-REQUIREMENT-NOT-MET (err u116)) ;; A minimum condition or requirement was not satisfied
-(define-constant ERR-INVALID-TOKEN-CONTRACT (err u117))      ;; Provided principal is not a valid/supported token contract
-(define-constant ERR-ACTION-FORBIDDEN (err u118))            ;; A general forbidden action not covered by other errors
-(define-constant ERR-INVALID-SIGNATURE (err u119))           ;; For future use with signed messages if needed
-(define-constant ERR-DATA-MISMATCH (err u120))               ;; Input data or parameters are inconsistent
+(define-constant ERR-INVALID-TOKEN-CONTRACT (err u117)) ;; Provided principal is not a valid/supported token contract
+(define-constant ERR-ACTION-FORBIDDEN (err u118)) ;; A general forbidden action not covered by other errors
+(define-constant ERR-INVALID-SIGNATURE (err u119)) ;; For future use with signed messages if needed
+(define-constant ERR-DATA-MISMATCH (err u120)) ;; Input data or parameters are inconsistent
 
 ;; Error codes more specific to BitHedgeParametersContract (or commonly managed here)
-(define-constant ERR-UNAUTHORIZED (err u1000))              ;; tx-sender is not authorized for this action (e.g. not CONTRACT_OWNER or role holder)
-(define-constant ERR-ROLE-NOT-FOUND (err u1001))            ;; Specified role does not exist for the user or is not defined
-(define-constant ERR-PARAMETER-NOT-FOUND (err u1002))       ;; System parameter ID not found
-(define-constant ERR-FEE-TYPE-NOT-FOUND (err u1003))        ;; Fee type ID not found
-(define-constant ERR-ALREADY-INITIALIZED (err u1004))       ;; Attempt to initialize something that is already initialized
-(define-constant ERR-INVALID-PARAMETER-VALUE (err u1005))   ;; Value provided for a parameter is out of bounds or invalid type
-(define-constant ERR-RISK-TIER-NOT-FOUND (err u1006))       ;; (Placeholder for PA-105) Risk tier definition not found
-(define-constant ERR-ROLE-ALREADY-GRANTED (err u1007))      ;; Attempt to grant a role that is already active for the user
-(define-constant ERR-CANNOT-REVOKE-OWN-ROLE (err u1008))    ;; For safety, if specific roles should not be self-revoked by certain principals
+(define-constant ERR-UNAUTHORIZED (err u1000)) ;; tx-sender is not authorized for this action (e.g. not CONTRACT_OWNER or role holder)
+(define-constant ERR-ROLE-NOT-FOUND (err u1001)) ;; Specified role does not exist for the user or is not defined
+(define-constant ERR-PARAMETER-NOT-FOUND (err u1002)) ;; System parameter ID not found
+(define-constant ERR-FEE-TYPE-NOT-FOUND (err u1003)) ;; Fee type ID not found
+(define-constant ERR-ALREADY-INITIALIZED (err u1004)) ;; Attempt to initialize something that is already initialized
+(define-constant ERR-INVALID-PARAMETER-VALUE (err u1005)) ;; Value provided for a parameter is out of bounds or invalid type
+(define-constant ERR-RISK-TIER-NOT-FOUND (err u1006)) ;; (Placeholder for PA-105) Risk tier definition not found
+(define-constant ERR-ROLE-ALREADY-GRANTED (err u1007)) ;; Attempt to grant a role that is already active for the user
+(define-constant ERR-CANNOT-REVOKE-OWN-ROLE (err u1008)) ;; For safety, if specific roles should not be self-revoked by certain principals
 
 ;; --- Data Structures (PA-101) ---
 
@@ -72,13 +71,13 @@
 (define-map system-parameters
   { parameter-id: (string-ascii 64) } ;; Increased length for descriptive IDs
   {
-    value-uint: (optional uint),         ;; For parameters that are unsigned integers
-    value-bool: (optional bool),         ;; For parameters that are booleans
+    value-uint: (optional uint), ;; For parameters that are unsigned integers
+    value-bool: (optional bool), ;; For parameters that are booleans
     value-principal: (optional principal), ;; For parameters that are principals
     value-string: (optional (string-ascii 64)), ;; For parameters that are strings
     description: (string-ascii 256),
     last-updated-height: uint,
-    updater-principal: principal
+    updater-principal: principal,
   }
 )
 
@@ -99,7 +98,7 @@
     is-active: bool,
     description: (string-ascii 128),
     last-updated-height: uint,
-    updater-principal: principal
+    updater-principal: principal,
   }
 )
 
@@ -110,25 +109,30 @@
 ;; enabled: A boolean indicating if the role is active for the principal.
 ;; expiration: Optional block height at which the role expires for the principal.
 (define-map authorized-roles
-  { user-principal: principal, role-name: (string-ascii 32) }
+  {
+    user-principal: principal,
+    role-name: (string-ascii 32),
+  }
   {
     is-enabled: bool,
     expiration-height: (optional uint), ;; Role can be permanent if none
     set-by-principal: principal,
-    last-updated-height: uint
+    last-updated-height: uint,
   }
 )
 
 ;; (PA-105) Risk Tier Parameters
 ;; Defines parameters for different risk tiers, applicable to both buyers and liquidity providers.
-;; tier-name: A unique string identifier for the risk tier (e.g., "CONSERVATIVE-PROVIDER", "STANDARD-BUYER").
+;; tier-name: A unique string identifier for the risk tier using canonical lowercase strings 
+;;   (e.g., "conservative", "standard", "flexible", "crash_insurance" for buyers; 
+;;   "conservative", "balanced", "aggressive" for providers)
 ;; tier-type: Indicates if the tier is for "BUYER" or "PROVIDER".
 ;; collateral-ratio-basis-points: For provider tiers, the collateral they must lock relative to protection amount (e.g., u11000 for 110%).
 ;; premium-adjustment-basis-points: Adjustment to the base premium based on the tier (e.g., u9500 for -5% premium, u10500 for +5%).
 ;; max-exposure-per-policy-basis-points: For provider tiers, the maximum percentage of their total capital that can be allocated to a single policy.
 ;; max-exposure-per-expiration-basis-points: For provider tiers, the maximum percentage of their total capital exposed to a single expiration height.
 (define-map risk-tier-parameters
-  { tier-name: (string-ascii 32) } ;; e.g., "CONSERVATIVE-P", "AGGRESSIVE-P", "STANDARD-B"
+  { tier-name: (string-ascii 32) } ;; e.g., "conservative", "balanced", "aggressive", "standard", "flexible", "crash_insurance"
   {
     tier-type: (string-ascii 16), ;; "BUYER" or "PROVIDER"
     collateral-ratio-basis-points: uint, ;; e.g., u10000 for 100%. Primarily for PROVIDER tiers.
@@ -138,14 +142,13 @@
     is-active: bool,
     description: (string-ascii 256),
     last-updated-height: uint,
-    updater-principal: principal
+    updater-principal: principal,
   }
 )
 
 ;; --- Data Variables ---
 ;; (Potentially add a data-var to indicate if initial setup of crucial parameters is done)
 (define-data-var contract-initialized-flag bool false)
-
 
 ;; --- Helper Functions ---
 ;; (PA-103 related helper, should be present if PA-103 is fully complete)
@@ -154,56 +157,68 @@
 ;; (To be implemented in PA-102, PA-103)
 
 ;; PA-103: Role management functions
-(define-public (grant-role (user principal) (role (string-ascii 32)) (expires-at (optional uint)))
+(define-public (grant-role
+    (user principal)
+    (role (string-ascii 32))
+    (expires-at (optional uint))
+  )
   (begin
     (asserts! (is-eq tx-sender CONTRACT-OWNER) ERR-UNAUTHORIZED)
-    (map-set authorized-roles
-      { user-principal: user, role-name: role }
-      {
-        is-enabled: true,
-        expiration-height: expires-at,
-        set-by-principal: tx-sender,
-        last-updated-height: burn-block-height
-      }
-    )
+    (map-set authorized-roles {
+      user-principal: user,
+      role-name: role,
+    } {
+      is-enabled: true,
+      expiration-height: expires-at,
+      set-by-principal: tx-sender,
+      last-updated-height: burn-block-height,
+    })
     (print {
       event: "role-granted",
       block-height: burn-block-height,
       user-principal: user,
       role-name: role,
       expiration-height: expires-at,
-      granted-by: tx-sender
+      granted-by: tx-sender,
     })
     (ok true)
   )
 )
 
-(define-public (revoke-role (user principal) (role (string-ascii 32)))
+(define-public (revoke-role
+    (user principal)
+    (role (string-ascii 32))
+  )
   (begin
     (asserts! (is-eq tx-sender CONTRACT-OWNER) ERR-UNAUTHORIZED)
-    (match (map-get? authorized-roles { user-principal: user, role-name: role })
+    (match (map-get? authorized-roles {
+      user-principal: user,
+      role-name: role,
+    })
       role-entry
-        (if (get is-enabled role-entry)
-          (begin
-            (map-set authorized-roles
-              { user-principal: user, role-name: role }
-              (merge role-entry {
-                is-enabled: false,
-                last-updated-height: burn-block-height,
-                set-by-principal: tx-sender ;; The one revoking it
-              })
-            )
-            (print {
-              event: "role-revoked",
-              block-height: burn-block-height,
-              user-principal: user,
-              role-name: role,
-              revoked-by: tx-sender
+      (if (get is-enabled role-entry)
+        (begin
+          (map-set authorized-roles {
+            user-principal: user,
+            role-name: role,
+          }
+            (merge role-entry {
+              is-enabled: false,
+              last-updated-height: burn-block-height,
+              set-by-principal: tx-sender, ;; The one revoking it
             })
-            (ok true)
           )
-          (ok true) ;; Already not enabled, consider it a successful no-op or return specific error/event
+          (print {
+            event: "role-revoked",
+            block-height: burn-block-height,
+            user-principal: user,
+            role-name: role,
+            revoked-by: tx-sender,
+          })
+          (ok true)
         )
+        (ok true) ;; Already not enabled, consider it a successful no-op or return specific error/event
+      )
       ;; No existing role entry, return error that matches the success return type
       (ok false) ;; Changed from (err ERR-ROLE-NOT-FOUND) to (ok false) to maintain consistent return type
     )
@@ -211,20 +226,22 @@
 )
 
 ;; PA-102: Set system parameters (protected access)
-(define-public (set-system-parameter-uint (id (string-ascii 64)) (val uint) (desc (string-ascii 256)))
+(define-public (set-system-parameter-uint
+    (id (string-ascii 64))
+    (val uint)
+    (desc (string-ascii 256))
+  )
   (begin
     (asserts! (is-eq tx-sender CONTRACT-OWNER) ERR-UNAUTHORIZED)
-    (map-set system-parameters { parameter-id: id }
-      {
-        value-uint: (some val),
-        value-bool: none,
-        value-principal: none,
-        value-string: none,
-        description: desc,
-        last-updated-height: burn-block-height,
-        updater-principal: tx-sender
-      }
-    )
+    (map-set system-parameters { parameter-id: id } {
+      value-uint: (some val),
+      value-bool: none,
+      value-principal: none,
+      value-string: none,
+      description: desc,
+      last-updated-height: burn-block-height,
+      updater-principal: tx-sender,
+    })
     (print {
       event: "system-parameter-updated",
       block-height: burn-block-height,
@@ -232,26 +249,28 @@
       parameter-type: "uint",
       new-value-uint: val,
       description: desc,
-      updated-by: tx-sender
+      updated-by: tx-sender,
     })
     (ok true)
   )
 )
 
-(define-public (set-system-parameter-bool (id (string-ascii 64)) (val bool) (desc (string-ascii 256)))
+(define-public (set-system-parameter-bool
+    (id (string-ascii 64))
+    (val bool)
+    (desc (string-ascii 256))
+  )
   (begin
     (asserts! (is-eq tx-sender CONTRACT-OWNER) ERR-UNAUTHORIZED)
-    (map-set system-parameters { parameter-id: id }
-      {
-        value-uint: none,
-        value-bool: (some val),
-        value-principal: none,
-        value-string: none,
-        description: desc,
-        last-updated-height: burn-block-height,
-        updater-principal: tx-sender
-      }
-    )
+    (map-set system-parameters { parameter-id: id } {
+      value-uint: none,
+      value-bool: (some val),
+      value-principal: none,
+      value-string: none,
+      description: desc,
+      last-updated-height: burn-block-height,
+      updater-principal: tx-sender,
+    })
     (print {
       event: "system-parameter-updated",
       block-height: burn-block-height,
@@ -259,26 +278,28 @@
       parameter-type: "bool",
       new-value-bool: val,
       description: desc,
-      updated-by: tx-sender
+      updated-by: tx-sender,
     })
     (ok true)
   )
 )
 
-(define-public (set-system-parameter-principal (id (string-ascii 64)) (val principal) (desc (string-ascii 256)))
+(define-public (set-system-parameter-principal
+    (id (string-ascii 64))
+    (val principal)
+    (desc (string-ascii 256))
+  )
   (begin
     (asserts! (is-eq tx-sender CONTRACT-OWNER) ERR-UNAUTHORIZED)
-    (map-set system-parameters { parameter-id: id }
-      {
-        value-uint: none,
-        value-bool: none,
-        value-principal: (some val),
-        value-string: none,
-        description: desc,
-        last-updated-height: burn-block-height,
-        updater-principal: tx-sender
-      }
-    )
+    (map-set system-parameters { parameter-id: id } {
+      value-uint: none,
+      value-bool: none,
+      value-principal: (some val),
+      value-string: none,
+      description: desc,
+      last-updated-height: burn-block-height,
+      updater-principal: tx-sender,
+    })
     (print {
       event: "system-parameter-updated",
       block-height: burn-block-height,
@@ -286,26 +307,28 @@
       parameter-type: "principal",
       new-value-principal: val,
       description: desc,
-      updated-by: tx-sender
+      updated-by: tx-sender,
     })
     (ok true)
   )
 )
 
-(define-public (set-system-parameter-string (id (string-ascii 64)) (val (string-ascii 64)) (desc (string-ascii 256)))
+(define-public (set-system-parameter-string
+    (id (string-ascii 64))
+    (val (string-ascii 64))
+    (desc (string-ascii 256))
+  )
   (begin
     (asserts! (is-eq tx-sender CONTRACT-OWNER) ERR-UNAUTHORIZED)
-    (map-set system-parameters { parameter-id: id }
-      {
-        value-uint: none,
-        value-bool: none,
-        value-principal: none,
-        value-string: (some val),
-        description: desc,
-        last-updated-height: burn-block-height,
-        updater-principal: tx-sender
-      }
-    )
+    (map-set system-parameters { parameter-id: id } {
+      value-uint: none,
+      value-bool: none,
+      value-principal: none,
+      value-string: (some val),
+      description: desc,
+      last-updated-height: burn-block-height,
+      updater-principal: tx-sender,
+    })
     (print {
       event: "system-parameter-updated",
       block-height: burn-block-height,
@@ -313,7 +336,7 @@
       parameter-type: "string",
       new-value-string: val,
       description: desc,
-      updated-by: tx-sender
+      updated-by: tx-sender,
     })
     (ok true)
   )
@@ -332,21 +355,21 @@
   )
   (begin
     ;; Protected by CONTRACT-OWNER or ROLE-SYSTEM-PARAMETER-MANAGER
-    (asserts! (or (is-eq tx-sender CONTRACT-OWNER) (has-role tx-sender ROLE-SYSTEM-PARAMETER-MANAGER)) ERR-UNAUTHORIZED)
-
-    (map-set risk-tier-parameters { tier-name: tier-name-param }
-      {
-        tier-type: tier-type-param,
-        collateral-ratio-basis-points: collateral-ratio-param,
-        premium-adjustment-basis-points: premium-adjustment-param,
-        max-exposure-per-policy-basis-points: max-exposure-policy-param,
-        max-exposure-per-expiration-basis-points: max-exposure-expiration-param,
-        is-active: is-active-param,
-        description: description-param,
-        last-updated-height: burn-block-height,
-        updater-principal: tx-sender
-      }
+    (asserts!
+      (or (is-eq tx-sender CONTRACT-OWNER) (has-role tx-sender ROLE-SYSTEM-PARAMETER-MANAGER))
+      ERR-UNAUTHORIZED
     )
+    (map-set risk-tier-parameters { tier-name: tier-name-param } {
+      tier-type: tier-type-param,
+      collateral-ratio-basis-points: collateral-ratio-param,
+      premium-adjustment-basis-points: premium-adjustment-param,
+      max-exposure-per-policy-basis-points: max-exposure-policy-param,
+      max-exposure-per-expiration-basis-points: max-exposure-expiration-param,
+      is-active: is-active-param,
+      description: description-param,
+      last-updated-height: burn-block-height,
+      updater-principal: tx-sender,
+    })
     (print {
       event: "risk-tier-parameter-updated",
       block-height: burn-block-height,
@@ -358,7 +381,7 @@
       max-exposure-expiration: max-exposure-expiration-param,
       is-active: is-active-param,
       description: description-param,
-      updated-by: tx-sender
+      updated-by: tx-sender,
     })
     (ok true)
   )
@@ -376,20 +399,20 @@
   )
   (begin
     ;; Protected by CONTRACT-OWNER or ROLE-FEE-STRUCTURE-MANAGER
-    (asserts! (or (is-eq tx-sender CONTRACT-OWNER) (has-role tx-sender ROLE-FEE-STRUCTURE-MANAGER)) ERR-UNAUTHORIZED)
-
-    (map-set fee-structure { fee-type: fee-type-param }
-      {
-        percentage-basis-points: percentage-bp-param,
-        flat-min-amount: flat-min-param,
-        flat-max-amount: flat-max-param,
-        recipient-principal: recipient-param,
-        is-active: is-active-param,
-        description: description-param,
-        last-updated-height: burn-block-height,
-        updater-principal: tx-sender
-      }
+    (asserts!
+      (or (is-eq tx-sender CONTRACT-OWNER) (has-role tx-sender ROLE-FEE-STRUCTURE-MANAGER))
+      ERR-UNAUTHORIZED
     )
+    (map-set fee-structure { fee-type: fee-type-param } {
+      percentage-basis-points: percentage-bp-param,
+      flat-min-amount: flat-min-param,
+      flat-max-amount: flat-max-param,
+      recipient-principal: recipient-param,
+      is-active: is-active-param,
+      description: description-param,
+      last-updated-height: burn-block-height,
+      updater-principal: tx-sender,
+    })
     (print {
       event: "fee-structure-updated",
       block-height: burn-block-height,
@@ -400,7 +423,7 @@
       recipient: recipient-param,
       is-active: is-active-param,
       description: description-param,
-      updated-by: tx-sender
+      updated-by: tx-sender,
     })
     (ok true)
   )
@@ -416,7 +439,8 @@
 
 (define-read-only (get-system-parameter-uint (id (string-ascii 64)))
   (match (map-get? system-parameters { parameter-id: id })
-    param-entry (get value-uint param-entry)
+    param-entry
+    (get value-uint param-entry)
     none ;; Parameter not found or not of this type implicitly
   )
 )
@@ -443,13 +467,22 @@
 )
 
 ;; PA-103: Role checking function
-(define-read-only (has-role (user principal) (role (string-ascii 32)))
-  (match (map-get? authorized-roles { user-principal: user, role-name: role })
+(define-read-only (has-role
+    (user principal)
+    (role (string-ascii 32))
+  )
+  (match (map-get? authorized-roles {
+    user-principal: user,
+    role-name: role,
+  })
     role-entry
     (if (get is-enabled role-entry)
       (match (get expiration-height role-entry)
         expiry
-        (if (>= expiry burn-block-height) true false) ;; Role active if expiration is in the future or current block
+        (if (>= expiry burn-block-height)
+          true
+          false
+        ) ;; Role active if expiration is in the future or current block
         true ;; Role active if no expiration height is set (permanent until revoked)
       )
       false ;; Role is not enabled
@@ -461,8 +494,7 @@
 ;; (PA-201)
 (define-read-only (get-risk-tier-parameters (tier-name-param (string-ascii 32)))
   (match (map-get? risk-tier-parameters { tier-name: tier-name-param })
-    params
-    (ok params)
+    params (ok params)
     (err ERR-RISK-TIER-NOT-FOUND)
   )
 )
@@ -470,11 +502,9 @@
 ;; (PA-202)
 (define-read-only (get-fee-structure (fee-type-param (string-ascii 32)))
   (match (map-get? fee-structure { fee-type: fee-type-param })
-    fee-details
-    (ok fee-details)
+    fee-details (ok fee-details)
     (err ERR-FEE-TYPE-NOT-FOUND)
   )
 )
 
 ;; --- Private Functions ---
- 

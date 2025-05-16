@@ -61,26 +61,28 @@ export enum PolicyTransactionType {
  * Parameters for policy creation
  */
 export interface PolicyCreationParams extends TransactionParams {
-  // Policy type (PUT or CALL)
+  // Policy type (e.g., "PUT", "CALL") - must be a string-ascii of length 8 for the contract.
   policyType: PolicyType;
-  // Position type (LONG_PUT or SHORT_PUT)
-  positionType: PositionType;
-  // Owner's principal
+  // Owner's principal (e.g., STxxxxxxxx)
   owner: string;
-  // Counterparty's principal (if specified)
-  counterparty?: string;
-  // Strike price in USD
+  // Risk tier - canonical lowercase string (e.g., "conservative") - must be a string-ascii of length 32 for the contract.
+  riskTier: string; // Optional as per previous partial completion, but now required by create-protection-policy
+  // Asset being protected (e.g., "BTC") - must be a string-ascii of length 10 for the contract. For MVP, this will always be "BTC".
+  protectedAssetName: string;
+  // Token used for paying premium and as reference for collateral (e.g., "STX") - must be a string-ascii of length 32 for the contract. For MVP, this will always be "STX".
+  collateralTokenName: string; // Renamed from collateralToken for clarity with contract args
+  // Strike price, in USD (e.g., 50000 for $50,000.00). Will be scaled to cents for the contract (input USD * 100).
   strikePrice: number;
-  // Amount of BTC covered
+  // Amount of the protected asset (e.g., 1.5 for 1.5 BTC). Will be scaled to its smallest unit for the contract (e.g., satoshis for BTC: input BTC * 10^8).
   amount: number;
-  // Premium amount in USD
+  // Premium amount, in STX (e.g., 100.50 for 100.50 STX). Will be scaled to microSTX for the contract (input STX * 10^6).
   premium: number;
   // Expiration block height
   expirationHeight: number;
-  // Token used for collateral (STX/sBTC)
-  collateralToken: string;
-  // Token used for settlement (STX/sBTC)
-  settlementToken: string;
+  // Fields to be removed as they are not direct contract params for create-protection-policy:
+  // positionType: PositionType;
+  // counterparty?: string;
+  // settlementToken: string;
 }
 
 /**

@@ -80,6 +80,11 @@ plan:
             path: contracts/bithedge-parameters.clar
             clarity-version: 3
         - emulated-contract-publish:
+            contract-name: bithedge-verification
+            emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
+            path: contracts/bithedge-verification.clar
+            clarity-version: 3
+        - emulated-contract-publish:
             contract-name: fundraising
             emulated-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
             path: contracts/fundraising.clar

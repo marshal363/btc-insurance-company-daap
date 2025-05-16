@@ -34,6 +34,9 @@ export const saveQuote = mutation({
     let providerParamsSnapshot: any = undefined;
     let quoteResult = {};
 
+    // PCIA-203: Define constants or derive as needed
+    const mvpProtectedAssetName = "BTC"; // For MVP, asset is always BTC, matches args.asset typically
+
     if (args.quoteType === "buyer" && args.calculationResult) {
       const result = args.calculationResult; // Cast to expected buyer result type
       buyerParamsSnapshot = {
@@ -41,12 +44,34 @@ export const saveQuote = mutation({
         protectionAmount: result.inputs.protectionAmount,
         expirationDays: result.inputs.expirationDays,
         policyType: result.inputs.policyType,
+        // PCIA-203: Store protected asset name, ensure it aligns with args.asset
+        protectedAssetName: args.asset === mvpProtectedAssetName ? mvpProtectedAssetName : args.asset, 
+        // PCIA-205: Store collateral token name (MVP)
+        collateralTokenName: "STX", 
       };
       quoteResult = {
         premium: result.premium,
         premiumPercentage: result.premiumPercentage,
         breakEvenPrice: result.breakEvenPrice,
       };
+
+      // PCIA-203: Calculate and store riskTier in buyerParamsSnapshot
+      let calculatedRiskTier = "standard"; // Default risk tier
+      if (typeof result.inputs.protectedValuePercentage === 'number') {
+        const protectedValuePercentage = result.inputs.protectedValuePercentage;
+        if (protectedValuePercentage >= 95) {
+          calculatedRiskTier = "conservative";
+        } else if (protectedValuePercentage >= 85) {
+          calculatedRiskTier = "standard";
+        } else if (protectedValuePercentage >= 75) {
+          calculatedRiskTier = "flexible";
+        } else {
+          calculatedRiskTier = "crash_insurance";
+        }
+      }
+      // Assign to buyerParamsSnapshot, ensuring it's always set
+      buyerParamsSnapshot.riskTier = calculatedRiskTier;
+
     } else if (args.quoteType === "provider" && args.calculationResult) {
       const result = args.calculationResult; // Cast to expected provider result type
       providerParamsSnapshot = {

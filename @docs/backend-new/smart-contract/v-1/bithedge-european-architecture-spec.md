@@ -230,15 +230,18 @@ The European-style model uses a risk tier system to map between buyer protection
 
 ```
 // For Buyers (Protective Peter)
-Conservative: 100% of current value - Maximum protection
-Standard: 90% of current value - Standard protection
-Flexible: 80% of current value - Balanced protection
-Crash Insurance: 70% of current value - Minimal protection
+// Canonical Keys for parameters-contract.clar: "conservative", "standard", "flexible", "crash_insurance"
+"conservative": 100% of current value - Maximum protection
+"standard": 90% of current value - Standard protection
+"flexible": 80% of current value - Balanced protection
+"crash_insurance": 70% of current value - Minimal protection
 
 // For Providers (Income Irene)
-Conservative: Low risk, lower yield, higher collateral ratio (110%)
-Balanced: Medium risk, medium yield, standard collateral ratio (100%)
-Aggressive: Higher risk, higher yield, lower collateral ratio (90%)
+// Canonical Keys for parameters-contract.clar: "conservative", "balanced", "aggressive"
+// Note: The "conservative" key is shared; tier-type in parameters-contract distinguishes buyer/provider roles.
+"conservative": Low risk, lower yield, higher collateral ratio (110%)
+"balanced": Medium risk, medium yield, standard collateral ratio (100%)
+"aggressive": Higher risk, higher yield, lower collateral ratio (90%)
 
 // Tier Matching Rules
 ConservativeBuyer -> ConservativeProvider
@@ -246,6 +249,8 @@ StandardBuyer -> BalancedProvider, ConservativeProvider
 FlexibleBuyer -> AggressiveProvider, BalancedProvider
 CrashInsuranceBuyer -> Any provider tier
 ```
+
+**Note on Canonical Risk Tier Keys:** The lowercase string identifiers listed above (e.g., `"conservative"`, `"standard"`, `"crash_insurance"`) are the canonical keys. These exact strings must be used by off-chain services (like Convex) when sending the `risk-tier` parameter to the `policy-registry.clar` contract, and they will be used as the keys in the `risk-tier-parameters` map within the `parameters-contract.clar`.
 
 ## 3. Data Flows and Component Interactions
 

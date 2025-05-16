@@ -160,10 +160,10 @@
   )
   (begin
     ;; 1. Retrieve Contract Principals (PR-102 dependency)
-    (let ((lp-principal (unwrap! (var-get liquidity-pool-principal) ERR-LP-PRINCIPAL-NOT-SET)))
-      (let ((math-contract (unwrap! (var-get math-library-principal) ERR-MATH-PRINCIPAL-NOT-SET)))
-        (let ((oracle-contract (unwrap! (var-get price-oracle-principal) ERR-ORACLE-PRINCIPAL-NOT-SET)))
-          (let ((params-contract (unwrap! (var-get parameters-contract-principal)
+    (let ((actual-lp-principal (unwrap! (var-get liquidity-pool-principal) ERR-LP-PRINCIPAL-NOT-SET)))
+      (let ((actual-math-principal (unwrap! (var-get math-library-principal) ERR-MATH-PRINCIPAL-NOT-SET)))
+        (let ((actual-oracle-principal (unwrap! (var-get price-oracle-principal) ERR-ORACLE-PRINCIPAL-NOT-SET)))
+          (let ((actual-params-principal (unwrap! (var-get parameters-contract-principal)
               ERR-PARAMS-PRINCIPAL-NOT-SET
             )))
             ;; 2. Parameter Validation (PR-108)
@@ -187,14 +187,14 @@
             ;; 3. Fetch data for Premium Verification & Freshness Check
             (let (
                   ;; Fetch max oracle price age from Parameters contract
-                  (max-price-age-blocks (unwrap! (contract-call? params-contract get-system-parameter-uint "max-oracle-price-age-blocks")
-                                          (err ERR-PARAMS-CALL-FAILED-PR))) ;; Assuming specific error for this fetch or reuse general one
+                  (max-price-age-blocks (unwrap! (contract-call? actual-params-principal get-system-parameter-uint "max-oracle-price-age-blocks")
+                                          (err ERR-PARAMS-CALL-FAILED-PR)))
                   ;; Fetch current price and its timestamp from Oracle
-                  (oracle-price-response (unwrap! (contract-call? oracle-contract get-current-bitcoin-price) ERR-ORACLE-CALL-FAILED-PR))
-                  (current-oracle-price (get price oracle-price-response)) ;; Assuming {price: uint, timestamp: uint}
+                  (oracle-price-response (unwrap! (contract-call? actual-oracle-principal get-current-bitcoin-price) ERR-ORACLE-CALL-FAILED-PR))
+                  (current-oracle-price (get price oracle-price-response))
                   (oracle-price-timestamp (get timestamp oracle-price-response))
                   ;; Risk Tier parameters
-                  (risk-tier-params (unwrap! (contract-call? params-contract get-risk-tier-parameters risk-tier) ERR-PARAMS-CALL-FAILED-PR))
+                  (risk-tier-params (unwrap! (contract-call? actual-params-principal get-risk-tier-parameters risk-tier) ERR-PARAMS-CALL-FAILED-PR))
                  )
 
               ;; PR-210: Oracle Price Freshness Check
@@ -210,7 +210,7 @@
                   ;; If they can be optional, further unwrap! or default-to logic is needed here.
                   ;; For now, assuming direct access as per current math-lib expectation.
                   ;; 4. Premium Verification (Call ML-201 - refactored math-library function)
-                  (try! (contract-call? math-contract verify-submitted-premium
+                  (try! (contract-call? actual-math-principal verify-submitted-premium
                     submitted-premium-scaled protected-value-scaled
                     protection-amount-scaled burn-block-height
                     expiration-height policy-type current-oracle-price
@@ -428,7 +428,6 @@
 (define-constant ERR-ORACLE-CALL-FAILED (err u202))
 (define-constant ERR-MATH-CALL-FAILED (err u203))
 (define-constant ERR-LP-SETTLEMENT-CALL-FAILED (err u204))
-(define-constant ERR-POLICY-ALREADY-PROCESSED (err u205)) ;; If status is already settled or expired
 
 ;; Errors for PR-207: distribute-premium
 (define-constant ERR-POLICY-NOT-OTM (err u206))
@@ -461,28 +460,26 @@
   (let
     (
       (policy (unwrap! (map-get? policies policy-id) ERR-POLICY-NOT-FOUND))
-      (policy-owner (get owner policy))
+      (policy-owner (get policy-owner policy))
       (policy-protected-value (get protected-value policy))
       (policy-protection-amount (get protection-amount policy))
       (policy-expiration-height (get expiration-height policy))
       (policy-type (get policy-type policy))
       (policy-status (get status policy))
       (policy-collateral-token (get collateral-token policy))
-      (current-height burn-block-height) ;; settlement_processing_height is when this runs
-      (math-principal (unwrap! (var-get math-library-principal) ERR-MATH-PRINCIPAL-NOT-SET))
-      (lp-principal (unwrap! (var-get liquidity-pool-principal) ERR-LP-PRINCIPAL-NOT-SET))
+      (current-height burn-block-height)
+      ;; For contract calls below
+      (actual-math-principal (unwrap! (var-get math-library-principal) ERR-MATH-PRINCIPAL-NOT-SET))
+      (actual-lp-principal (unwrap! (var-get liquidity-pool-principal) ERR-LP-PRINCIPAL-NOT-SET))
     )
 
     ;; Validations for policy status and if it has already expired by its own height vs current block height
-    ;; These are already in the public wrapper, but good for direct calls too if this were public.
-    ;; For a private helper called by a trusted function that already did these, they might be omitted for gas.
-    ;; For now, keeping them for robustness.
     (asserts! (<= policy-expiration-height current-height) ERR-POLICY-NOT-YET-EXPIRED) ;; Ensures policy is due
     (asserts! (is-eq policy-status STATUS-ACTIVE) ERR-POLICY-INVALID-STATE-FOR-EXPIRATION)
 
     ;; 3. Calculating Settlement Amount (ML-202 dependency)
     (let
-      ((settlement-amount-scaled (unwrap! (contract-call? math-principal calculate-settlement-amount
+      ((settlement-amount-scaled (unwrap! (contract-call? actual-math-principal calculate-settlement-amount
                                           policy-protected-value
                                           policy-protection-amount
                                           price-for-settlement ;; Use provided price
@@ -500,7 +497,7 @@
               settled-by: tx-sender
             }
           )
-          (match (contract-call? lp-principal process-settlement-at-expiration
+          (match (contract-call? actual-lp-principal process-settlement-at-expiration
                    policy-id
                    settlement-amount-scaled
                    policy-collateral-token
@@ -571,8 +568,8 @@
     (asserts! (is-eq policy-status STATUS-ACTIVE) ERR-POLICY-INVALID-STATE-FOR-EXPIRATION)
 
     ;; Step 1: Fetch the actual expiration price from the oracle for this specific policy's expiration.
-    (let ((oracle-principal (unwrap! (var-get price-oracle-principal) ERR-ORACLE-PRINCIPAL-NOT-SET)))
-      (let ((expiration-price-response (contract-call? oracle-principal get-bitcoin-price-at-height policy-expiration-height)))
+    (let ((actual-oracle-principal (unwrap! (var-get price-oracle-principal) ERR-ORACLE-PRINCIPAL-NOT-SET)))
+      (let ((expiration-price-response (contract-call? actual-oracle-principal get-bitcoin-price-at-height policy-expiration-height)))
         (match expiration-price-response
           price-tuple
             (let ((expiration-price-scaled (get price price-tuple))) ;; Assuming the tuple is {price: uint, ...}
@@ -593,7 +590,7 @@
 ;; PR-206: Implement process-expiration-batch
 (define-public (process-expiration-batch (expiration-height-to-process uint))
   (let (
-      (oracle-principal (unwrap! (var-get price-oracle-principal) ERR-ORACLE-PRINCIPAL-NOT-SET))
+      (actual-oracle-principal (unwrap! (var-get price-oracle-principal) ERR-ORACLE-PRINCIPAL-NOT-SET))
       (policy-ids-list-optional (map-get? policies-by-expiration-height expiration-height-to-process))
     )
     (if (is-none policy-ids-list-optional)
@@ -605,7 +602,7 @@
       (let (
           (policy-ids (get ids (unwrap-panic policy-ids-list-optional)))
           ;; Simplification: uses current price for whole batch. For more accuracy, would need oracle call per policy or batched price for the specific expiration-height-to-process
-          (batch-price-response (contract-call? oracle-principal get-bitcoin-price-at-height expiration-height-to-process))
+          (batch-price-response (contract-call? actual-oracle-principal get-bitcoin-price-at-height expiration-height-to-process))
           (current-block-height burn-block-height) ;; For event logging
         )
         (match batch-price-response
@@ -665,7 +662,7 @@
       (policy (unwrap! (map-get? policies policy-id) ERR-POLICY-NOT-FOUND))
       (policy-status (get status policy))
       (is-pending-distribution (unwrap! (map-get? pending-premium-distributions policy-id) ERR-POLICY-NOT-PENDING-PREMIUM-DISTRIBUTION))
-      (lp-principal (unwrap! (var-get liquidity-pool-principal) ERR-LP-PRINCIPAL-NOT-SET))
+      (actual-lp-principal (unwrap! (var-get liquidity-pool-principal) ERR-LP-PRINCIPAL-NOT-SET))
       (submitted-premium (get submitted-premium policy))
       (collateral-token (get collateral-token policy))
     )
@@ -675,7 +672,7 @@
     (asserts! is-pending-distribution ERR-POLICY-NOT-PENDING-PREMIUM-DISTRIBUTION) ;; ensure it's true
 
     ;; 2. Call Liquidity Pool to distribute premiums
-    (match (contract-call? lp-principal distribute-premium-to-providers policy-id submitted-premium collateral-token)
+    (match (contract-call? actual-lp-principal distribute-premium-to-providers policy-id submitted-premium collateral-token)
       success-lp-distribution
       (begin
         ;; 3. Update pending distribution status
