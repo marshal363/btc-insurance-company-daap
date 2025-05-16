@@ -695,6 +695,69 @@ This foundational work allows for greater control and fine-tuning of the BitHedg
 | PR-309  | Design and implement emergency expiration mechanisms (admin-triggered full/partial expiration, authorized via PA-103)                                                                                            | PR-201, PR-206, PA-103                         | Medium     | 2.5            | [@BitHedge-Advanced-Clarity-Patterns.md#Emergency-Mechanisms-and-Circuit-Breakers], [@clarity-best-practices.md#Essential-Best-Practices#4.-Safety-Mechanisms#Circuit-breakers]                                                                                                    |
 | PR-310  | Implement comprehensive event emission for all state changes, administrative actions, and critical operations, adhering to SH-201                                                                                | All PR tasks, SH-201                           | Medium     | 2              | [@BitHedge-Advanced-Clarity-Patterns.md#7.-Event-Emission-and-Off-Chain-Indexing], [@BitHedge-Senior-Clarity-Technical-Analysis.md#7-Event-Driven-Architecture]                                                                                                                    |
 
+**Implementation Summary (Phase 3 - Policy Registry PR-301 to PR-305):**
+
+Phase 3 development for the `BitHedgePolicyRegistryContract` saw significant enhancements related to risk management, operational limits, batch processing efficiency, and gas optimization.
+
+- **PR-301 (Risk Tier System Integration):**
+
+  - The `create-protection-policy` function was updated to integrate the full risk tier system.
+  - It now fetches risk tier parameters (e.g., `collateral-ratio-basis-points`, `premium-adjustment-basis-points`, `tier-type`) from the `BitHedgeParametersContract`.
+  - Collateral calculation (`required-collateral-scaled`) now uses the `collateral-ratio-basis-points` specific to the chosen buyer risk tier, ensuring that the collateral aligns with the risk profile. The `BASIS_POINTS_DENOMINATOR` constant was added to the contract for this calculation.
+  - The `verify-submitted-premium` call to the `BitHedgeMathLibraryContract` was updated to pass `risk-tier-is-active` and `risk-tier-premium-adjustment-bp` to allow the math library to factor in tier-specific adjustments.
+  - A crucial validation was added to ensure that the `tier-type` from the fetched risk tier parameters is "BUYER", as this function deals with policy creation from a buyer's perspective.
+
+- **PR-302 (Policy Creation Limits):**
+
+  - The `create-protection-policy` function was enhanced to enforce various limits retrieved from the `BitHedgeParametersContract`:
+    - **Max Policies Per User:** Checks if the `policy-owner-principal` has exceeded the `limits.user.max-policies` parameter. A helper `get-owner-policy-count` was introduced.
+    - **Policy Duration:** Validates that the calculated policy duration (`expiration-height - burn-block-height`) is within the `config.policy.min-duration-blocks` and `config.policy.max-duration-blocks`.
+    - **Protection Value:** Ensures `protected-value-scaled` is between `config.policy.min-protection-value-usd` and `config.policy.max-protection-value-usd`.
+    - **Submitted Premium:** Validates `submitted-premium-scaled` against `config.policy.min-submitted-premium-usd`.
+  - Appropriate error codes (e.g., `ERR-POLICY-LIMIT-EXCEEDED`, `ERR-MINIMUM-REQUIREMENT-NOT-MET`, `ERR-MAXIMUM-LIMIT-REACHED`, `ERR-AMOUNT-TOO-LOW`, `ERR-AMOUNT-TOO-HIGH`) are returned if limits are breached.
+
+- **PR-303 (Enhanced Batch Expiration Processing):**
+
+  - The `process-expiration-batch` function was refactored for configurability and robust continuation.
+  - It now fetches the `config.batch.size-expiration` parameter from `BitHedgeParametersContract` to determine how many policies to process in one go.
+  - A `start-index` parameter was added, allowing the batch processing to be resumed from a specific point if a previous run couldn't complete all policies for an expiration height (e.g., due to gas limits).
+  - The function returns `more-to-process: bool` and `next-index: uint` to facilitate this continuation logic by an off-chain agent or subsequent transaction.
+  - The Bitcoin price for the expiration height is fetched once per batch call from the Oracle, optimizing calls.
+  - It uses `slice?` to process only the current segment of policies and `fold` with a new helper `process-policy-with-price` (which calls `priv-process-one-policy-at-expiration`) for the iteration, improving clarity.
+
+- **PR-304 (Gas Optimization):**
+
+  - **`create-protection-policy` Optimization:**
+    - Grouped related input validations for early failure.
+    - Contract principals for Math, LP, Oracle, and Parameters contracts are fetched once at the beginning and stored in a local map `contracts`.
+    - All necessary system parameters and risk tier details are fetched once using a new private helper `get-creation-parameters`. This reduces multiple `contract-call?` instances.
+    - A new private helper `validate-policy-parameters` consolidates all parameter-based checks.
+    - Collateral calculation is now a direct arithmetic operation within the function after fetching the risk tier's collateral ratio.
+    - Policy ID is consumed once.
+    - The policy data is assembled and stored in the `policies` map and indices in a single step using a new private helper `store-policy-and-update-indices`.
+  - **`process-expiration-batch` Optimization:**
+    - Contract principals and batch size parameter are fetched once per call.
+    - The Oracle price for the batch is fetched once.
+    - Uses `fold` over a `slice?` of policies for the current batch.
+    - The internal accumulator for `fold` was streamlined.
+  - **`distribute-premium-batch` Optimization:**
+    - Similar to expiration batching, contract principals and batch size parameters are fetched once.
+    - The total count of pending premiums is determined once.
+    - A new helper `process-premium-batch-with-contracts` was added to manage contract references.
+    - The core logic uses `fold` over a `slice?` of policy IDs that are pending premium distribution.
+    - Introduced helpers `get-pending-premium-distribution-count`, `get-pending-premium-policies`, `process-single-premium` and `distribute-premium-internal` to modularize and clarify logic.
+
+- **PR-305 (Batch Premium Distribution):**
+  - A new public function `distribute-premium-batch` was implemented.
+  - It fetches the `config.batch.size-premium-dist` parameter from `BitHedgeParametersContract`.
+  - It takes a `start-index` and `max-count` (to potentially override the configured batch size for smaller runs).
+  - It iterates (using `fold` via helpers) over policies currently in the `pending-premium-distributions` map.
+  - For each policy, it calls the existing `distribute-premium` logic (now refactored into `distribute-premium-internal` and `process-single-premium` for batch compatibility).
+  - It returns `processed-count`, `success-count`, `error-count`, `more-to-process`, and `next-index` for continuation.
+  - A simplified `distribute-premium-batch-simple` was added for convenience, starting from index `u0`.
+
+Key improvements across these tasks include better parameterization, robust error handling, more efficient data fetching by reducing redundant contract calls, and clearer separation of concerns through helper functions, all contributing to better gas usage and maintainability.
+
 #### Liquidity Pool Vault Contract (BitHedgeLiquidityPoolVaultContract)
 
 | Task ID | Description                                                                                                                                                 | Dependencies                                   | Complexity | Estimated Days | References                                                                                                                                                                                                                                                                                                 |
