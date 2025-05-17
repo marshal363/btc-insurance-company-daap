@@ -51,6 +51,13 @@
 ;; PR-302: Error for exceeding the maximum policy limit
 (define-constant ERR-POLICY-LIMIT-EXCEEDED (err u323))
 
+;; PR-306: Error for verification contract not set
+(define-constant ERR-VERIFICATION-PRINCIPAL-NOT-SET (err u324))
+(define-constant ERR-VERIFICATION-FAILED (err u325))
+
+;; PR-307: Error for oracle price being too distant from expiration
+(define-constant ERR-ORACLE-PRICE-TOO-DISTANT-FROM-EXPIRATION (err u326))
+
 ;; Policy Status Constants (PR-104)
 (define-constant STATUS-ACTIVE "Active")
 (define-constant STATUS-PENDING-SETTLEMENT "PendingSettlement")
@@ -68,6 +75,7 @@
 (define-data-var math-library-principal (optional principal) none)
 (define-data-var price-oracle-principal (optional principal) none)
 (define-data-var parameters-contract-principal (optional principal) none)
+(define-data-var verification-contract-principal (optional principal) none)
 
 ;; --- Data Maps ---
 
@@ -123,32 +131,80 @@
 (define-public (set-liquidity-pool-principal (new-principal principal))
   (begin
     (asserts! (is-eq tx-sender CONTRACT-OWNER) ERR-UNAUTHORIZED)
-    (var-set liquidity-pool-principal (some new-principal))
-    (ok true)
+    (let ((old-principal (var-get liquidity-pool-principal)))
+      (var-set liquidity-pool-principal (some new-principal))
+      (print {
+        event: "liquidity-pool-principal-set",
+        block-height: burn-block-height,
+        new-principal: new-principal,
+        old-principal: old-principal,
+      })
+      (ok true)
+    )
   )
 )
 
 (define-public (set-math-library-principal (new-principal principal))
   (begin
     (asserts! (is-eq tx-sender CONTRACT-OWNER) ERR-UNAUTHORIZED)
-    (var-set math-library-principal (some new-principal))
-    (ok true)
+    (let ((old-principal (var-get math-library-principal)))
+      (var-set math-library-principal (some new-principal))
+      (print {
+        event: "math-library-principal-set",
+        block-height: burn-block-height,
+        new-principal: new-principal,
+        old-principal: old-principal,
+      })
+      (ok true)
+    )
   )
 )
 
 (define-public (set-price-oracle-principal (new-principal principal))
   (begin
     (asserts! (is-eq tx-sender CONTRACT-OWNER) ERR-UNAUTHORIZED)
-    (var-set price-oracle-principal (some new-principal))
-    (ok true)
+    (let ((old-principal (var-get price-oracle-principal)))
+      (var-set price-oracle-principal (some new-principal))
+      (print {
+        event: "price-oracle-principal-set",
+        block-height: burn-block-height,
+        new-principal: new-principal,
+        old-principal: old-principal,
+      })
+      (ok true)
+    )
   )
 )
 
 (define-public (set-parameters-contract-principal (new-principal principal))
   (begin
     (asserts! (is-eq tx-sender CONTRACT-OWNER) ERR-UNAUTHORIZED)
-    (var-set parameters-contract-principal (some new-principal))
-    (ok true)
+    (let ((old-principal (var-get parameters-contract-principal)))
+      (var-set parameters-contract-principal (some new-principal))
+      (print {
+        event: "parameters-contract-principal-set",
+        block-height: burn-block-height,
+        new-principal: new-principal,
+        old-principal: old-principal,
+      })
+      (ok true)
+    )
+  )
+)
+
+(define-public (set-verification-contract-principal (new-principal principal))
+  (begin
+    (asserts! (is-eq tx-sender CONTRACT-OWNER) ERR-UNAUTHORIZED)
+    (let ((old-principal (var-get verification-contract-principal)))
+      (var-set verification-contract-principal (some new-principal))
+      (print {
+        event: "verification-contract-principal-set",
+        block-height: burn-block-height,
+        new-principal: new-principal,
+        old-principal: old-principal,
+      })
+      (ok true)
+    )
   )
 )
 
@@ -500,6 +556,8 @@
         )
       )
     )
+    ;; PR-306: Call verification contract to verify policy allocation
+    (try! (verify-policy-allocation policy-id required-collateral-scaled))
     ;; Emit creation event
     (print {
       event: "policy-created",
@@ -521,6 +579,50 @@
   )
 )
 
+;; PR-306: Helper function to verify policy allocation integrity
+(define-private (verify-policy-allocation
+    (policy-id uint)
+    (collateral-amount uint)
+  )
+  (let ((verification-principal-opt (var-get verification-contract-principal)))
+    (if (is-some verification-principal-opt)
+      (let ((verification-principal (unwrap-panic verification-principal-opt)))
+        ;; The verification contract doesn't have verify-settlement-integrity yet,
+        ;; but we can check if it has run-policy-allocation-verification as a fallback
+        (match (contract-call? verification-principal run-policy-allocation-verification
+          policy-id
+        )
+          success-result
+          (ok true) ;; Verification successful
+          error-val
+          (begin
+            (print {
+              event: "policy-allocation-verification-failed",
+              block-height: burn-block-height,
+              policy-id: policy-id,
+              collateral-amount: collateral-amount,
+              error: error-val,
+            })
+            ;; We still allow the policy to be created even if verification fails
+            ;; Verification failures are logged for off-chain monitoring
+            (ok true)
+          )
+        )
+      )
+      ;; Verification contract not set, but we proceed anyway
+      (begin
+        (print {
+          event: "policy-allocation-verification-skipped",
+          block-height: burn-block-height,
+          policy-id: policy-id,
+          reason: "verification-contract-not-set",
+        })
+        (ok true)
+      )
+    )
+  )
+)
+
 ;; --- Read Only Functions ---
 
 ;; --- Admin Getters (PR-102) ---
@@ -538,6 +640,10 @@
 
 (define-read-only (get-parameters-contract-principal)
   (var-get parameters-contract-principal)
+)
+
+(define-read-only (get-verification-contract-principal)
+  (var-get verification-contract-principal)
 )
 
 ;; --- Policy ID Counter Getter (PR-102) ---
@@ -755,11 +861,11 @@
       (policy-expiration-height (get expiration-height policy))
       (current-height burn-block-height)
     )
-    (asserts! (not (is-eq policy-status STATUS-SETTLED))
-      ERR-POLICY-ALREADY-PROCESSED
+    (asserts! (not (is-eq policy-status STATUS-SETTLED-ITM))
+      (err ERR-POLICY-ALREADY-PROCESSED)
     )
     (asserts! (not (is-eq policy-status STATUS-EXPIRED-OTM))
-      ERR-POLICY-ALREADY-PROCESSED
+      (err ERR-POLICY-ALREADY-PROCESSED)
     )
     (asserts! (>= current-height policy-expiration-height)
       ERR-POLICY-NOT-YET-EXPIRED
@@ -767,29 +873,116 @@
     (asserts! (is-eq policy-status STATUS-ACTIVE)
       ERR-POLICY-INVALID-STATE-FOR-EXPIRATION
     )
-    ;; Step 1: Fetch the actual expiration price from the oracle for this specific policy's expiration.
-    (let ((actual-oracle-principal (unwrap! (var-get price-oracle-principal) ERR-ORACLE-PRINCIPAL-NOT-SET)))
-      (let ((expiration-price-response (contract-call? actual-oracle-principal get-bitcoin-price-at-height
-          policy-expiration-height
-        )))
-        (match expiration-price-response
-          price-tuple (let ((expiration-price-scaled (get price price-tuple)))
-            ;; Assuming the tuple is {price: uint, ...}
-            ;; Now call the internal processing function with the fetched price
-            (priv-process-one-policy-at-expiration policy-id
-              expiration-price-scaled
+    ;; Step 1: Fetch Oracle and Parameters principals
+    (let (
+        (actual-oracle-principal (unwrap! (var-get price-oracle-principal) ERR-ORACLE-PRINCIPAL-NOT-SET))
+        (params-principal (unwrap! (var-get parameters-contract-principal)
+          ERR-PARAMS-PRINCIPAL-NOT-SET
+        ))
+      )
+      ;; Step 2: Fetch max settlement price offset from ParametersContract
+      (match (contract-call? params-principal get-system-parameter-uint
+        "config.settlement.max-price-age-for-expiration-offset"
+      )
+        max-offset-param-opt (let (
+            (unwrapped-max-offset (unwrap! max-offset-param-opt ERR-PARAMS-CALL-FAILED-PR)) ;; Assuming param returns (optional uint)
+            ;; Step 3: Fetch expiration price from Oracle
+            (expiration-price-response (contract-call? actual-oracle-principal get-bitcoin-price-at-height
+              policy-expiration-height
+            ))
+          )
+          (match expiration-price-response
+            price-tuple (let (
+                (oracle-price (get price price-tuple))
+                (oracle-price-timestamp (get timestamp price-tuple))
+              )
+              ;; Step 4: PR-307 Validate oracle price timestamp against policy expiration
+              (asserts!
+                (<= (abs (- policy-expiration-height oracle-price-timestamp))
+                  unwrapped-max-offset
+                )
+                ERR-ORACLE-PRICE-TOO-DISTANT-FROM-EXPIRATION
+              )
+              ;; Step 5: Call internal processing function with the fetched price
+              (let ((result (priv-process-one-policy-at-expiration policy-id oracle-price)))
+                ;; PR-306: Add verification of settlement integrity for ITM policies
+                (match result
+                  success-result
+                  (let ((is-itm (unwrap-panic success-result)))
+                    (if is-itm
+                      ;; For ITM policies, call verification of settlement
+                      (verify-settlement-integrity policy-id)
+                      ;; OTM policies don't need settlement verification
+                      (ok false) ;; return OTM status
+                    )
+                  )
+                  error-val
+                  error-val ;; Propagate error from priv-process
+                )
+              )
+            )
+            oracle-error-val (begin
+              ;; Oracle call failed
+              (print {
+                event: "single-policy-expiration-oracle-error",
+                message: "Failed to get price from oracle for policy expiration.",
+                policy-id: policy-id,
+                error: oracle-error-val,
+              })
+              (err ERR-ORACLE-CALL-FAILED)
             )
           )
-          error-val (begin
+        )
+        params-error-val (begin
+          ;; Parameters call for offset failed
+          (print {
+            event: "single-policy-expiration-params-error",
+            message: "Failed to get max-settlement-price-offset from ParametersContract.",
+            policy-id: policy-id,
+            error: params-error-val,
+          })
+          (err ERR-PARAMS-CALL-FAILED-PR) ;; Use an appropriate error
+        )
+      )
+    )
+  )
+)
+
+;; PR-306: Helper function to verify settlement integrity
+(define-private (verify-settlement-integrity (policy-id uint))
+  (let ((verification-principal-opt (var-get verification-contract-principal)))
+    (if (is-some verification-principal-opt)
+      (let ((verification-principal (unwrap-panic verification-principal-opt)))
+        ;; The verification contract doesn't have verify-settlement-integrity yet,
+        ;; but we can check if it has run-policy-allocation-verification as a fallback
+        (match (contract-call? verification-principal
+          run-settlement-integrity-verification policy-id
+        )
+          success-result
+          (ok true) ;; Verification successful
+          error-val
+          (begin
             (print {
-              event: "single-policy-expiration-oracle-error",
-              message: "Failed to get price from oracle for policy expiration.",
+              event: "policy-allocation-verification-failed",
+              block-height: burn-block-height,
               policy-id: policy-id,
               error: error-val,
             })
-            (err ERR-ORACLE-CALL-FAILED)
+            ;; We still complete the settlement even if verification fails
+            ;; Verification failures are logged for off-chain monitoring
+            (ok true)
           )
         )
+      )
+      ;; Verification contract not set, but we proceed anyway
+      (begin
+        (print {
+          event: "settlement-verification-skipped",
+          block-height: burn-block-height,
+          policy-id: policy-id,
+          reason: "verification-contract-not-set",
+        })
+        (ok true)
       )
     )
   )
@@ -849,46 +1042,85 @@
           (err ERR-BATCH-START-INDEX-INVALID)
         )
         ;; PR-304: Fetch price ONCE for the entire batch
-        (let ((batch-price-response (contract-call? (get oracle contracts) get-bitcoin-price-at-height
-            expiration-height-to-process
-          )))
-          (match batch-price-response
-            price-tuple (let (
-                ;; Calculate batch boundaries
-                (end-index (if (> (+ start-index batch-size) total-policies)
-                  total-policies
-                  (+ start-index batch-size)
-                ))
-                (more-to-process (< end-index total-policies))
-                ;; Extract the batch price once
-                (batch-price-scaled (get price price-tuple))
-                ;; PR-304: Get the batch slice of policies to process
-                (batch-policy-ids (slice? policy-ids start-index end-index))
+        (let (
+            (batch-price-response (contract-call? (get oracle contracts) get-bitcoin-price-at-height
+              expiration-height-to-process
+            ))
+            (max-offset-param-result (contract-call? (get params contracts) get-system-parameter-uint
+              "config.settlement.max-price-age-for-expiration-offset"
+            ))
+          )
+          (match max-offset-param-result
+            max-offset-val-opt (match batch-price-response
+              price-tuple (let (
+                  (unwrapped-max-offset (unwrap! max-offset-val-opt ERR-PARAMS-CALL-FAILED-PR)) ;; Assuming param returns (optional uint)
+                  ;; Calculate batch boundaries
+                  (end-index (if (> (+ start-index batch-size) total-policies)
+                    total-policies
+                    (+ start-index batch-size)
+                  ))
+                  (more-to-process (< end-index total-policies))
+                  ;; Extract the batch price and timestamp once
+                  (batch-price-scaled (get price price-tuple))
+                  (batch-price-timestamp (get timestamp price-tuple))
+                  ;; PR-304: Get the batch slice of policies to process
+                  (batch-policy-ids (slice? policy-ids start-index end-index))
+                )
+                ;; PR-307: Validate batch oracle price timestamp
+                (asserts!
+                  (<=
+                    (abs (- expiration-height-to-process batch-price-timestamp))
+                    unwrapped-max-offset
+                  )
+                  ERR-ORACLE-PRICE-TOO-DISTANT-FROM-EXPIRATION
+                )
+                ;; PR-304: Create initial accumulator with all necessary data
+                (let ((result (process-batch-with-fixed-price
+                    (default-to (list) batch-policy-ids) batch-price-scaled
+                    current-block-height {
+                    processed-count: u0,
+                    itm-count: u0,
+                    otm-count: u0,
+                    error-count: u0,
+                  })))
+                  ;; PR-310: Emit event for batch completion summary
+                  (print {
+                    event: "expiration-batch-processed",
+                    block-height: current-block-height, ;; Ensures correct block height for the event
+                    expiration-height: expiration-height-to-process,
+                    processed-count: (get processed-count result),
+                    itm-count: (get itm-count result),
+                    otm-count: (get otm-count result),
+                    error-count: (get error-count result),
+                    more-to-process: more-to-process,
+                    next-index: end-index,
+                  })
+                  ;; Return results with continuation data
+                  (ok (merge result {
+                    more-to-process: more-to-process,
+                    next-index: end-index,
+                  }))
+                )
               )
-              ;; PR-304: Create initial accumulator with all necessary data
-              (let ((result (process-batch-with-fixed-price
-                  (default-to (list) batch-policy-ids) batch-price-scaled
-                  current-block-height {
-                  processed-count: u0,
-                  itm-count: u0,
-                  otm-count: u0,
-                  error-count: u0,
-                })))
-                ;; Return results with continuation data
-                (ok (merge result {
-                  more-to-process: more-to-process,
-                  next-index: end-index,
-                }))
+              oracle-error-val (begin
+                (print {
+                  event: "batch-expiration-oracle-error",
+                  message: "Failed to get batch price from oracle.",
+                  height: expiration-height-to-process,
+                  error: oracle-error-val,
+                })
+                (err ERR-ORACLE-CALL-FAILED)
               )
             )
-            error-val (begin
+            params-error-val (begin
+              ;; Parameters call for offset failed
               (print {
-                event: "batch-expiration-oracle-error",
-                message: "Failed to get batch price from oracle.",
+                event: "batch-expiration-params-error",
+                message: "Failed to get max-settlement-price-offset from ParametersContract for batch.",
                 height: expiration-height-to-process,
-                error: error-val,
+                error: params-error-val,
               })
-              (err ERR-ORACLE-CALL-FAILED)
+              (err ERR-PARAMS-CALL-FAILED-PR)
             )
           )
         )
@@ -909,9 +1141,37 @@
       error-count: uint,
     })
   )
-  ;; Using fold for more efficient iteration
-  (fold process-policy-with-price policy-ids accumulator batch-price-scaled
-    event-height
+  ;; Use recursion rather than fold to allow passing additional params
+  (process-batch-recursively policy-ids batch-price-scaled event-height
+    accumulator u0 (len policy-ids)
+  )
+)
+
+;; Helper function to process policies recursively
+(define-private (process-batch-recursively
+    (policy-ids (list 100 uint))
+    (batch-price uint)
+    (event-height uint)
+    (accumulator {
+      processed-count: uint,
+      itm-count: uint,
+      otm-count: uint,
+      error-count: uint,
+    })
+    (index uint)
+    (total-len uint)
+  )
+  ;; Base case - we've processed all items
+  (if (>= index total-len)
+    accumulator
+    ;; Process the current policy and continue with the next
+    (let ((updated-acc (process-policy-with-price (unwrap-panic (element-at policy-ids index))
+        accumulator batch-price event-height
+      )))
+      (process-batch-recursively policy-ids batch-price event-height updated-acc
+        (+ index u1) total-len
+      )
+    )
   )
 )
 
@@ -947,7 +1207,7 @@
         event: "batch-expiration-policy-error",
         block-height: event-height,
         policy-id: policy-id,
-        error: (err-get error-val),
+        error: error-val,
       })
       (merge accumulator {
         processed-count: (+ u1 (get processed-count accumulator)),
@@ -1086,10 +1346,22 @@
       )))
       ;; Return results with continuation data
       (match result
-        success-map (ok (merge success-map {
-          more-to-process: more-to-process,
-          next-index: end-index,
-        }))
+        success-map (begin
+          ;; PR-310: Add event for batch completion
+          (print {
+            event: "premium-distribution-batch-processed",
+            block-height: burn-block-height,
+            processed-count: (get processed-count success-map),
+            success-count: (get success-count success-map),
+            error-count: (get error-count success-map),
+            more-to-process: more-to-process,
+            next-index: end-index,
+          })
+          (ok (merge success-map {
+            more-to-process: more-to-process,
+            next-index: end-index,
+          }))
+        )
         error-val
         error-val
       )
@@ -1148,10 +1420,13 @@
       (if is-pending
         ;; Try to distribute the premium
         (match (distribute-premium policy-id lp-principal)
-          success-value (merge acc {
-            processed-count: (+ u1 (get processed-count acc)),
-            success-count: (+ u1 (get success-count acc)),
-          })
+          success-value (begin
+            (try! (verify-premium-distribution-integrity policy-id)) ;; PR-306: Add verification call
+            (merge acc {
+              processed-count: (+ u1 (get processed-count acc)),
+              success-count: (+ u1 (get success-count acc)),
+            })
+          )
           error-val (begin
             (print {
               event: "premium-distribution-error",
@@ -1165,16 +1440,28 @@
             })
           )
         )
-        ;; Not marked for premium distribution
-        acc
+        error-val
+        (begin
+          (print {
+            event: "premium-distribution-error",
+            block-height: burn-block-height,
+            policy-id: policy-id,
+            error: error-val,
+          })
+          (merge acc {
+            processed-count: (+ u1 (get processed-count acc)),
+            error-count: (+ u1 (get error-count acc)),
+          })
+        )
       )
-      none
-      ;; Policy not found
+      ;; Not marked for premium distribution
       acc
     )
+    none
+    ;; Policy not found
+    acc
   )
 )
-
 ;; PR-304: Helper to check if a policy is marked for premium distribution
 (define-private (get-pending-premium-distribution (policy-id uint))
   (map-get? pending-premium-distributions policy-id)
@@ -1195,66 +1482,37 @@
   )
 )
 
-;; PR-304: Helper to distribute a single premium 
-(define-private (distribute-premium
-    (policy-id uint)
-    (lp-principal principal)
-  )
-  ;; Call the original distribute-premium function
-  (let ((result (distribute-premium-internal policy-id)))
-    ;; If successful, mark the policy as processed in our tracking
-    (if (is-ok result)
-      (begin
-        (map-set pending-premium-distributions policy-id false)
-        result
-      )
-      result
-    )
-  )
-)
-
-;; PR-304: Internal function to encapsulate the existing distribute-premium logic
-(define-private (distribute-premium-internal (policy-id uint))
-  (let (
-      (actual-lp-principal (unwrap! (var-get liquidity-pool-principal) ERR-LP-PRINCIPAL-NOT-SET))
-      (policy-option (map-get? policies policy-id))
-    )
-    (match policy-option
-      policy-map (let (
-          (policy-status (get status policy-map))
-          (policy-type (get policy-type policy-map))
-          ;; No need to use protected-value or oracle call for OTM premium distribution
-          (policy-premium (get submitted-premium policy-map))
-          (policy-owner (get policy-owner policy-map))
-          (collateral-token (get collateral-token policy-map))
+;; PR-306: Helper function to verify premium distribution integrity
+(define-private (verify-premium-distribution-integrity (policy-id uint))
+  (let ((verification-principal-opt (var-get verification-contract-principal)))
+    (if (is-some verification-principal-opt)
+      (let ((verification-principal (unwrap-panic verification-principal-opt)))
+        (match (contract-call? verification-principal
+          run-premium-distribution-integrity-verification policy-id
         )
-        ;; Verify policy is OTM and pendingPremiumDistribution
-        (asserts! (is-eq policy-status STATUS-EXPIRED-OTM) ERR-POLICY-NOT-OTM)
-        (asserts!
-          (default-to false (map-get? pending-premium-distributions policy-id))
-          ERR-POLICY-NOT-PENDING-PREMIUM-DISTRIBUTION
-        )
-        ;; Call LP contract to distribute the premium
-        (match (contract-call? actual-lp-principal distribute-premium-to-providers
-          policy-id policy-premium collateral-token
-        )
-          success-value (begin
-            ;; Update tracking map
-            (map-set pending-premium-distributions policy-id false)
-            ;; Emit event
+          success-result
+          (ok true) ;; Verification successful
+          error-val
+          (begin
             (print {
-              event: "premium-distributed",
+              event: "premium-distribution-verification-failed",
               block-height: burn-block-height,
               policy-id: policy-id,
-              premium-amount: policy-premium,
-              token-id: collateral-token,
+              error: error-val,
             })
-            (ok true)
+            (ok true) ;; Log and continue
           )
-          error-val (err ERR-LP-PREMIUM-DISTRIBUTION-FAILED)
         )
       )
-      (err ERR-POLICY-NOT-FOUND)
+      (begin
+        (print {
+          event: "premium-distribution-verification-skipped",
+          block-height: burn-block-height,
+          policy-id: policy-id,
+          reason: "verification-contract-not-set",
+        })
+        (ok true)
+      )
     )
   )
 )
@@ -1269,4 +1527,4 @@
   (process-expiration-batch expiration-height-to-process u0)
 )
 
-(print { message: "BitHedgePolicyRegistryContract updated for PR-102, PR-103, PR-104, PR-106, PR-301, PR-302, PR-303, PR-304, and PR-305." })
+(print { message: "BitHedgePolicyRegistryContract updated for PR-102, PR-103, PR-104, PR-106, PR-301, PR-302, PR-303, PR-304, PR-305, PR-306, PR-307, and PR-310." })

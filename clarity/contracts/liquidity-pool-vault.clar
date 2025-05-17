@@ -85,6 +85,10 @@
 (define-constant ERR-POLICY-ALREADY-SETTLED (err u430))
 (define-constant ERR-NO-ALLOCATIONS-FOUND (err u431))
 
+;; Additional error codes for LP-303
+(define-constant ERR-EXPIRATION-NOT-FOUND-LP (err u432))
+(define-constant ERR-ADMIN-ROLE-REQUIRED-LP (err u433)) ;; For admin-only functions
+
 ;; Risk Tier Constants (SH-102) - More may be added as parameters later
 ;; Updated to canonical lowercase strings to match Convex internal representation
 (define-constant RISK-TIER-CONSERVATIVE "conservative")
@@ -121,6 +125,7 @@
     earned-premiums: uint, ;; Premiums earned from expired OTM policies, ready to claim
     pending-premiums: uint, ;; Premiums from active policies (not yet claimable)
     expiration-exposure: (map uint uint), ;; map {expiration-height: uint} to {exposure-amount: uint}
+    selected-risk-tier: (string-ascii 32), ;; NEW: Provider's chosen risk tier, e.g., "IncomeIrene-Conservative"
   }
 )
 
@@ -174,6 +179,7 @@
     is-liquidity-prepared: bool,
     token-distributions: (map (string-ascii 32) uint), ;; Map of token-id to amount required
     policy-count: uint, ;; Number of policies expiring at this height
+    risk-tier-distribution: (map (string-ascii 32) (map (string-ascii 32) uint)), ;; LP-304: New field: (map token-id (map risk-tier uint))
   }
 )
 
@@ -377,9 +383,14 @@
     ;; Perform token transfer from tx-sender to this contract
     (if (is-eq token-id STX-TOKEN-ID)
       (try! (stx-transfer? amount tx-sender (as-contract tx-sender)))
-      (try! (contract-call? 'SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token
-        transfer amount tx-sender (as-contract tx-sender) none
-      ))
+      ;; ELSE branch for SIP-010 tokens
+      (let ((token-info (unwrap! (map-get? supported-tokens { token-id: token-id })
+          ERR-TOKEN-NOT-INITIALIZED
+        )))
+        (try! (contract-call? (unwrap-panic (get sbtc-contract-principal token-info))
+          transfer amount tx-sender (as-contract tx-sender) none
+        ))
+      )
     )
     ;; Update global token balance
     (let ((current-global-balance (unwrap! (map-get? token-balances { token-id: token-id })
@@ -403,6 +414,7 @@
           earned-premiums: u0,
           pending-premiums: u0,
           expiration-exposure: (map),
+          selected-risk-tier: "", ;; Initialize with empty or default if not set
         }
           (map-get? provider-balances provider-key)
         )))
@@ -413,6 +425,7 @@
           earned-premiums: (get earned-premiums current-provider-balance),
           pending-premiums: (get pending-premiums current-provider-balance),
           expiration-exposure: (get expiration-exposure current-provider-balance),
+          selected-risk-tier: risk-tier, ;; Store the risk tier selected during deposit
         })
       )
     )
@@ -482,32 +495,60 @@
 
 ;; --- Liquidity and Collateral Functions (LP-109, LP-105, LP-201) ---
 (define-read-only (check-liquidity
-    (required-collateral uint)
+    (protection-amount-scaled uint)
     (token-id (string-ascii 32))
-    (risk-tier (string-ascii 32))
-    (expiration-height uint)
+    (buyer-risk-tier (string-ascii 32))
+    (expiration-height uint) ;; expiration-height is not directly used for ratio now, but kept for signature consistency and future use
   )
-  (begin
-    (asserts! (is-token-supported token-id) ERR-TOKEN-NOT-INITIALIZED)
-    (let ((global-balance (unwrap! (map-get? token-balances { token-id: token-id })
-        ERR-TOKEN-NOT-INITIALIZED
-      )))
-      ;; Phase 2: Enhanced check that considers risk tiers
-      ;; First, check overall available balance as baseline
-      (asserts! (>= (get available-balance global-balance) required-collateral)
-        ERR-INSUFFICIENT-LIQUIDITY
-      )
-      ;; Then, verify there are eligible providers with sufficient capacity in the requested risk tier
-      ;; This doesn't allocate yet, just verifies availability
-      (let ((eligible-providers-result (get-eligible-providers-for-allocation token-id risk-tier
-          required-collateral expiration-height
-        )))
-        (if (is-ok eligible-providers-result)
-          (ok true)
-          eligible-providers-result
+  (let (
+      (params-contract (var-get parameters-contract-principal))
+      (token-bal (default-to {
+        total-balance: u0,
+        available-balance: u0,
+        locked-balance: u0,
+      }
+        (map-get? token-balances { token-id: token-id })
+      ))
+      (current-available-balance (get available-balance token-bal))
+    )
+    (asserts! (is-some (map-get? supported-tokens { token-id: token-id }))
+      ERR-TOKEN-NOT-INITIALIZED
+    )
+    (match (priv-get-provider-tier-for-buyer-tier buyer-risk-tier)
+      mapped-provider-tier-name-ok
+      (let ((provider-tier-name (unwrap-panic mapped-provider-tier-name-ok)))
+        (match (contract-call? params-contract get-risk-tier-parameters
+          provider-tier-name
         )
-        ;; Propagate the error
+          provider-tier-params-optional
+          (if (is-some provider-tier-params-optional)
+            (let ((provider-tier-params (unwrap-panic provider-tier-params)))
+              (if (get is-active provider-tier-params)
+                (let ((provider-collateral-ratio-bp (get collateral-ratio-basis-points provider-tier-params)))
+                  (if (> provider-collateral-ratio-bp u0)
+                    (let ((estimated-collateral-needed (/
+                        (* protection-amount-scaled provider-collateral-ratio-bp)
+                        u10000
+                      )))
+                      (if (>= current-available-balance estimated-collateral-needed)
+                        (ok true)
+                        (err ERR-INSUFFICIENT-LIQUIDITY)
+                      )
+                    )
+                    (err ERR-INVALID-TIER-PARAMETER) ;; Zero or invalid collateral ratio
+                  )
+                )
+                (err ERR-TIER-NOT-ACTIVE)
+              )
+            )
+            (err ERR-INVALID-RISK-TIER) ;; Tier not found in parameters contract
+          )
+          params-call-error
+          (err ERR-PARAMS-PRINCIPAL-NOT-SET-LP) ;; Could be other errors too
+        )
       )
+      mapping-error
+      (err ERR-INVALID-RISK-TIER) ;; Buyer tier to provider tier mapping failed
     )
   )
 )
@@ -555,6 +596,7 @@
               is-liquidity-prepared: false,
               token-distributions: (map),
               policy-count: u0,
+              risk-tier-distribution: (map), ;; LP-304: Initialize new field
             }
               (map-get? expiration-liquidity-needs expiration-height)
             )))
@@ -563,6 +605,17 @@
                   (map-get? (get token-distributions expiration-needs) token-id)
                 ))
                 (updated-token-distributions (merge (get token-distributions expiration-needs) { (token-id): (+ current-token-amount collateral-amount) }))
+                ;; LP-304: Update risk-tier-distribution
+                (updated-rtd (let* (
+                    (rtd (get risk-tier-distribution expiration-needs)) ;; rtd = risk-tier-distribution map
+                    (token-rtd (default-to (map) (map-get? rtd token-id))) ;; token-specific risk tier map for the current token
+                    ;; 'risk-tier' here is the policy's buyer risk tier passed into lock-collateral
+                    (tier-amount (default-to u0 (map-get? token-rtd risk-tier))) 
+                    (new-tier-amount (+ tier-amount collateral-amount))
+                    (updated-token-rtd-specific (merge token-rtd { (risk-tier): new-tier-amount }))
+                  )
+                  (merge rtd { (token-id): updated-token-rtd-specific })
+                ))
               )
               (map-set expiration-liquidity-needs expiration-height {
                 total-collateral-required: (+ (get total-collateral-required expiration-needs)
@@ -571,6 +624,7 @@
                 is-liquidity-prepared: (get is-liquidity-prepared expiration-needs),
                 token-distributions: updated-token-distributions,
                 policy-count: (+ (get policy-count expiration-needs) u1),
+                risk-tier-distribution: updated-rtd,
               })
             )
           )
@@ -680,70 +734,121 @@
 
 ;; --- LP-201: Provider Selection and Allocation Helpers ---
 
-;; Get eligible providers for a specific token, risk tier, and required amount
-(define-read-only (get-eligible-providers-for-allocation
-    (token-id (string-ascii 32))
-    (risk-tier (string-ascii 32))
-    (required-amount uint)
-    (expiration-height uint)
+;; Helper to check if a provider's risk tier is compatible with the buyer's policy risk tier
+;; This should align with the tier matching rules in the dev plan.
+(define-private (is-provider-tier-compatible
+    (buyer-tier-name (string-ascii 32))
+    (provider-tier-name (string-ascii 32))
   )
-  (let ((params-principal (var-get parameters-contract-principal)))
-    (match (as-contract (contract-call? params-principal get-risk-tier-parameters risk-tier))
-      tier-params-ok (let ((tier-params (unwrap-panic tier-params-ok)))
-        ;; Verify tier is active
-        (asserts! (get is-active tier-params) ERR-TIER-NOT-ACTIVE)
-        ;; For simplicity in Phase 2, use a small set of test providers
-        (let ((test-providers (list CONTRACT-OWNER 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM)))
-          ;; Filter and keep only eligible providers
-          (ok (filter-eligible-providers test-providers token-id risk-tier
-            required-amount expiration-height tier-params
-          ))
-        )
-      )
-      err-response (begin
-        (print {
-          event: "get-tier-parameters-failed",
-          block-height: burn-block-height,
-          risk-tier: risk-tier,
-          error: err-response,
-        })
-        (err ERR-INVALID-TIER-PARAMETER)
-      )
-    )
+  (cond ;; ConservativeBuyer -> ConservativeProvider
+    ((and (is-eq buyer-tier-name "ProtectivePeter-Conservative") (is-eq provider-tier-name "IncomeIrene-Conservative")) true)
+    ;; StandardBuyer -> BalancedProvider, ConservativeProvider
+    ((and (is-eq buyer-tier-name "ProtectivePeter-Standard") (or (is-eq provider-tier-name "IncomeIrene-Balanced") (is-eq provider-tier-name "IncomeIrene-Conservative"))) true)
+    ;; FlexibleBuyer -> AggressiveProvider, BalancedProvider
+    ((and (is-eq buyer-tier-name "ProtectivePeter-Flexible") (or (is-eq provider-tier-name "IncomeIrene-Aggressive") (is-eq provider-tier-name "IncomeIrene-Balanced"))) true)
+    ;; CrashInsuranceBuyer -> Any provider tier (simplification for example)
+    ((is-eq buyer-tier-name "ProtectivePeter-CrashInsurance") true)
+    (else false)
   )
 )
 
-;; Filter eligible providers based on risk tier matching and available capital
 (define-private (filter-eligible-providers
     (providers (list 10 principal))
     (token-id (string-ascii 32))
-    (risk-tier (string-ascii 32))
-    (required-amount uint)
+    (buyer-policy-risk-tier (string-ascii 32))
+    (required-collateral-for-policy uint)
     (expiration-height uint)
-    (tier-params {
-      tier-type: (string-ascii 16),
-      collateral-ratio-basis-points: uint,
-      premium-adjustment-basis-points: uint,
-      max-exposure-per-policy-basis-points: uint,
-      max-exposure-per-expiration-basis-points: uint,
+    (buyer-tier-params {
       is-active: bool,
-      description: (string-ascii 256),
-      last-updated-height: uint,
-      updater-principal: principal,
+      collateral-ratio-basis-points: uint,
     })
+    (params-contract principal)
   )
-  (filter is-provider-eligible-for-allocation
-    (map
-      (lambda (provider) {
-        provider: provider,
-        token-id: token-id,
-        risk-tier: risk-tier,
-        required-amount: required-amount,
-        expiration-height: expiration-height,
-        tier-params: tier-params,
-      })
-      providers
-    ))
+  (begin
+    (fold
+      (lambda (provider filtered-list)
+        (let ((provider-balance-details (map-get? provider-balances {
+            provider: provider,
+            token-id: token-id,
+          })))
+          (if (is-some provider-balance-details)
+            (let ((provider-bal (unwrap-panic provider-balance-details)))
+              (let ((provider-own-tier-name (get selected-risk-tier provider-bal)))
+                (if (is-eq provider-own-tier-name "")
+                  filtered-list
+                  (match (contract-call? params-contract get-risk-tier-parameters
+                    provider-own-tier-name
+                  )
+                    provider-own-tier-params-optional (if (is-some provider-own-tier-params-optional)
+                      (let ((provider-own-params (unwrap-panic provider-own-tier-params-optional)))
+                        (let (
+                            (provider-total-capital (get deposited-amount provider-bal)) ;; Use deposited as total for exposure calc
+                            (provider-available-capital (get available-amount provider-bal))
+                            ;; Assume policy might take up to, e.g., 1/Nth of collateral from this provider if N providers are selected
+                            ;; For eligibility, check if they can handle a potential chunk.
+                            ;; This is a simplification; actual allocation determines exact amount.
+                            (potential-allocation-this-policy (if (> (len providers) u0)
+                              (/ required-collateral-for-policy (len providers))
+                              required-collateral-for-policy
+                            ))
+                          )
+                          (if (and
+                              (get is-active provider-own-params)
+                              (is-provider-tier-compatible buyer-policy-risk-tier
+                                provider-own-tier-name
+                              )
+                              (>= provider-available-capital
+                                potential-allocation-this-policy
+                              )
+                              ;; Can they cover a potential share?
+                              ;; Max exposure per policy check (using provider's own tier param)
+                              (<= potential-allocation-this-policy
+                                (/
+                                  (* provider-total-capital
+                                    (get max-exposure-per-policy-basis-points
+                                      provider-own-params
+                                    ))
+                                  u10000
+                                ))
+                              ;; Max exposure per expiration check (using provider's own tier param)
+                              (let ((current-exp-exposure (default-to u0
+                                  (map-get?
+                                    (get expiration-exposure provider-bal)
+                                    expiration-height
+                                  ))))
+                                (<=
+                                  (+ current-exp-exposure
+                                    potential-allocation-this-policy
+                                  )
+                                  (/
+                                    (* provider-total-capital
+                                      (get
+                                        max-exposure-per-expiration-basis-points
+                                        provider-own-params
+                                      ))
+                                    u10000
+                                  ))
+                              )
+                            )
+                            (append filtered-list provider)
+                            filtered-list
+                          )
+                        )
+                      )
+                      filtered-list
+                    )
+                    params-call-error
+                    filtered-list
+                  )
+                )
+              )
+            )
+            filtered-list
+          )
+        ))
+      providers (list)
+    )
+  )
 )
 
 ;; Check if a specific provider is eligible for allocation
@@ -791,38 +896,111 @@
 ;; Allocate capital to eligible providers for a policy
 (define-private (allocate-capital-to-providers
     (policy-id uint)
-    (total-amount uint)
     (token-id (string-ascii 32))
-    (risk-tier (string-ascii 32))
+    (total-required-collateral-for-policy uint)
+    (prioritized-eligible-providers (list 10 principal)) ;; LP-302: Now receives a prioritized list
+    (risk-tier-at-allocation (string-ascii 32)) ;; Buyer's policy risk tier
     (expiration-height uint)
-    (eligible-providers (list 10 principal))
+    (policy-owner principal)
   )
   (begin
-    ;; Check we have any eligible providers
-    (asserts! (> (len eligible-providers) u0) ERR-NO-ELIGIBLE-PROVIDERS)
-    ;; For Phase 2, we'll use a simple proportional allocation based on available capital
-    ;; Calculate total available capital from all eligible providers
-    (let ((total-available (fold +
-        (map get-provider-available-balance
-          (map
-            (lambda (provider) {
-              provider: provider,
-              token-id: token-id,
+    (print {
+      event: "debug-allocate-capital-start",
+      policy-id: policy-id,
+      total-required: total-required-collateral-for-policy,
+      prioritized-count: (len prioritized-eligible-providers),
+    })
+    (if (is-eq (len prioritized-eligible-providers) u0)
+      (begin
+        (print {
+          event: "allocate-capital-error",
+          policy-id: policy-id,
+          reason: "no-eligible-providers-passed-to-allocator",
+        })
+        (err ERR-NO-ELIGIBLE-PROVIDERS) ;; Should have been caught earlier by check-liquidity
+      )
+      (let (
+          ;; LP-302: Sequential allocation from the prioritized list
+          (allocation-result (fold
+            (lambda (current-provider acc)
+              (let (
+                  (remaining-needed (get remaining-collateral acc))
+                  (providers-allocated-to (get allocated-providers acc))
+                )
+                (if (is-eq remaining-needed u0) ;; If already fully collateralized, pass through
+                  acc
+                  ;; Else, try to allocate from current-provider
+                  (match (map-get? provider-balances {
+                    provider: current-provider,
+                    token-id: token-id,
+                  })
+                    provider-bal-opt
+                    (let (
+                        (provider-available (get available-amount (unwrap-panic provider-bal-opt)))
+                        (amount-from-this-provider (min provider-available remaining-needed))
+                      )
+                      (if (> amount-from-this-provider u0)
+                        (match (allocate-to-single-provider current-provider policy-id
+                          token-id amount-from-this-provider
+                          risk-tier-at-allocation expiration-height
+                          policy-owner
+                        )
+                          ok-allocation
+                          {
+                            remaining-collateral: (- remaining-needed amount-from-this-provider),
+                            allocated-providers: (append providers-allocated-to {
+                              provider: current-provider,
+                              amount: amount-from-this-provider,
+                            }),
+                          }
+                          err-allocation (begin
+                            (print {
+                              event: "allocate-to-single-provider-failed",
+                              policy-id: policy-id,
+                              provider: current-provider,
+                              error: err-allocation,
+                            })
+                            acc ;; Allocation failed for this provider, continue with current acc
+                          )
+                        )
+                        acc ;; Provider has no available capital or no more is needed from them for this amount_from_this_provider
+                      )
+                    )
+                    ;; Provider balance not found, should not happen if list is correct
+                    (begin
+                      (print {
+                        event: "provider-balance-not-found-in-allocator",
+                        policy-id: policy-id,
+                        provider: current-provider,
+                      })
+                      acc
+                    )
+                  )
+                )
+              ))
+            prioritized-eligible-providers {
+            remaining-collateral: total-required-collateral-for-policy,
+            allocated-providers: (list), ;; To track who contributed what
+          }))
+        )
+        (if (> (get remaining-collateral allocation-result) u0)
+          (begin
+            (print {
+              event: "allocate-capital-failed-insufficient",
+              policy-id: policy-id,
+              remaining: (get remaining-collateral allocation-result),
             })
-            eligible-providers
-          ))
-        u0
-      )))
-      ;; Allocate proportionally to all providers
-      (map
-        (lambda (provider)
-          (allocate-to-single-provider provider
-            (calculate-provider-allocation provider token-id total-amount
-              total-available
-            )
-            policy-id token-id risk-tier expiration-height
-          ))
-        eligible-providers
+            (err ERR-FAILED-TO-ALLOCATE-COLLATERAL) ;; Not enough collateral from prioritized providers
+          )
+          (begin
+            (print {
+              event: "debug-allocate-capital-success",
+              policy-id: policy-id,
+              allocated-count: (len (get allocated-providers allocation-result)),
+            })
+            (ok (get allocated-providers allocation-result)) ;; Return list of providers who had capital allocated
+          )
+        )
       )
     )
   )
@@ -1679,51 +1857,82 @@
             )
             ;; 9. Update expiration liquidity needs
             (match (map-get? expiration-liquidity-needs expiration-height)
-              expiration-needs
-              (let (
-                  (current-token-amount (default-to u0
-                    (map-get? (get token-distributions expiration-needs) token-id)
-                  ))
-                  (updated-token-distributions (merge (get token-distributions expiration-needs) { (token-id): (if (> current-token-amount released-amount)
-                    (- current-token-amount released-amount)
-                    u0
-                  ) }
-                  ))
-                  (new-policy-count (if (> (get policy-count expiration-needs) u0)
-                    (- (get policy-count expiration-needs) u1)
-                    u0
-                  ))
-                )
-                (map-set expiration-liquidity-needs expiration-height
-                  (merge expiration-needs {
-                    total-collateral-required: (- (get total-collateral-required expiration-needs)
-                      released-amount
-                    ),
-                    token-distributions: updated-token-distributions,
-                    policy-count: new-policy-count,
-                    ;; Keep is-liquidity-prepared status unchanged
-                  })
+              expiration-needs-opt 
+              (let ((expiration-needs-record (unwrap-panic expiration-needs-opt)))
+                (let (
+                    (current-token-amount (default-to u0
+                      (map-get? (get token-distributions expiration-needs-record) token-id)
+                    ))
+                    (updated-token-distributions (merge (get token-distributions expiration-needs-record) { (token-id): (if (> current-token-amount released-amount)
+                      (- current-token-amount released-amount)
+                      u0
+                    ) }
+                    ))
+                    (new-policy-count (if (> (get policy-count expiration-needs-record) u0)
+                      (- (get policy-count expiration-needs-record) u1)
+                      u0
+                    ))
+                    ;; LP-304: Determine policy's risk tier and update risk-tier-distribution
+                    (policy-risk-tier (let* (
+                        (first-provider-info-opt (element-at providers-with-allocations u0))
+                      )
+                      (if (is-some first-provider-info-opt)
+                        (let* (
+                            (first-provider-principal (get provider (unwrap-panic first-provider-info-opt)))
+                            (allocation-record-opt (map-get? provider-allocations { provider: first-provider-principal, policy-id: policy-id}))
+                          )
+                          (if (is-some allocation-record-opt)
+                            (some (get risk-tier-at-allocation (unwrap-panic allocation-record-opt)))
+                            none 
+                          )
+                        )
+                        none 
+                      )))
+                    (updated-rtd (if (is-some policy-risk-tier)
+                      (let* (
+                          (rtd (get risk-tier-distribution expiration-needs-record))
+                          (current-policy-risk-tier-unwrapped (unwrap-panic policy-risk-tier))
+                          (token-rtd (default-to (map) (map-get? rtd token-id)))
+                          (tier-amount (default-to u0 (map-get? token-rtd current-policy-risk-tier-unwrapped)))
+                          (new-tier-amount (if (> tier-amount released-amount) (- tier-amount released-amount) u0))
+                          (updated-token-rtd-specific (merge token-rtd { (current-policy-risk-tier-unwrapped): new-tier-amount }))
+                        )
+                        (merge rtd { (token-id): updated-token-rtd-specific }))
+                      (get risk-tier-distribution expiration-needs-record) 
+                    ))
+                  )
+                  (map-set expiration-liquidity-needs expiration-height
+                    (merge expiration-needs-record {
+                      total-collateral-required: (if (> (get total-collateral-required expiration-needs-record) released-amount)
+                                                  (- (get total-collateral-required expiration-needs-record) released-amount)
+                                                  u0),
+                      token-distributions: updated-token-distributions,
+                      policy-count: new-policy-count,
+                      risk-tier-distribution: updated-rtd, 
+                    })
+                  )
                 )
               )
-              ;; If no record exists (unlikely), create a new one with zero required collateral
               (map-set expiration-liquidity-needs expiration-height {
                 total-collateral-required: u0,
                 is-liquidity-prepared: false,
                 token-distributions: (map),
                 policy-count: u0,
+                risk-tier-distribution: (map), ;; LP-304: Initialize new field
               })
             )
-            ;; 10. Emit collateral released event
-            (print {
-              event: "collateral-released",
-              block-height: burn-block-height,
-              policy-id: policy-id,
-              token-id: token-id,
-              total-released-amount: released-amount,
-              expiration-height: expiration-height,
-              provider-count: (len providers-with-allocations),
-            })
-            (ok released-amount)
+              ;; 10. Emit collateral released event
+              (print {
+                event: "collateral-released",
+                block-height: burn-block-height,
+                policy-id: policy-id,
+                token-id: token-id,
+                total-released-amount: released-amount,
+                expiration-height: expiration-height,
+                provider-count: (len providers-with-allocations),
+              })
+              (ok released-amount)
+            )
           )
         )
       )
@@ -1877,4 +2086,358 @@
   (get-provider-allocation-amount provider policy-id)
 )
 
-(print { message: "European-Liquidity-Pool-Vault.clar updated for Phase 2, Steps LP-201, LP-202, LP-203, LP-204, LP-205, LP-206, LP-207, LP-208, and LP-209" })
+;; --- Liquidity Check Function (LP-109, LP-301) ---
+
+;; Private helper to map buyer risk tier to a representative provider risk tier for collateral checking purposes.
+;; In a production system, this mapping might be more complex or configurable in BitHedgeParametersContract.
+(define-private (priv-get-provider-tier-for-buyer-tier (buyer-tier (string-ascii 32)))
+  (cond
+    ((is-eq buyer-tier "ProtectivePeter-Conservative") (ok "IncomeIrene-Conservative"))
+    ((is-eq buyer-tier "ProtectivePeter-Standard") (ok "IncomeIrene-Balanced"))
+    ((is-eq buyer-tier "ProtectivePeter-Flexible") (ok "IncomeIrene-Aggressive"))
+    ((is-eq buyer-tier "ProtectivePeter-CrashInsurance") (ok "IncomeIrene-Balanced"))
+    ;; Example: Crash might map to a common provider tier
+    (else (err ERR-INVALID-RISK-TIER))
+  )
+)
+
+(define-read-only (check-liquidity
+    (protection-amount-scaled uint)
+    (token-id (string-ascii 32))
+    (buyer-risk-tier (string-ascii 32))
+    (expiration-height uint) ;; expiration-height is not directly used for ratio now, but kept for signature consistency and future use
+  )
+  (let (
+      (params-contract (var-get parameters-contract-principal))
+      (token-bal (default-to {
+        total-balance: u0,
+        available-balance: u0,
+        locked-balance: u0,
+      }
+        (map-get? token-balances { token-id: token-id })
+      ))
+      (current-available-balance (get available-balance token-bal))
+    )
+    (asserts! (is-some (map-get? supported-tokens { token-id: token-id }))
+      ERR-TOKEN-NOT-INITIALIZED
+    )
+    (match (priv-get-provider-tier-for-buyer-tier buyer-risk-tier)
+      mapped-provider-tier-name-ok
+      (let ((provider-tier-name (unwrap-panic mapped-provider-tier-name-ok)))
+        (match (contract-call? params-contract get-risk-tier-parameters
+          provider-tier-name
+        )
+          provider-tier-params-optional
+          (if (is-some provider-tier-params-optional)
+            (let ((provider-tier-params (unwrap-panic provider-tier-params)))
+              (if (get is-active provider-tier-params)
+                (let ((provider-collateral-ratio-bp (get collateral-ratio-basis-points provider-tier-params)))
+                  (if (> provider-collateral-ratio-bp u0)
+                    (let ((estimated-collateral-needed (/
+                        (* protection-amount-scaled provider-collateral-ratio-bp)
+                        u10000
+                      )))
+                      (if (>= current-available-balance estimated-collateral-needed)
+                        (ok true)
+                        (err ERR-INSUFFICIENT-LIQUIDITY)
+                      )
+                    )
+                    (err ERR-INVALID-TIER-PARAMETER) ;; Zero or invalid collateral ratio
+                  )
+                )
+                (err ERR-TIER-NOT-ACTIVE)
+              )
+            )
+            (err ERR-INVALID-RISK-TIER) ;; Tier not found in parameters contract
+          )
+          params-call-error
+          (err ERR-PARAMS-PRINCIPAL-NOT-SET-LP) ;; Could be other errors too
+        )
+      )
+      mapping-error
+      (err ERR-INVALID-RISK-TIER) ;; Buyer tier to provider tier mapping failed
+    )
+  )
+)
+
+(print { message: "European-Liquidity-Pool-Vault.clar updated for Phase 2, Steps LP-201, LP-202, LP-203, LP-204, LP-205, LP-206, LP-207, LP-208, and LP-209" }) ;; --- LP-201 & LP-302: Provider Selection and Allocation Helpers ---
+
+;; Helper to check if a provider's risk tier is compatible with the buyer's policy risk tier
+(define-private (is-provider-tier-compatible
+    (buyer-tier-name (string-ascii 32))
+    (provider-tier-name (string-ascii 32))
+  )
+  (cond ;; ConservativeBuyer -> ConservativeProvider
+    ((and (is-eq buyer-tier-name "ProtectivePeter-Conservative") (is-eq provider-tier-name "IncomeIrene-Conservative")) true)
+    ;; StandardBuyer -> BalancedProvider, ConservativeProvider
+    ((and (is-eq buyer-tier-name "ProtectivePeter-Standard") (or (is-eq provider-tier-name "IncomeIrene-Balanced") (is-eq provider-tier-name "IncomeIrene-Conservative"))) true)
+    ;; FlexibleBuyer -> AggressiveProvider, BalancedProvider
+    ((and (is-eq buyer-tier-name "ProtectivePeter-Flexible") (or (is-eq provider-tier-name "IncomeIrene-Aggressive") (is-eq provider-tier-name "IncomeIrene-Balanced"))) true)
+    ;; CrashInsuranceBuyer -> Any provider tier (simplification for example)
+    ((is-eq buyer-tier-name "ProtectivePeter-CrashInsurance") true)
+    (else false)
+  )
+)
+
+(define-private (filter-eligible-providers
+    (providers (list 10 principal))
+    (token-id (string-ascii 32))
+    (buyer-policy-risk-tier (string-ascii 32))
+    (required-collateral-for-policy uint)
+    (expiration-height uint)
+    (buyer-tier-params {
+      is-active: bool,
+      collateral-ratio-basis-points: uint,
+    })
+    (params-contract principal)
+  )
+  (begin
+    (fold
+      (lambda (provider filtered-list)
+        (let ((provider-balance-details (map-get? provider-balances {
+            provider: provider,
+            token-id: token-id,
+          })))
+          (if (is-some provider-balance-details)
+            (let ((provider-bal (unwrap-panic provider-balance-details)))
+              (let ((provider-own-tier-name (get selected-risk-tier provider-bal)))
+                (if (is-eq provider-own-tier-name "")
+                  filtered-list
+                  (match (contract-call? params-contract get-risk-tier-parameters
+                    provider-own-tier-name
+                  )
+                    provider-own-tier-params-optional (if (is-some provider-own-tier-params-optional)
+                      (let ((provider-own-params (unwrap-panic provider-own-tier-params-optional)))
+                        (let (
+                            (provider-total-capital (get deposited-amount provider-bal)) ;; Use deposited as total for exposure calc
+                            (provider-available-capital (get available-amount provider-bal))
+                            ;; Assume policy might take up to, e.g., 1/Nth of collateral from this provider if N providers are selected
+                            ;; For eligibility, check if they can handle a potential chunk.
+                            ;; This is a simplification; actual allocation determines exact amount.
+                            (potential-allocation-this-policy (if (> (len providers) u0)
+                              (/ required-collateral-for-policy (len providers))
+                              required-collateral-for-policy
+                            ))
+                          )
+                          (if (and
+                              (get is-active provider-own-params)
+                              (is-provider-tier-compatible buyer-policy-risk-tier
+                                provider-own-tier-name
+                              )
+                              (>= provider-available-capital
+                                potential-allocation-this-policy
+                              )
+                              ;; Can they cover a potential share?
+                              ;; Max exposure per policy check (using provider's own tier param)
+                              (<= potential-allocation-this-policy
+                                (/
+                                  (* provider-total-capital
+                                    (get max-exposure-per-policy-basis-points
+                                      provider-own-params
+                                    ))
+                                  u10000
+                                ))
+                              ;; Max exposure per expiration check (using provider's own tier param)
+                              (let ((current-exp-exposure (default-to u0
+                                  (map-get?
+                                    (get expiration-exposure provider-bal)
+                                    expiration-height
+                                  ))))
+                                (<=
+                                  (+ current-exp-exposure
+                                    potential-allocation-this-policy
+                                  )
+                                  (/
+                                    (* provider-total-capital
+                                      (get
+                                        max-exposure-per-expiration-basis-points
+                                        provider-own-params
+                                      ))
+                                    u10000
+                                  ))
+                              )
+                            )
+                            (append filtered-list provider)
+                            filtered-list
+                          )
+                        )
+                      )
+                      filtered-list
+                    )
+                    params-call-error
+                    filtered-list
+                  )
+                )
+              )
+            )
+            filtered-list
+          )
+        ))
+      providers (list)
+    )
+  )
+)
+
+;; LP-302: Sorts/Prioritizes a list of eligible provider principals
+(define-private (priv-sort-providers-by-preference
+    (eligible-principals (list 10 principal))
+    (token-id (string-ascii 32))
+    (params-contract principal) ;; expiration-height and other policy details might be needed for more complex sorting later
+  )
+  (let (
+      (conservative-lps (list))
+      (balanced-lps (list))
+      (aggressive-lps (list))
+      (other-lps (list)) ;; For any tiers not explicitly categorized or if tier info is missing
+    )
+    ;; Iterate through eligible principals and categorize them by their selected risk tier
+    (fold
+      (lambda (provider-principal acc-lists)
+        (let (
+            (current-conservative (get conservative-lps acc-lists))
+            (current-balanced (get balanced-lps acc-lists))
+            (current-aggressive (get aggressive-lps acc-lists))
+            (current-other (get other-lps acc-lists))
+          )
+          (match (map-get? provider-balances {
+            provider: provider-principal,
+            token-id: token-id,
+          })
+            provider-bal-some
+            (let ((provider-tier (get selected-risk-tier (unwrap-panic provider-bal-some))))
+              (cond
+                (
+                  (is-eq provider-tier "IncomeIrene-Conservative")
+                  {
+                  conservative-lps: (append current-conservative provider-principal),
+                  balanced-lps: current-balanced,
+                  aggressive-lps: current-aggressive,
+                  other-lps: current-other,
+                }
+                )
+                (
+                  (is-eq provider-tier "IncomeIrene-Balanced")
+                  {
+                  conservative-lps: current-conservative,
+                  balanced-lps: (append current-balanced provider-principal),
+                  aggressive-lps: current-aggressive,
+                  other-lps: current-other,
+                }
+                )
+                (
+                  (is-eq provider-tier "IncomeIrene-Aggressive")
+                  {
+                  conservative-lps: current-conservative,
+                  balanced-lps: current-balanced,
+                  aggressive-lps: (append current-aggressive provider-principal),
+                  other-lps: current-other,
+                }
+                )
+                (else {
+                  conservative-lps: current-conservative,
+                  balanced-lps: current-balanced,
+                  aggressive-lps: current-aggressive,
+                  other-lps: (append current-other provider-principal),
+                })
+              )
+            )
+            ;; Provider balance not found for token, add to others (should not happen if they are in eligible-principals from previous filter)
+            {
+              conservative-lps: current-conservative,
+              balanced-lps: current-balanced,
+              aggressive-lps: current-aggressive,
+              other-lps: (append current-other provider-principal),
+            }
+          )
+        ))
+      eligible-principals {
+      conservative-lps: conservative-lps,
+      balanced-lps: balanced-lps,
+      aggressive-lps: aggressive-lps,
+      other-lps: other-lps,
+    })
+    ;; Concatenate lists in order of preference: Conservative -> Balanced -> Aggressive -> Others
+    (concat (get conservative-lps result-categories)
+      (concat (get balanced-lps result-categories)
+        (concat (get aggressive-lps result-categories)
+          (get other-lps result-categories)
+        ))
+    )
+  )
+)
+
+(define-read-only (get-eligible-providers-for-allocation
+    (token-id (string-ascii 32))
+    (risk-tier (string-ascii 32)) ;; This is the BUYER's risk tier from the policy
+    (required-amount uint)
+    (expiration-height uint)
+  )
+  (let ((params-principal (var-get parameters-contract-principal)))
+    (match (contract-call? params-principal get-risk-tier-parameters risk-tier)
+      tier-params-ok (let ((buyer-tier-params (unwrap-panic tier-params-ok)))
+        (asserts! (get is-active buyer-tier-params) ERR-TIER-NOT-ACTIVE)
+        (let ((test-providers (list CONTRACT-OWNER 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM)))
+          ;; Placeholder LPs
+          (let ((filtered-principals-list (filter-eligible-providers test-providers token-id risk-tier
+              required-amount expiration-height buyer-tier-params
+              params-principal
+            )))
+            ;; LP-302: Sort/Prioritize the filtered principals
+            ;; filter-eligible-providers returns (list principal), not a response object
+            (ok (priv-sort-providers-by-preference filtered-principals-list token-id
+              params-principal
+            ))
+          )
+        )
+      )
+      err-response (begin
+        (print {
+          event: "get-tier-parameters-failed-for-buyer",
+          block-height: burn-block-height,
+          risk-tier: risk-tier,
+          error: err-response,
+        })
+        (err ERR-INVALID-TIER-PARAMETER)
+      )
+    )
+  )
+)
+
+;; --- LP-303: Prepare Liquidity for Expirations Function ---
+(define-public (prepare-liquidity-for-expirations (expiration-height uint))
+  (let (
+      (params-contract (unwrap! (var-get parameters-contract-principal)
+        ERR-PARAMS-PRINCIPAL-NOT-SET-LP
+      ))
+      ;; Assuming ROLE-ADMIN is defined in BitHedgeParametersContract or use direct string "admin"
+      ;; For this example, assuming "admin" role string.
+      ;; Replace "admin" with the actual constant if defined (e.g., (contract-call? params-contract get-admin-role-constant))
+      (is-admin (try! (contract-call? params-contract has-role tx-sender "admin")))
+    )
+    (asserts! is-admin ERR-ADMIN-ROLE-REQUIRED-LP)
+    (match (map-get? expiration-liquidity-needs expiration-height)
+      expiration-needs-record-opt
+      (let ((expiration-needs-record (unwrap-panic expiration-needs-record-opt)))
+        (if (get is-liquidity-prepared expiration-needs-record)
+          (ok true) ;; Already prepared, idempotent success
+          (begin
+            (map-set expiration-liquidity-needs expiration-height
+              (merge expiration-needs-record { is-liquidity-prepared: true })
+            )
+            (print {
+              event: "liquidity-prepared-for-expiration",
+              block-height: burn-block-height,
+              expiration-height: expiration-height,
+              status: true,
+            })
+            (ok true)
+          )
+        )
+      )
+      ;; No record found for this expiration height
+      (err ERR-EXPIRATION-NOT-FOUND-LP)
+    )
+  )
+)
+
+(print { message: "BitHedge European-Style Liquidity Pool Vault Contract - Phase 3 LP-303, LP-304 work integrated. Preparing for LP-305." })
